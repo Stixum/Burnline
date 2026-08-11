@@ -1,6 +1,20 @@
 # Burnline — Design Spec
 
-> Status: **APPROVED** 2026-08-11. Not yet implemented.
+> Status: **SHIPPED 2026-08-11, PARTLY SUPERSEDED.** Read the revision note before treating any section as current.
+>
+> ## Revision note — 2026-08-11
+>
+> The spec's central premise was **wrong**. §3 states that no local denominator exists and that calibration is the only bridge. In fact Claude Code delivers `rate_limits.seven_day.{used_percentage,resets_at}` to a **statusline script** on every response — the true percentage *and* the true reset instant. The original research looked for an API, a CLI command and a local file, found none of the three, and concluded no mechanism existed. It never checked the hook/callback surface.
+>
+> What that changes:
+>
+> - **§3 (two halves / calibration)** — superseded. There are now three ranked sources: `.live` (statusline capture, exact), `.calibrated` (manual anchors, fallback), `.paceOnly`. A capture self-calibrates, supplying both the true percentage and, with the local token count at that instant, the units-per-percent to extrapolate forward.
+> - **§5 (window math)** — a live capture pins the window via `resets_at`; the configured schedule is a fallback and greys out.
+> - **§8 (interface)** — the bar now carries two targets: a solid marker at the real-time target and a translucent band out to the end-of-day target. Two settings were added: `TargetMode` (real-time / end-of-day) and `DayBoundary` (window day / calendar day).
+> - **§4, §10, §11** — already revised in place for SwiftPM. Accurate.
+> - **§7 (scanning)** — accurate, except the "~1.5s cold scan" figure, corrected to 6.4s (the prototype pre-filtered by mtime and the filter wasn't carried over).
+>
+> **Current behaviour lives in `Project Notes/Burnline/ARCHITECTURE.md`**, which was rewritten against the shipped code. This spec is kept as the design record, not as the source of truth.
 
 A macOS menu bar app that answers one question at a glance: **am I ahead of or behind the pace I should be at, this far into my Claude weekly usage window?**
 
