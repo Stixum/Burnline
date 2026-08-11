@@ -49,6 +49,14 @@ Calibration partially compensates: when the user enters a real percentage, the f
 
 Native SwiftUI `MenuBarExtra`, `LSUIElement = true` (no dock icon), **unsandboxed**.
 
+**Built as a Swift package, not an Xcode project** (revised 2026-08-11 after a spike). A hand-generated `project.pbxproj` is fragile and can't be driven from a terminal; an SPM package gives `swift build` and `swift test` directly, and `build.sh` assembles the `.app` bundle around the produced binary. Verified in a spike: SwiftUI `MenuBarExtra` compiles under Swift 6 language mode as an SPM executable, and the hand-assembled bundle ad-hoc signs and launches clean as an `LSUIElement` accessory process.
+
+The package splits into two targets, which is what makes the core testable from the CLI with no UI in the loop:
+
+- **`BurnlineCore`** (library) — all six logic units. No SwiftUI, no app lifecycle.
+- **`Burnline`** (executable) — SwiftUI views and the app entry point only.
+- **`BurnlineProbe`** (executable) — a small diagnostic that prints a `Snapshot` against the real transcripts, so the engine is verifiable before any UI exists.
+
 Unsandboxed is a deliberate choice: it grants plain read access to `~/.claude` with no entitlement work and no TCC prompt (a home-directory dotfolder is not a TCC-protected location). The app is locally built and installed, never App Store distributed, so the sandbox buys nothing.
 
 Six units. The first four are pure and independently testable; the UI reads a single immutable `Snapshot` so no arithmetic happens in a view body.
@@ -156,7 +164,9 @@ A full scan of 2,929 transcript files takes ~1.5s — acceptable once, far too s
 
 ### Incremental cache
 
-`~/Library/Application Support/Burnline/scan-cache.json` holds, per file: `mtime`, `size`, byte `offset`, and hourly buckets of weighted units.
+`~/Library/Application Support/Burnline/scan-cache.json` holds, per file: `mtime`, `size`, byte `offset`, and **15-minute buckets** of weighted units.
+
+Bucket granularity is a deliberate trade. Buckets must be per-file so a truncated file's contribution can be dropped wholesale, and a window total is a sum of whole buckets — so a bucket straddling the window boundary is counted all-in or all-out. At 15 minutes that error is ≤0.15% of a 7-day window, and it vanishes entirely when the reset time lands on a quarter hour. Hourly buckets would put it at 0.6%; per-record storage would remove it but costs ~2MB of JSON per week.
 
 Each refresh re-reads only files whose `mtime` has advanced, resuming from the stored byte offset, so steady-state cost is a few KB. Window totals are a sum over buckets in range.
 
@@ -251,9 +261,10 @@ Swift Testing (`import Testing`). The pure units carry the logic and therefore t
 
 `build.sh` at the repo root:
 
-1. `xcodebuild -scheme Burnline -configuration Release`
-2. Sign with Developer ID Application if a cert is present; ad-hoc otherwise
-3. Copy `Burnline.app` to `/Applications`
+1. `swift build -c release`
+2. Assemble `Burnline.app` — `Contents/MacOS/Burnline`, `Contents/Info.plist` (with `LSUIElement`), `Contents/Resources/`
+3. Sign with Developer ID Application if a cert is present; ad-hoc (`-s -`) otherwise
+4. Copy to `/Applications`
 
 Ad-hoc signed builds need one right-click → Open to clear Gatekeeper. Launch-at-login is a Settings toggle, not part of install.
 
@@ -261,9 +272,13 @@ Ad-hoc signed builds need one right-click → Open to clear Gatekeeper. Launch-a
 
 ```
 ~/Projects/Burnline/
-├── Burnline.xcodeproj
-├── Burnline/                 # sources
-├── BurnlineTests/
+├── Package.swift
+├── Sources/
+│   ├── BurnlineCore/         # library: the six logic units, no SwiftUI
+│   ├── Burnline/             # executable: SwiftUI views + entry point
+│   └── BurnlineProbe/        # executable: prints a Snapshot for verification
+├── Tests/BurnlineCoreTests/
+├── Resources/Info.plist
 ├── build.sh
 ├── CLAUDE.md
 ├── README.md
