@@ -26,6 +26,7 @@ final class UsageStore {
     @ObservationIgnored private var cache: ScanCache
     @ObservationIgnored private let settingsStore = SettingsStore()
     @ObservationIgnored private let cacheStore = CacheStore()
+    @ObservationIgnored private let rateLimitStore = RateLimitStore()
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var lastRefresh = Date.distantPast
 
@@ -85,10 +86,13 @@ final class UsageStore {
         rebuild()
     }
 
-    /// Records a `/usage` reading as a calibration anchor.
+    /// Records a `/usage` reading as a calibration anchor. Only a fallback now —
+    /// a live capture takes precedence over anchors.
     func calibrate(observedPercent: Double) {
         let now = Date()
-        let window = WindowMath.window(for: storedSettings.resetSchedule, now: now)
+        // Anchor against the window actually on screen, which may have come
+        // from a live capture rather than the configured schedule.
+        let window = snapshot.window
         let units = cache.units(from: window.start, to: window.end)
         var updated = storedSettings
         updated.calibrationAnchors.append(
@@ -104,7 +108,10 @@ final class UsageStore {
     }
 
     private func rebuild() {
+        // Re-read every time: the statusline script rewrites this file from
+        // another process whenever Claude Code produces a response.
         snapshot = SnapshotBuilder.build(cache: cache, settings: storedSettings,
+                                         rateLimit: rateLimitStore.load(),
                                          now: Date(), isScanning: isScanning)
     }
 }

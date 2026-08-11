@@ -43,9 +43,10 @@ struct PopoverView: View {
                     .foregroundStyle(Theme.textMuted)
             }
             .padding(.top, 8)
-            Text(snapshot.isScanning ? "Scanning transcripts…" : "Not calibrated — showing pace only")
+            Text(paceOnlyExplanation)
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(Theme.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
         } else {
             let delta = snapshot.deltaPercent ?? 0
             let under = snapshot.isUnderBudget ?? true
@@ -63,6 +64,11 @@ struct PopoverView: View {
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(under ? Theme.success : Theme.danger)
         }
+    }
+
+    private var paceOnlyExplanation: String {
+        if snapshot.isScanning { return "Scanning transcripts…" }
+        return "Waiting for Claude Code — usage appears after its next response"
     }
 
     private var legend: some View {
@@ -110,10 +116,7 @@ struct PopoverView: View {
             }
         } else {
             HStack(spacing: 12) {
-                Button(calibrationLabel) { isCalibrating = true }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(snapshot.isCalibrationStale ? Theme.danger : Theme.accent)
+                sourceLabel
                 Spacer()
                 Button("Settings") { SettingsWindow.open(using: openWindow) }
                     .buttonStyle(.plain)
@@ -126,6 +129,34 @@ struct PopoverView: View {
                     .keyboardShortcut("q")
             }
         }
+    }
+
+    /// Says plainly where the number came from — exact, estimated, or absent.
+    @ViewBuilder private var sourceLabel: some View {
+        switch snapshot.source {
+        case .live:
+            HStack(spacing: 4) {
+                Circle().fill(Theme.success).frame(width: 5, height: 5)
+                Text("Live · \(liveAgeDescription)")
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Theme.success)
+            .help("Exact figure from Claude Code, carried forward by local token counts.")
+        case .calibrated, .paceOnly:
+            Button(calibrationLabel) { isCalibrating = true }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(snapshot.isCalibrationStale ? Theme.danger : Theme.accent)
+        }
+    }
+
+    private var liveAgeDescription: String {
+        guard let age = snapshot.liveAge else { return "now" }
+        if age < 90 { return "just now" }
+        let minutes = Int(age / 60)
+        if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60
+        return hours < 24 ? "\(hours)h ago" : "\(hours / 24)d ago"
     }
 
     private var calibrationLabel: String {
