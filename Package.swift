@@ -10,6 +10,11 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .executableTarget(
+            name: "Burnline",
+            dependencies: ["BurnlineCore"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .executableTarget(
             name: "BurnlineProbe",
             dependencies: ["BurnlineCore"],
             swiftSettings: [.swiftLanguageMode(.v6)]
