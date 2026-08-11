@@ -26,22 +26,33 @@ public struct Window: Equatable, Sendable {
     /// 0...7. Day 5.0 means five full days elapsed.
     public var dayIndex: Double { elapsedFraction * 7 }
 
-    /// Where you may be by the time the current window-day ends — the whole-day
-    /// budget rather than the second-by-second one.
+    /// Where you may be once the current day ends — the whole-day budget rather
+    /// than the second-by-second one.
     ///
-    /// Days are window-aligned, not calendar-aligned: a window starting Friday
-    /// 02:00 has days ending at 02:00. That keeps this consistent with
-    /// `dayIndex`, which the popover already shows as "Day 4.5 of 7".
-    ///
-    /// Rounds up, so mid-day-5 allows 5/7. Landing exactly on a boundary does
-    /// *not* advance a further day — at day 5.0 the allowance is 5/7, since
-    /// that day has just finished rather than just begun.
-    public var endOfDayPercent: Double {
-        let day = dayIndex
-        let wholeDays = day.rounded(.up)
-        // Exactly on a boundary (including 0) still gets the day it sits in.
-        let allowed = wholeDays == day ? max(day, 1) : wholeDays
-        return min(allowed * (100.0 / 7), 100)
+    /// Both boundaries take the next day-end **strictly after** `now`, so the
+    /// reading is always "end of today" in the ordinary sense: sitting exactly
+    /// on a boundary means that day has just begun, and the allowance runs to
+    /// the following one.
+    public func endOfDayPercent(boundary: DayBoundary, timeZone: TimeZone) -> Double {
+        let end: Date
+        switch boundary {
+        case .windowDay:
+            let nextDay = dayIndex.rounded(.down) + 1
+            end = start.addingTimeInterval(nextDay / 7 * totalDuration)
+        case .calendarDay:
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = timeZone
+            guard let midnight = calendar.nextDate(
+                after: now,
+                matching: DateComponents(hour: 0, minute: 0, second: 0),
+                matchingPolicy: .nextTime
+            ) else { return 100 }
+            end = midnight
+        }
+
+        guard totalDuration > 0 else { return 100 }
+        let fraction = end.timeIntervalSince(start) / totalDuration
+        return min(max(fraction, 0), 1) * 100
     }
 
     public var timeRemaining: TimeInterval { max(0, end.timeIntervalSince(now)) }

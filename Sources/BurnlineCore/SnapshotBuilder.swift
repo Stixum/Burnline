@@ -57,7 +57,9 @@ public enum SnapshotBuilder {
             calibrationAge: Calibration.age(of: settings.calibrationAnchors, now: now),
             source: source,
             isScheduleAutomatic: scheduleIsAutomatic,
-            isScanning: isScanning
+            isScanning: isScanning,
+            dayBoundary: settings.dayBoundary,
+            dayTimeZoneIdentifier: settings.resetSchedule.timeZoneIdentifier
         )
     }
 

@@ -10,40 +10,8 @@ private func window(dayIndex: Double) -> Window {
            now: start.addingTimeInterval(dayIndex * 86_400))
 }
 
-// MARK: - End-of-day target
-
-@Test func endOfDayRoundsUpToTheNextWholeWindowDay() {
-    // Day 4.53 -> you may reach day 5 by the time today ends -> 5/7.
-    #expect(abs(window(dayIndex: 4.53).endOfDayPercent - 500.0 / 7) < 1e-6)
-}
-
-@Test func endOfDayIsAlwaysAtOrAheadOfRealTime() {
-    for day in stride(from: 0.0, through: 7.0, by: 0.37) {
-        let w = window(dayIndex: day)
-        #expect(w.endOfDayPercent >= w.targetPercent - 1e-9)
-    }
-}
-
-@Test func exactlyOnADayBoundaryDoesNotJumpAWholeDayAhead() {
-    // At exactly day 5.0 the day just ended; the allowance is 5/7, not 6/7.
-    let w = window(dayIndex: 5.0)
-    #expect(abs(w.endOfDayPercent - 500.0 / 7) < 1e-6)
-    #expect(abs(w.targetPercent - 500.0 / 7) < 1e-6)
-}
-
-@Test func endOfDayNeverExceedsOneHundred() {
-    #expect(window(dayIndex: 6.9).endOfDayPercent == 100)
-    #expect(window(dayIndex: 7.0).endOfDayPercent == 100)
-}
-
-@Test func firstDayOfTheWindowAllowsOneSeventh() {
-    #expect(abs(window(dayIndex: 0.2).endOfDayPercent - 100.0 / 7) < 1e-6)
-}
-
-@Test func atTheVeryStartTheAllowanceIsStillOneDay() {
-    // Zero elapsed: nothing spent yet, but today's budget exists.
-    #expect(abs(window(dayIndex: 0).endOfDayPercent - 100.0 / 7) < 1e-6)
-}
+// Window-level day-boundary behaviour (both boundaries, exact-boundary cases,
+// clamping, timezones) lives in DayBoundaryTests. These cover mode selection.
 
 // MARK: - Which target the menu bar uses
 
@@ -53,7 +21,8 @@ private func window(dayIndex: Double) -> Window {
                             projectedPercent: nil, unitsInWindow: 0, calibrationAge: nil,
                             isScanning: false)
     #expect(abs(snapshot.targetPercent - w.targetPercent) < 1e-9)
-    #expect(abs(snapshot.endOfDayPercent - w.endOfDayPercent) < 1e-9)
+    #expect(abs(snapshot.endOfDayPercent
+              - w.endOfDayPercent(boundary: .windowDay, timeZone: .current)) < 1e-9)
 }
 
 @Test func realTimeModeSelectsTheContinuousTarget() {
