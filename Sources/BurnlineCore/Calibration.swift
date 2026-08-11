@@ -26,8 +26,25 @@ public enum Calibration {
     public static let minimumPercent: Double = 5
     public static let maximumAge: TimeInterval = 60 * 86_400
     public static let anchorLimit = 8
+    /// How many anchors are kept on disk. Larger than `anchorLimit` so the
+    /// Settings list still shows recent history the fit itself ignores.
+    public static let storageLimit = 20
     /// Beyond this the UI styles the calibration as stale.
     public static let stalenessThreshold: TimeInterval = 14 * 86_400
+
+    /// What to persist after adding one.
+    ///
+    /// Distinct from `validAnchors`, which decides what the *fit* may use.
+    /// Pruning here is about unbounded growth only, so it drops by age and count
+    /// but never by the 5% floor — a rejected-but-recent reading has to stay
+    /// visible in Settings, or entering one looks like the app swallowed it.
+    public static func retained(_ anchors: [CalibrationAnchor], now: Date) -> [CalibrationAnchor] {
+        anchors
+            .filter { now.timeIntervalSince($0.timestamp) <= maximumAge }
+            .sorted { $0.timestamp > $1.timestamp }
+            .prefix(storageLimit)
+            .map { $0 }
+    }
 
     public static func validAnchors(_ anchors: [CalibrationAnchor], now: Date) -> [CalibrationAnchor] {
         anchors
