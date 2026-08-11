@@ -26,8 +26,11 @@ let warmElapsed = Date().timeIntervalSince(warmStarted)
 let drift = abs(warmCache.units(from: now.addingTimeInterval(-30 * 86_400), to: now)
     - cache.units(from: now.addingTimeInterval(-30 * 86_400), to: now))
 
-// Same inputs the app uses, so the probe can diagnose what the app is doing.
-let capture = RateLimitStore().load()
+// Same inputs the app uses, so the probe can diagnose what the app is doing —
+// including the high-water reconciliation, without persisting a new mark.
+let onDisk = RateLimitStore().load()
+let storedMark = HighWaterStore().load()
+let capture = onDisk.map { RateLimitHighWater.reconcile($0, against: storedMark).capture }
 let snapshot = SnapshotBuilder.build(cache: cache, settings: settings,
                                      rateLimit: capture, now: now, isScanning: false)
 
@@ -52,9 +55,22 @@ if let capture {
         + "inCurrentWindow=\(inWindow)"
 }
 
+// Every open Claude Code session overwrites rate-limits.json on its own timer,
+// and an idle one keeps republishing the snapshot it started with. When these
+// two disagree, a stale session wrote last.
+var highWaterNote = "no mark yet"
+if let onDisk {
+    let raw = onDisk.sevenDay.usedPercent
+    let used = capture?.sevenDay.usedPercent ?? raw
+    highWaterNote = used > raw
+        ? "on disk \(raw)% -> REJECTED as stale, using \(used)%"
+        : "on disk \(raw)% accepted"
+}
+
 print("""
 Burnline probe
   capture          \(captureNote)
+  high water       \(highWaterNote)
   source           \(describeSource(snapshot.source))
   auto schedule    \(snapshot.isScheduleAutomatic)
   scanned          \(cache.files.count) files

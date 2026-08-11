@@ -101,7 +101,21 @@ public enum SnapshotBuilder {
                                     cache: ScanCache,
                                     window: Window) -> Double {
         let observed = capture.sevenDay.usedPercent
-        let unitsAtCapture = cache.units(from: window.start, to: capture.capturedDate)
+
+        // The capture's own 15-minute bucket straddles the capture instant, and
+        // the sub-bucket detail was never stored — its units can't be split into
+        // before and after. Attribute the whole bucket to *before*.
+        //
+        // Measuring to `capturedDate` instead looks right but isn't: `units` sums
+        // whole buckets and excludes the one containing its upper bound, so every
+        // token in the capture's own bucket got counted as "burned since the
+        // capture" — including the ones already inside the captured percentage.
+        // That phantom drift grew across each bucket and collapsed at every
+        // boundary, so the figure visibly fell as time passed. Erring the other
+        // way costs at most one bucket of genuine drift, and captures land every
+        // 30s, so it is corrected almost immediately.
+        let captureBucketEnd = Bucket.start(ofKey: Bucket.key(for: capture.capturedDate) + 1)
+        let unitsAtCapture = cache.units(from: window.start, to: captureBucketEnd)
         let unitsNow = cache.units(from: window.start, to: window.end)
 
         guard observed >= minimumExtrapolationPercent, unitsAtCapture > 0 else {
