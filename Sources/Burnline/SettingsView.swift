@@ -10,8 +10,7 @@ struct SettingsView: View {
                                 "Thursday", "Friday", "Saturday"]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 14) {
                 Text("Reset").eyebrow()
 
                 Picker("Day", selection: $store.settings.resetSchedule.weekday) {
@@ -33,7 +32,7 @@ struct SettingsView: View {
                 }
 
                 Text("Resets \(weekdayNames[store.settings.resetSchedule.weekday - 1]) at \(String(format: "%02d:%02d", store.settings.resetSchedule.hour, store.settings.resetSchedule.minute)), \(store.settings.resetSchedule.timeZone.identifier). Read this off Claude Code's /usage.")
-                    .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                    .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Toggle("Launch at login", isOn: Binding(
@@ -77,11 +76,12 @@ struct SettingsView: View {
                     }
                     .padding(.top, 4)
                 }
-            }
-            .padding(18)
         }
-        .frame(width: 380, height: 420)
-        .background(Theme.background)
+        .padding(18)
+        // Width fixed, height follows the content — so expanding Advanced grows
+        // the window instead of leaving dead space below when it is collapsed.
+        .frame(width: 380, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func weightRow(_ label: String, _ value: Binding<Double>) -> some View {

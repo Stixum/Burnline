@@ -16,11 +16,17 @@ struct MenuBarLabel: View {
             // The label is live from launch, so this starts the refresh loop
             // even if the popover is never opened.
             .task {
+                // The app is hardcoded dark, so declare that to AppKit. Without
+                // it, system controls (pickers, steppers, checkboxes, title bar)
+                // render for light mode and come out near-black on near-black.
+                NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
                 store.start()
                 // Lets the settings window be opened without a click, so it can
                 // be verified from a terminal.
                 if ProcessInfo.processInfo.environment["BURNLINE_OPEN_SETTINGS"] == "1" {
                     SettingsWindow.open(using: openWindow)
+                    FileHandle.standardError.write(Data(
+                        "BURNLINE effectiveAppearance=\(NSApplication.shared.effectiveAppearance.name.rawValue)\n".utf8))
                 }
             }
     }

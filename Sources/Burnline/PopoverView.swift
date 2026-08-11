@@ -28,6 +28,7 @@ struct PopoverView: View {
         .padding(14)
         .frame(width: Theme.popoverWidth)
         .background(Theme.background)
+        .preferredColorScheme(.dark)
         .onAppear { store.refreshIfStale() }
     }
 

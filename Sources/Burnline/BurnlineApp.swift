@@ -17,6 +17,8 @@ struct BurnlineApp: App {
         // nothing in an LSUIElement app. See SettingsWindow.open.
         Window("Burnline Settings", id: SettingsWindow.id) {
             SettingsView(store: store)
+                .preferredColorScheme(.dark)
+                .windowBackground()
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)

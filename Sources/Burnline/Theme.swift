@@ -27,6 +27,18 @@ enum Theme {
 }
 
 extension View {
+    /// Paints the whole window including the title bar. A plain `.background()`
+    /// leaves the default translucent material showing whatever sits behind the
+    /// window. `containerBackground` is macOS 15+, so 14 falls back.
+    @ViewBuilder
+    func windowBackground() -> some View {
+        if #available(macOS 15.0, *) {
+            self.containerBackground(Theme.background, for: .window)
+        } else {
+            self.background(Theme.background)
+        }
+    }
+
     /// Uppercase tracked eyebrow, per the portfolio micro-label standard.
     func eyebrow() -> some View {
         self.font(.system(size: 10, weight: .bold))
