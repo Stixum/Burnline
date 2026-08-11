@@ -3,7 +3,11 @@ import BurnlineCore
 
 // Diagnostic only. Scans the real transcripts and prints a Snapshot.
 let now = Date()
-var settings = BurnlineSettings.default
+// The user's real settings, not the defaults. The probe exists to say what the
+// app is doing, and targetMode / dayBoundary / menuBarMode all change what it
+// displays — reading defaults here made the probe disagree with the menu bar
+// and quietly report against a target the user isn't using.
+var settings = SettingsStore().load()
 if let weekday = ProcessInfo.processInfo.environment["BURNLINE_WEEKDAY"].flatMap(Int.init) {
     settings.resetSchedule.weekday = weekday
 }
