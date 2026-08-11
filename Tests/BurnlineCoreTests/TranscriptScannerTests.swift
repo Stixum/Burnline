@@ -139,3 +139,21 @@ private let scanTime = Date()
     cache = try scanner.scan(cache: cache, now: scanTime)
     #expect(cache.files.isEmpty)
 }
+
+@Test func filesOlderThanRetentionAreSkippedWithoutReading() throws {
+    let dir = TempDir()
+    let old = dir.write(line(output: 100), to: "proj/old.jsonl")
+    _ = dir.write(line(output: 100), to: "proj/new.jsonl")
+
+    // Backdate past the 14-day retention cutoff.
+    try FileManager.default.setAttributes(
+        [.modificationDate: scanTime.addingTimeInterval(-20 * 86_400)], ofItemAtPath: old.path)
+
+    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let cache = try scanner.scan(cache: ScanCache(), now: scanTime)
+
+    #expect(cache.files.count == 1)
+    #expect(cache.files.keys.first?.hasSuffix("new.jsonl") == true)
+    // Only the fresh file's usage counted.
+    #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
+}

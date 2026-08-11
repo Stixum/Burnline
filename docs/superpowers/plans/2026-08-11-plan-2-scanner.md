@@ -26,7 +26,9 @@ Three traps in that shape:
 2. **Other line types put a *string* in `message`**, so a strict decode of every line throws. That's expected; skip and continue.
 3. **The last line of an active session is often a partial write.** Advancing the byte offset past it would lose the record forever, so the offset only ever advances to the last complete newline.
 
-**Scale, measured on this machine:** 2,929 files, ~1.5s for a cold full scan, 368 files touched in a 7-day span, 41,520 assistant messages per week. Cold scan happens once; steady state re-reads only appended bytes.
+**Scale, measured on this machine (corrected 2026-08-11 after building it):** 2,873 files totalling **1.4 GB**, of which **886 files / 0.80 GB** fall inside the 14-day retention window. Cold scan **6.4s**, warm scan **0.028s**.
+
+> An earlier draft of this plan claimed ~1.5s for a cold scan. That was wrong — it came from a Python prototype that pre-filtered by mtime to a 7-day span, and the number was carried over here without the filter. Two consequences, both now baked into the design: the scanner **must skip files older than the retention cutoff before opening them** (they get evicted at the end of the scan anyway, so reading them is pure waste — this alone halved the cold scan from 12.6s to 6.4s), and the cold scan is a **6-second one-time cost behind a spinner**, not a sub-second one. The warm path is what the 60s timer runs, and at 28ms it is free.
 
 ## File Structure
 
@@ -1018,12 +1020,13 @@ Burnline probe
 
 Run: `swift run BurnlineProbe`
 
-Expected: a report naming roughly 2,900 scanned files in a couple of seconds, a 168-hour window (or 167/169 near a DST change), a day index between 0 and 7, a target percent matching that day index, a large non-zero unit count, and `estimated —` with `pace-only true` because no anchors exist yet.
+Expected: ~886 retained files, a cold scan around 6s, a warm scan in the tens of milliseconds, a 168-hour window (or 167/169 near a DST change), a day index between 0 and 7, a target percent matching that day index, a large non-zero unit count, and `estimated —` with `pace-only true` because no anchors exist yet.
 
-**Verify three things by hand before proceeding:**
+**Verify four things by hand before proceeding:**
 1. `target` ≈ `day / 7 × 100`.
 2. `units in window` is non-zero — if it is zero, the window or bucket keying is wrong.
-3. A second immediate run is much faster than the first only if you persist the cache; without persistence both runs are cold. That is expected here — cache persistence lands in Plan 3.
+3. **`re-scan drift` is exactly 0.** The probe scans twice, feeding the first cache into the second. A non-zero drift means the incremental path is double-counting against real data — the single most important thing this probe proves, and something fixtures alone cannot.
+4. `warm scan` is orders of magnitude below `cold scan`. If they are similar, the mtime/offset short-circuit is not firing and the 60-second refresh will be unaffordable.
 
 - [ ] **Step 4: Run the whole suite**
 

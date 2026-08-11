@@ -23,6 +23,7 @@ public struct TranscriptScanner: Sendable {
         let parser = TranscriptParser()
         var seen = Set<String>()
 
+        let retentionCutoff = now.addingTimeInterval(-ScanCache.retention)
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
         let enumerator = FileManager.default.enumerator(
             at: rootURL,
@@ -35,9 +36,17 @@ public struct TranscriptScanner: Sendable {
             guard let values = try? url.resourceValues(forKeys: Set(keys)),
                   values.isRegularFile == true else { continue }
 
+            let modifiedAt = values.contentModificationDate ?? .distantPast
+
+            // Anything this old is evicted at the end of the scan, so reading it
+            // is pure waste. Skipping before the open is the difference between
+            // touching the whole 1.4 GB corpus and touching only recent sessions.
+            // Deliberately not added to `seen`, so any stale cache entry for it
+            // is dropped — the same outcome eviction would produce.
+            guard modifiedAt >= retentionCutoff else { continue }
+
             let path = url.path
             seen.insert(path)
-            let modifiedAt = values.contentModificationDate ?? .distantPast
             let size = values.fileSize ?? 0
 
             var state = cache.files[path] ?? FileState()
