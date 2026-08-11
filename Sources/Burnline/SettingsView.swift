@@ -48,6 +48,22 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                Divider().overlay(Theme.hairline)
+
+                Text("Compare against").eyebrow()
+
+                Picker("", selection: $store.settings.targetMode) {
+                    ForEach(TargetMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                Text(targetModeExplanation)
+                    .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Divider().overlay(Theme.hairline)
+
                 Toggle("Launch at login", isOn: Binding(
                     get: { store.settings.launchAtLogin },
                     set: { setLaunchAtLogin($0) }
@@ -95,6 +111,19 @@ struct SettingsView: View {
         // the window instead of leaving dead space below when it is collapsed.
         .frame(width: 380, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Spells out the choice with the live numbers, so it is concrete rather
+    /// than abstract. Both targets stay on the bar either way.
+    private var targetModeExplanation: String {
+        let now = Int(store.snapshot.targetPercent.rounded())
+        let today = Int(store.snapshot.endOfDayPercent.rounded())
+        switch store.settings.targetMode {
+        case .realTime:
+            return "\(TargetMode.realTime.explanation) Right now that's \(now)%. The bar still shades today's allowance out to \(today)%."
+        case .endOfDay:
+            return "\(TargetMode.endOfDay.explanation) Right now that's \(today)%, versus \(now)% this second. More forgiving during the day."
+        }
     }
 
     private var automaticResetDescription: String {

@@ -10,9 +10,9 @@ struct MenuBarLabel: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Text(MenuBarFormatter.text(for: store.snapshot))
+        Text(MenuBarFormatter.text(for: store.snapshot, mode: store.settings.targetMode))
             .monospacedDigit()
-            .accessibilityLabel(MenuBarFormatter.accessibilityLabel(for: store.snapshot))
+            .accessibilityLabel(MenuBarFormatter.accessibilityLabel(for: store.snapshot, mode: store.settings.targetMode))
             // The label is live from launch, so this starts the refresh loop
             // even if the popover is never opened.
             .task {
