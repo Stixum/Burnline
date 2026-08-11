@@ -13,10 +13,20 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
                 Text("Reset").eyebrow()
 
+                if store.snapshot.isScheduleAutomatic {
+                    HStack(alignment: .top, spacing: 6) {
+                        Circle().fill(Theme.success).frame(width: 5, height: 5).padding(.top, 5)
+                        Text("Read automatically from Claude Code — resets \(automaticResetDescription). The fields below are unused while this is live.")
+                            .font(.system(size: 11)).foregroundStyle(Theme.success)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
                 Picker("Day", selection: $store.settings.resetSchedule.weekday) {
                     ForEach(1...7, id: \.self) { Text(weekdayNames[$0 - 1]).tag($0) }
                 }
                 .frame(maxWidth: 220)
+                .disabled(store.snapshot.isScheduleAutomatic)
 
                 HStack(spacing: 10) {
                     Stepper(value: $store.settings.resetSchedule.hour, in: 0...23) {
@@ -30,10 +40,13 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
+                .disabled(store.snapshot.isScheduleAutomatic)
 
-                Text("Resets \(weekdayNames[store.settings.resetSchedule.weekday - 1]) at \(String(format: "%02d:%02d", store.settings.resetSchedule.hour, store.settings.resetSchedule.minute)), \(store.settings.resetSchedule.timeZone.identifier). Read this off Claude Code's /usage.")
-                    .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !store.snapshot.isScheduleAutomatic {
+                    Text("Resets \(weekdayNames[store.settings.resetSchedule.weekday - 1]) at \(String(format: "%02d:%02d", store.settings.resetSchedule.hour, store.settings.resetSchedule.minute)), \(store.settings.resetSchedule.timeZone.identifier). Fallback only — used until Claude Code reports the real reset time.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 Toggle("Launch at login", isOn: Binding(
                     get: { store.settings.launchAtLogin },
@@ -82,6 +95,12 @@ struct SettingsView: View {
         // the window instead of leaving dead space below when it is collapsed.
         .frame(width: 380, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var automaticResetDescription: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE h:mm a"
+        return formatter.string(from: store.snapshot.window.end)
     }
 
     private func weightRow(_ label: String, _ value: Binding<Double>) -> some View {

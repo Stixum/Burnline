@@ -11,18 +11,32 @@ public struct Snapshot: Equatable, Sendable {
     public let projectedPercent: Double?
     public let unitsInWindow: Double
     public let calibrationAge: TimeInterval?
+    /// Where `estimatedPercent` came from — exact, calibrated, or absent.
+    public let source: UsageSource
+    /// True when the window came from Claude Code's `resets_at` rather than the
+    /// user's configured schedule.
+    public let isScheduleAutomatic: Bool
     public let isScanning: Bool
 
     public init(window: Window, targetPercent: Double, estimatedPercent: Double?,
                 projectedPercent: Double?, unitsInWindow: Double,
-                calibrationAge: TimeInterval?, isScanning: Bool) {
+                calibrationAge: TimeInterval?, source: UsageSource = .paceOnly,
+                isScheduleAutomatic: Bool = false, isScanning: Bool) {
         self.window = window
         self.targetPercent = targetPercent
         self.estimatedPercent = estimatedPercent
         self.projectedPercent = projectedPercent
         self.unitsInWindow = unitsInWindow
         self.calibrationAge = calibrationAge
+        self.source = source
+        self.isScheduleAutomatic = isScheduleAutomatic
         self.isScanning = isScanning
+    }
+
+    /// Age of the live capture, when there is one.
+    public var liveAge: TimeInterval? {
+        guard case let .live(capturedAt) = source else { return nil }
+        return Date().timeIntervalSince(capturedAt)
     }
 
     /// Positive means under budget.
