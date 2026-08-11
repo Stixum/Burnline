@@ -88,9 +88,11 @@ struct PopoverView: View {
             Spacer()
             Text(legendTarget)
         }
-        .font(.system(size: 10)).monospacedDigit()
+        .font(.system(size: 10.5)).monospacedDigit()
         .foregroundStyle(Theme.textMuted)
-        .padding(.top, 7)
+        // The bar's caption. At 7 it sat almost on the bar's edge while the gap
+        // below it was larger — the group read upside down.
+        .padding(.top, 10)
     }
 
     private var rows: some View {

@@ -33,12 +33,18 @@ final class UsageStore {
     @ObservationIgnored private let rateLimitStore = RateLimitStore()
     @ObservationIgnored private let highWaterStore = HighWaterStore()
     @ObservationIgnored private var highWater = HighWaterStore().load()
-    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var scanTask: Task<Void, Never>?
+    @ObservationIgnored private var captureTask: Task<Void, Never>?
     @ObservationIgnored private var lastRefresh = Date.distantPast
     @ObservationIgnored private var isRefreshing = false
 
-    /// How often the timer fires, and the floor between popover-triggered refreshes.
-    private static let refreshInterval: Duration = .seconds(60)
+    /// The transcript scan — the expensive half, 36ms warm and ~6s cold.
+    private static let scanInterval: Duration = .seconds(60)
+    /// Re-reading the capture: 141 bytes and a pure rebuild. It used to be
+    /// welded to the scan, so a capture landing just after a tick sat unread for
+    /// most of a minute even though the statusline writes every 30s.
+    private static let captureInterval: Duration = .seconds(10)
+    /// Floor between popover-triggered refreshes.
     private static let manualRefreshFloor: TimeInterval = 5
 
     init() {
@@ -52,18 +58,36 @@ final class UsageStore {
     }
 
     func start() {
-        guard refreshTask == nil else { return }
-        refreshTask = Task { [weak self] in
+        guard scanTask == nil else { return }
+
+        scanTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
-                try? await Task.sleep(for: UsageStore.refreshInterval)
+                try? await Task.sleep(for: UsageStore.scanInterval)
+            }
+        }
+
+        // Decoupled from the scan on purpose. Rebuilding is a 141-byte read and
+        // a pure snapshot build, so pacing it to the cost of the scan was
+        // wasting most of a minute of freshness for nothing. It also makes the
+        // pace target advance smoothly instead of stepping once a minute.
+        // Sleeps first: `refresh()` above already rebuilds at launch.
+        captureTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: UsageStore.captureInterval)
+                guard !Task.isCancelled else { return }
+                // No `await`: `Task {}` inherits this class's MainActor
+                // isolation, so `rebuild()` is already on the right actor.
+                self?.rebuild()
             }
         }
     }
 
     func stop() {
-        refreshTask?.cancel()
-        refreshTask = nil
+        scanTask?.cancel()
+        scanTask = nil
+        captureTask?.cancel()
+        captureTask = nil
     }
 
     /// Called when the popover opens. Debounced so repeated clicks don't rescan.

@@ -13,11 +13,14 @@ enum Theme {
     static let warning = Color(red: 251 / 255, green: 191 / 255, blue: 36 / 255)        // #fbbf24
     static let danger = Color(red: 248 / 255, green: 113 / 255, blue: 113 / 255)        // #f87171
 
-    // Muted greys picked to clear 4.5:1 against #0a0a0f — the design standards
-    // call out low-alpha muted text on near-black as a recurring failure.
-    static let textPrimary = Color.white
-    static let textSecondary = Color(red: 180 / 255, green: 180 / 255, blue: 196 / 255) // #B4B4C4, 9.3:1
-    static let textMuted = Color(red: 133 / 255, green: 133 / 255, blue: 154 / 255)     // #85859A, 5.3:1
+    // Muted greys clear **7:1 (AAA)** against #0a0a0f, not merely 4.5:1 (AA).
+    // AA is a floor for body text at normal sizes; almost everything here is
+    // 10–11.5pt, and the design standards call out low-alpha muted text on
+    // near-black as a recurring failure. The old #85859A measured 5.47:1 and
+    // read as grey-on-grey at those sizes.
+    static let textPrimary = Color.white                                                // 19.4:1
+    static let textSecondary = Color(red: 196 / 255, green: 196 / 255, blue: 210 / 255) // #C4C4D2, 11.5:1
+    static let textMuted = Color(red: 168 / 255, green: 168 / 255, blue: 188 / 255)     // #A8A8BC, 8.5:1
 
     // SOFT radius camp
     static let radiusCard: CGFloat = 12
