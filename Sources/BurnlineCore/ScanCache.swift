@@ -27,10 +27,18 @@ public struct ScanCache: Equatable, Sendable, Codable {
 
     public var version: Int
     public var files: [String: FileState]
+    /// The weights the buckets were scored with.
+    ///
+    /// Buckets hold *weighted* units, so a cache says nothing about any other
+    /// weight set — and the scale can't be recovered after the fact. `nil` means
+    /// a cache written before this was tracked, which is equally unusable.
+    public var weights: Weights?
 
-    public init(version: Int = ScanCache.currentVersion, files: [String: FileState] = [:]) {
+    public init(version: Int = ScanCache.currentVersion, files: [String: FileState] = [:],
+                weights: Weights? = nil) {
         self.version = version
         self.files = files
+        self.weights = weights
     }
 
     public var isCompatible: Bool { version == Self.currentVersion }

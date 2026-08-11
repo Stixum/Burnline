@@ -72,15 +72,22 @@ final class UsageStore {
         let scanner = TranscriptScanner(weights: storedSettings.weights)
         let current = cache
         let now = Date()
+        let store = cacheStore
 
-        // ScanCache, TranscriptScanner and Weights are all Sendable, so the scan
-        // hops off the main actor cleanly with no locking.
+        // ScanCache, TranscriptScanner, Weights and CacheStore are all Sendable,
+        // so the scan hops off the main actor cleanly with no locking. Persisting
+        // goes with it: the cache is a few hundred KB and encoding it has no
+        // business on the UI thread.
         let updated = await Task.detached(priority: .utility) {
-            (try? scanner.scan(cache: current, now: now)) ?? current
+            guard let scanned = try? scanner.scan(cache: current, now: now) else { return current }
+            // Only when something actually moved. The timer fires every 60s
+            // whether or not Claude Code ran, and an idle machine would otherwise
+            // rewrite the whole cache overnight for no change at all.
+            if scanned != current { try? store.save(scanned) }
+            return scanned
         }.value
 
         cache = updated
-        try? cacheStore.save(updated)
         lastRefresh = Date()
         isScanning = false
         rebuild()
