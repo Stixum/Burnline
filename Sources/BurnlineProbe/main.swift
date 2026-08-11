@@ -26,15 +26,37 @@ let warmElapsed = Date().timeIntervalSince(warmStarted)
 let drift = abs(warmCache.units(from: now.addingTimeInterval(-30 * 86_400), to: now)
     - cache.units(from: now.addingTimeInterval(-30 * 86_400), to: now))
 
+// Same inputs the app uses, so the probe can diagnose what the app is doing.
+let capture = RateLimitStore().load()
 let snapshot = SnapshotBuilder.build(cache: cache, settings: settings,
-                                     now: now, isScanning: false)
+                                     rateLimit: capture, now: now, isScanning: false)
 
 func percent(_ value: Double?) -> String {
     value.map { String(format: "%.1f%%", $0) } ?? "—"
 }
 
+func describeSource(_ source: UsageSource) -> String {
+    switch source {
+    case .live(let at): return "live (captured \(Int(now.timeIntervalSince(at)))s ago)"
+    case .calibrated:   return "calibrated (manual anchors)"
+    case .paceOnly:     return "pace only"
+    }
+}
+
+var captureNote = "none on disk"
+if let capture {
+    let inWindow = capture.capturedDate >= snapshot.window.start
+        && capture.capturedDate < snapshot.window.end
+    captureNote = "\(capture.sevenDay.usedPercent)% used, resets \(capture.sevenDay.resetsDate), "
+        + "captured \(Int(now.timeIntervalSince(capture.capturedDate)))s ago, "
+        + "inCurrentWindow=\(inWindow)"
+}
+
 print("""
 Burnline probe
+  capture          \(captureNote)
+  source           \(describeSource(snapshot.source))
+  auto schedule    \(snapshot.isScheduleAutomatic)
   scanned          \(cache.files.count) files
   cold scan        \(String(format: "%.2f", elapsed))s   (empty cache, reads every retained file)
   warm scan        \(String(format: "%.3f", warmElapsed))s   (cache reused — the 60s timer's path)
