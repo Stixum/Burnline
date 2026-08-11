@@ -9,21 +9,16 @@ struct BurnlineApp: App {
         MenuBarExtra {
             PopoverView(store: store)
         } label: {
-            // No color here on purpose — macOS tints menu bar content for light
-            // and dark bars, and a hardcoded color breaks one of them.
-            Text(MenuBarFormatter.text(for: store.snapshot))
-                .monospacedDigit()
-                .accessibilityLabel(MenuBarFormatter.accessibilityLabel(for: store.snapshot))
-                // The label is live from launch, so this starts the refresh loop
-                // even if the popover is never opened.
-                .task { store.start() }
+            MenuBarLabel(store: store)
         }
         .menuBarExtraStyle(.window)
 
-        // A real Settings scene, not a sheet: a menu bar popover dismisses when
-        // it loses focus, which would tear a sheet down with it.
-        Settings {
+        // An explicit Window, not a Settings scene: SettingsLink silently does
+        // nothing in an LSUIElement app. See SettingsWindow.open.
+        Window("Burnline Settings", id: SettingsWindow.id) {
             SettingsView(store: store)
         }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
     }
 }

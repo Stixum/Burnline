@@ -3,6 +3,7 @@ import BurnlineCore
 
 struct PopoverView: View {
     @Bindable var store: UsageStore
+    @Environment(\.openWindow) private var openWindow
     @State private var calibrationInput = ""
     @State private var isCalibrating = false
 
@@ -113,12 +114,11 @@ struct PopoverView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(snapshot.isCalibrationStale ? Theme.danger : Theme.accent)
                 Spacer()
-                SettingsLink {
-                    Text("Settings")
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.textMuted)
+                Button("Settings") { SettingsWindow.open(using: openWindow) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textMuted)
+                    .keyboardShortcut(",")
                 Button("Quit") { NSApplication.shared.terminate(nil) }
                     .buttonStyle(.plain).font(.system(size: 11))
                     .foregroundStyle(Theme.textMuted)
