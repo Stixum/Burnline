@@ -526,11 +526,16 @@ private struct TempDir: ~Copyable {
 
 private let never = Date(timeIntervalSince1970: 0)
 
+/// Real "now": the temp files carry real mtimes, and the scanner evicts
+/// anything older than `now - 14 days`. Passing `.distantFuture` here would
+/// put the retention cutoff in the future and evict every file just scanned.
+private let scanTime = Date()
+
 @Test func scansASingleFile() throws {
     let dir = TempDir()
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
     let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
-    let cache = try scanner.scan(cache: ScanCache(), now: .distantFuture)
+    let cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     // 100 output × 5.0 × sonnet 1.0
     #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
 }
@@ -540,7 +545,7 @@ private let never = Date(timeIntervalSince1970: 0)
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
     _ = dir.write(line(output: 100), to: "proj/notes.txt")
     let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
-    let cache = try scanner.scan(cache: ScanCache(), now: .distantFuture)
+    let cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
 }
 
@@ -548,11 +553,11 @@ private let never = Date(timeIntervalSince1970: 0)
     let dir = TempDir()
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
     let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
-    var cache = try scanner.scan(cache: ScanCache(), now: .distantFuture)
+    var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     let firstOffset = cache.files.values.first!.offset
 
     dir.append(line(output: 100), to: "proj/a.jsonl")
-    cache = try scanner.scan(cache: cache, now: .distantFuture)
+    cache = try scanner.scan(cache: cache, now: scanTime)
 
     #expect(cache.files.values.first!.offset > firstOffset)
     #expect(abs(cache.units(from: never, to: .distantFuture) - 1000) < 1e-9)
@@ -562,9 +567,9 @@ private let never = Date(timeIntervalSince1970: 0)
     let dir = TempDir()
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
     let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
-    var cache = try scanner.scan(cache: ScanCache(), now: .distantFuture)
-    cache = try scanner.scan(cache: cache, now: .distantFuture)
-    cache = try scanner.scan(cache: cache, now: .distantFuture)
+    var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
+    cache = try scanner.scan(cache: cache, now: scanTime)
+    cache = try scanner.scan(cache: cache, now: scanTime)
     #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
 }
 
@@ -575,12 +580,12 @@ private let never = Date(timeIntervalSince1970: 0)
     _ = dir.write(complete + partial, to: "proj/a.jsonl")
 
     let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
-    var cache = try scanner.scan(cache: ScanCache(), now: .distantFuture)
+    var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
 
     // Complete the partial line; its full value must now be counted exactly once.
     dir.append(String(line(output: 200).suffix(30)), to: "proj/a.jsonl")
-    cache = try scanner.scan(cache: cache, now: .distantFuture)
+    cache = try scanner.scan(cache: cache, now: scanTime)
     #expect(abs(cache.units(from: never, to: .distantFuture) - 1500) < 1e-9)
 }
 
@@ -588,12 +593,12 @@ private let never = Date(timeIntervalSince1970: 0)
     let dir = TempDir()
     _ = dir.write(line(output: 100) + line(output: 100), to: "proj/a.jsonl")
     let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
-    var cache = try scanner.scan(cache: ScanCache(), now: .distantFuture)
+    var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     #expect(abs(cache.units(from: never, to: .distantFuture) - 1000) < 1e-9)
 
     // Rewrite shorter — offset now exceeds size.
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
-    cache = try scanner.scan(cache: cache, now: .distantFuture)
+    cache = try scanner.scan(cache: cache, now: scanTime)
     #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
 }
 
@@ -601,7 +606,7 @@ private let never = Date(timeIntervalSince1970: 0)
     let dir = TempDir()
     _ = dir.write(line(output: 100, model: "claude-opus-5"), to: "proj/a.jsonl")
     let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
-    let cache = try scanner.scan(cache: ScanCache(), now: .distantFuture)
+    let cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     // 100 × 5.0 output × 5.0 opus
     #expect(abs(cache.units(from: never, to: .distantFuture) - 2500) < 1e-9)
 }
@@ -609,7 +614,7 @@ private let never = Date(timeIntervalSince1970: 0)
 @Test func missingRootDirectoryYieldsAnEmptyCache() throws {
     let missing = URL(fileURLWithPath: "/tmp/burnline-does-not-exist-\(UUID().uuidString)")
     let scanner = TranscriptScanner(rootURL: missing, weights: .default)
-    let cache = try scanner.scan(cache: ScanCache(), now: .distantFuture)
+    let cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     #expect(cache.files.isEmpty)
 }
 
@@ -617,11 +622,11 @@ private let never = Date(timeIntervalSince1970: 0)
     let dir = TempDir()
     let file = dir.write(line(output: 100), to: "proj/a.jsonl")
     let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
-    var cache = try scanner.scan(cache: ScanCache(), now: .distantFuture)
+    var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     #expect(cache.files.count == 1)
 
     try FileManager.default.removeItem(at: file)
-    cache = try scanner.scan(cache: cache, now: .distantFuture)
+    cache = try scanner.scan(cache: cache, now: scanTime)
     #expect(cache.files.isEmpty)
 }
 ```
