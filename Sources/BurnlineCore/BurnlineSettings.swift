@@ -7,17 +7,20 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
     public var launchAtLogin: Bool
     public var targetMode: TargetMode
     public var dayBoundary: DayBoundary
+    public var menuBarMode: MenuBarMode
 
     public init(resetSchedule: ResetSchedule, weights: Weights,
                 calibrationAnchors: [CalibrationAnchor], launchAtLogin: Bool,
                 targetMode: TargetMode = .realTime,
-                dayBoundary: DayBoundary = .windowDay) {
+                dayBoundary: DayBoundary = .windowDay,
+                menuBarMode: MenuBarMode = .usedOverTarget) {
         self.resetSchedule = resetSchedule
         self.weights = weights
         self.calibrationAnchors = calibrationAnchors
         self.launchAtLogin = launchAtLogin
         self.targetMode = targetMode
         self.dayBoundary = dayBoundary
+        self.menuBarMode = menuBarMode
     }
 
     /// Thursday 09:00 local is a placeholder — replaced by the real reset as
@@ -41,5 +44,6 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
         targetMode = try container.decodeIfPresent(TargetMode.self, forKey: .targetMode) ?? .realTime
         dayBoundary = try container.decodeIfPresent(DayBoundary.self, forKey: .dayBoundary) ?? .windowDay
+        menuBarMode = try container.decodeIfPresent(MenuBarMode.self, forKey: .menuBarMode) ?? .usedOverTarget
     }
 }
