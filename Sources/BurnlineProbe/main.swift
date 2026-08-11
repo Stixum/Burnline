@@ -86,4 +86,10 @@ Burnline probe
   projected        \(percent(snapshot.projectedPercent))
   pace-only        \(snapshot.isPaceOnly)
   5-hour           \(snapshot.fiveHour?.rowValue ?? "—")
+
+menu bar, every format (against \(settings.targetMode.title.lowercased()))
+\(MenuBarMode.allCases.map { mode in
+    "  \(mode.title.padding(toLength: 16, withPad: " ", startingAt: 0))"
+        + MenuBarFormatter.text(for: snapshot, target: settings.targetMode, display: mode)
+}.joined(separator: "\n"))
 """)
