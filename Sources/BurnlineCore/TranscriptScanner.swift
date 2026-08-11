@@ -19,7 +19,12 @@ public struct TranscriptScanner: Sendable {
     }
 
     public func scan(cache incoming: ScanCache, now: Date) throws -> ScanCache {
-        var cache = incoming.isCompatible ? incoming : ScanCache()
+        // Buckets hold weighted units, so a cache scored under different weights
+        // is not partially reusable — the old buckets can't be rescaled and the
+        // incremental path would leave a permanent mix of two weightings. Start
+        // over instead. Only pays the cold-scan cost when the weights change.
+        let reusable = incoming.isCompatible && incoming.weights == weights
+        var cache = reusable ? incoming : ScanCache(weights: weights)
         let parser = TranscriptParser()
         var seen = Set<String>()
 

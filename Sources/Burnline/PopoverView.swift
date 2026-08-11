@@ -148,31 +148,29 @@ struct PopoverView: View {
     }
 
     /// Says plainly where the number came from — exact, estimated, or absent.
+    ///
+    /// A capture that has aged past the threshold is no longer a reading, it is
+    /// an hour or more of extrapolation from local tokens alone. Word and colour
+    /// both change; never colour alone.
     @ViewBuilder private var sourceLabel: some View {
         switch snapshot.source {
         case .live:
+            let stale = CaptureAge.isStale(snapshot.liveAge)
             HStack(spacing: 4) {
-                Circle().fill(Theme.success).frame(width: 5, height: 5)
-                Text("Live · \(liveAgeDescription)")
+                Circle().fill(stale ? Theme.warning : Theme.success).frame(width: 5, height: 5)
+                Text("\(stale ? "Extrapolated" : "Live") · \(CaptureAge.description(snapshot.liveAge))")
             }
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(Theme.success)
-            .help("Exact figure from Claude Code, carried forward by local token counts.")
+            .foregroundStyle(stale ? Theme.warning : Theme.success)
+            .help(stale
+                  ? "Claude Code hasn't reported in a while. This figure is carried forward from local token counts, which see only this Mac."
+                  : "Exact figure from Claude Code, carried forward by local token counts.")
         case .calibrated, .paceOnly:
             Button(calibrationLabel) { isCalibrating = true }
                 .buttonStyle(.plain)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(snapshot.isCalibrationStale ? Theme.danger : Theme.accent)
         }
-    }
-
-    private var liveAgeDescription: String {
-        guard let age = snapshot.liveAge else { return "now" }
-        if age < 90 { return "just now" }
-        let minutes = Int(age / 60)
-        if minutes < 60 { return "\(minutes)m ago" }
-        let hours = minutes / 60
-        return hours < 24 ? "\(hours)h ago" : "\(hours / 24)d ago"
     }
 
     private var calibrationLabel: String {

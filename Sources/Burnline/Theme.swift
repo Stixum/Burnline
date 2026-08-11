@@ -10,6 +10,7 @@ enum Theme {
 
     static let accent = Color(red: 124 / 255, green: 92 / 255, blue: 255 / 255)         // #7C5CFF
     static let success = Color(red: 74 / 255, green: 222 / 255, blue: 128 / 255)        // #4ade80
+    static let warning = Color(red: 251 / 255, green: 191 / 255, blue: 36 / 255)        // #fbbf24
     static let danger = Color(red: 248 / 255, green: 113 / 255, blue: 113 / 255)        // #f87171
 
     // Muted greys picked to clear 4.5:1 against #0a0a0f — the design standards
