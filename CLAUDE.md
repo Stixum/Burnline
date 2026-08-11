@@ -41,13 +41,18 @@ Views read a single immutable `Snapshot`. **No arithmetic in a view body** — i
 - **Calibration least-squares is through the origin.** Zero units must mean zero percent. Reject anchors below 5% (division noise) or older than 60 days.
 - **Projection is suppressed when `elapsedFraction < 0.02`.** Dividing by a near-zero denominator early in a window produces nonsense.
 - **Cache-read tokens dominate the weighted total** (8.9B vs 26M output in a sample week). Their weight is exposed in Settings for that reason — don't hardcode it.
+- **Never put a hardcoded color on the menu bar label.** macOS renders it against a light or dark bar depending on the user's wallpaper and tints template content automatically. Hardcoded violet or green is unreadable on one of them. The popover is hardcoded dark; all color lives there. These two rules look contradictory and are both correct.
+- **Buckets are 15 minutes and window totals sum whole buckets**, so a bucket straddling the reset counts all-in or all-out — bounded at 0.15% of a week. Don't "fix" this by summing partial buckets; the sub-bucket detail was never stored.
 
 ## Commands
 
 ```bash
-./build.sh                                    # Release build, sign, install to /Applications
-xcodebuild -scheme Burnline test              # run the Swift Testing suite
+swift test                 # run the Swift Testing suite
+swift run BurnlineProbe    # print a Snapshot from the real transcripts
+./build.sh --install       # release build, assemble bundle, sign, install to /Applications
 ```
+
+**Built with SwiftPM, not Xcode.** Three targets: `BurnlineCore` (library, all logic, no SwiftUI), `Burnline` (executable, SwiftUI only), `BurnlineProbe` (CLI diagnostic). `build.sh` assembles the `.app` bundle around the SPM binary. There is no `.xcodeproj` and adding one would break CLI builds and tests.
 
 ## Design language
 
