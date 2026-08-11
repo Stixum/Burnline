@@ -31,6 +31,8 @@ final class UsageStore {
     @ObservationIgnored private let settingsStore = SettingsStore()
     @ObservationIgnored private let cacheStore = CacheStore()
     @ObservationIgnored private let rateLimitStore = RateLimitStore()
+    @ObservationIgnored private let highWaterStore = HighWaterStore()
+    @ObservationIgnored private var highWater = HighWaterStore().load()
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var lastRefresh = Date.distantPast
     @ObservationIgnored private var isRefreshing = false
@@ -132,8 +134,23 @@ final class UsageStore {
     private func rebuild() {
         // Re-read every time: the statusline script rewrites this file from
         // another process whenever Claude Code produces a response.
+        //
+        // Reconcile against the high-water mark before trusting it. Every open
+        // Claude Code session writes this same file on its own timer, and an idle
+        // one keeps publishing the stale rate_limits snapshot it started with —
+        // so the last writer is routinely not the freshest.
+        var capture = rateLimitStore.load()
+        if let incoming = capture {
+            let (resolved, mark) = RateLimitHighWater.reconcile(incoming, against: highWater)
+            capture = resolved
+            if mark != highWater {
+                highWater = mark
+                try? highWaterStore.save(mark)
+            }
+        }
+
         snapshot = SnapshotBuilder.build(cache: cache, settings: storedSettings,
-                                         rateLimit: rateLimitStore.load(),
+                                         rateLimit: capture,
                                          now: Date(), isScanning: isScanning)
     }
 }
