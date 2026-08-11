@@ -137,7 +137,7 @@ struct SettingsView: View {
                         }
                         ForEach(store.settings.calibrationAnchors) { anchor in
                             HStack {
-                                Text("\(Int(anchor.observedPercent))% · \(anchor.timestamp.formatted(date: .abbreviated, time: .shortened))")
+                                Text("\(DisplayValue.whole(anchor.observedPercent))% · \(anchor.timestamp.formatted(date: .abbreviated, time: .shortened))")
                                     .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
                                 Spacer()
                                 Button("Remove") { store.removeAnchor(anchor) }
@@ -159,8 +159,8 @@ struct SettingsView: View {
     /// Spells out the choice with the live numbers, so it is concrete rather
     /// than abstract. Both targets stay on the bar either way.
     private var targetModeExplanation: String {
-        let now = Int(store.snapshot.targetPercent.rounded())
-        let today = Int(store.snapshot.endOfDayPercent.rounded())
+        let now = DisplayValue.whole(store.snapshot.targetPercent)
+        let today = DisplayValue.whole(store.snapshot.endOfDayPercent)
         switch store.settings.targetMode {
         case .realTime:
             return "\(TargetMode.realTime.explanation) Right now that's \(now)%. The bar still shades today's allowance out to \(today)%."
@@ -179,7 +179,7 @@ struct SettingsView: View {
         let resetClock = formatter.string(from: store.snapshot.window.end)
 
         let base = store.settings.dayBoundary.explanation
-        let today = Int(store.snapshot.endOfDayPercent.rounded())
+        let today = DisplayValue.whole(store.snapshot.endOfDayPercent)
         switch store.settings.dayBoundary {
         case .windowDay:
             return "\(base) Yours end at \(resetClock) — currently \(today)%."

@@ -23,7 +23,7 @@ public enum CaptureAge {
     public static func description(_ age: TimeInterval?) -> String {
         guard let age else { return "now" }
         if age < 90 { return "just now" }
-        let minutes = Int(age / 60)
+        let minutes = DisplayValue.seconds(age) / 60
         if minutes < 60 { return "\(minutes)m ago" }
         let hours = minutes / 60
         return hours < 24 ? "\(hours)h ago" : "\(hours / 24)d ago"

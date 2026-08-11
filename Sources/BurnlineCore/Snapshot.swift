@@ -17,7 +17,7 @@ public struct FiveHourStatus: Equatable, Sendable {
     }
 
     public var remainingDescription: String {
-        let total = Int(max(0, timeRemaining))
+        let total = max(0, DisplayValue.seconds(timeRemaining))
         let hours = total / 3_600
         let minutes = (total % 3_600) / 60
         return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
@@ -25,7 +25,7 @@ public struct FiveHourStatus: Equatable, Sendable {
 
     /// The popover row value, assembled here so the view body stays declarative.
     public var rowValue: String {
-        "\(Int(usedPercent.rounded()))% · \(remainingDescription) left"
+        "\(DisplayValue.whole(usedPercent))% · \(remainingDescription) left"
     }
 }
 

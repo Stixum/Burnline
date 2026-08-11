@@ -13,8 +13,8 @@ struct PopoverView: View {
     /// Names the target being compared against, so the number is never ambiguous.
     private var legendTarget: String {
         switch mode {
-        case .realTime: return "now \(Int(snapshot.targetPercent.rounded()))%  ·  today \(Int(snapshot.endOfDayPercent.rounded()))%"
-        case .endOfDay: return "today \(Int(snapshot.endOfDayPercent.rounded()))%  ·  now \(Int(snapshot.targetPercent.rounded()))%"
+        case .realTime: return "now \(DisplayValue.whole(snapshot.targetPercent))%  ·  today \(DisplayValue.whole(snapshot.endOfDayPercent))%"
+        case .endOfDay: return "today \(DisplayValue.whole(snapshot.endOfDayPercent))%  ·  now \(DisplayValue.whole(snapshot.targetPercent))%"
         }
     }
 
@@ -46,7 +46,7 @@ struct PopoverView: View {
     @ViewBuilder private var hero: some View {
         if snapshot.isPaceOnly {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(Int(snapshot.activeTarget(mode).rounded()))%")
+                Text("\(DisplayValue.whole(snapshot.activeTarget(mode)))%")
                     .font(.system(size: 34, weight: .heavy)).monospacedDigit()
                     .foregroundStyle(Theme.textPrimary)
                 Text("of the window elapsed")
@@ -62,7 +62,7 @@ struct PopoverView: View {
             let delta = snapshot.delta(mode) ?? 0
             let under = snapshot.isUnder(mode) ?? true
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(Int(abs(delta).rounded()))")
+                Text("\(DisplayValue.whole(abs(delta)))")
                     .font(.system(size: 34, weight: .heavy)).monospacedDigit()
                     .foregroundStyle(Theme.textPrimary)
                 Text(under ? "points under budget" : "points over budget")
@@ -84,7 +84,7 @@ struct PopoverView: View {
 
     private var legend: some View {
         HStack {
-            Text(snapshot.estimatedPercent.map { "\(Int($0.rounded()))% used" } ?? "usage unknown")
+            Text(snapshot.estimatedPercent.map { "\(DisplayValue.whole($0))% used" } ?? "usage unknown")
             Spacer()
             Text(legendTarget)
         }
@@ -182,7 +182,7 @@ struct PopoverView: View {
 
     private var calibrationLabel: String {
         guard let age = snapshot.calibrationAge else { return "Calibrate" }
-        let days = Int(age / 86_400)
+        let days = DisplayValue.seconds(age) / 86_400
         return days < 1 ? "Calibrated today" : "Calibrated \(days)d ago"
     }
 
@@ -194,7 +194,7 @@ struct PopoverView: View {
     }
 
     private var remainingDescription: String {
-        let total = Int(snapshot.window.timeRemaining)
+        let total = DisplayValue.seconds(snapshot.window.timeRemaining)
         let days = total / 86_400
         let hours = (total % 86_400) / 3600
         return days > 0 ? "\(days)d \(hours)h" : "\(hours)h"

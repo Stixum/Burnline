@@ -23,7 +23,7 @@ public enum Projection {
     /// colour alone.
     public static func description(_ projected: Double?) -> String {
         guard let projected else { return "—" }
-        let whole = "\(Int(projected.rounded()))% by reset"
+        let whole = "\(DisplayValue.whole(projected))% by reset"
         return isOverLimit(projected) ? "over limit · \(whole)" : whole
     }
 }

@@ -10,8 +10,17 @@ import Foundation
 public enum Bucket {
     public static let seconds: TimeInterval = 900
 
+    /// Beyond ±30,000 years from 1970 a timestamp is nonsense, and the bare
+    /// `Int(Double)` below would **trap** on anything larger — including the
+    /// infinities a crafted `rate-limits.json` or `scan-cache.json` can produce.
+    /// This is the arithmetic path, not a display path, so it clamps here rather
+    /// than going through `DisplayValue`.
+    private static let epochBound: Double = 1e12
+
     public static func key(for date: Date) -> Int {
-        Int((date.timeIntervalSince1970 / seconds).rounded(.down))
+        let epoch = date.timeIntervalSince1970
+        guard !epoch.isNaN else { return 0 }
+        return Int((min(max(epoch, -epochBound), epochBound) / seconds).rounded(.down))
     }
 
     public static func start(ofKey key: Int) -> Date {
