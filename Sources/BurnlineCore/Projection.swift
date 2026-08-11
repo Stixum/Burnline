@@ -11,4 +11,19 @@ public enum Projection {
               elapsedFraction >= minimumElapsedFraction else { return nil }
         return estimate / elapsedFraction
     }
+
+    /// Landing above 100% is the one thing in the popover that should change
+    /// what you do next.
+    public static func isOverLimit(_ projected: Double?) -> Bool {
+        guard let projected else { return false }
+        return projected > 100
+    }
+
+    /// The popover row value. Leads with the word, so the warning never rests on
+    /// colour alone.
+    public static func description(_ projected: Double?) -> String {
+        guard let projected else { return "—" }
+        let whole = "\(Int(projected.rounded()))% by reset"
+        return isOverLimit(projected) ? "over limit · \(whole)" : whole
+    }
 }

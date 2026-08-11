@@ -17,8 +17,12 @@ final class UsageStore {
             return storedSettings
         }
         set {
-            withMutation(keyPath: \.settings) { storedSettings = newValue }
-            try? settingsStore.save(newValue)
+            // Single choke point for validation, so a hand-edited settings.json
+            // is covered as well as the Settings text fields.
+            var sanitized = newValue
+            sanitized.weights = newValue.weights.sanitized()
+            withMutation(keyPath: \.settings) { storedSettings = sanitized }
+            try? settingsStore.save(sanitized)
             rebuild()
         }
     }
@@ -29,6 +33,7 @@ final class UsageStore {
     @ObservationIgnored private let rateLimitStore = RateLimitStore()
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var lastRefresh = Date.distantPast
+    @ObservationIgnored private var isRefreshing = false
 
     /// How often the timer fires, and the floor between popover-triggered refreshes.
     private static let refreshInterval: Duration = .seconds(60)
@@ -66,6 +71,13 @@ final class UsageStore {
     }
 
     func refresh() async {
+        // `lastRefresh` isn't set until a scan finishes, so during a cold scan
+        // the debounce above lets every popover open start another one. One at a
+        // time: a second scan of the same tree would only repeat the work.
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
         isScanning = true
         rebuild()
 
@@ -105,6 +117,9 @@ final class UsageStore {
         updated.calibrationAnchors.append(
             CalibrationAnchor(timestamp: now, observedPercent: observedPercent, unitsInWindow: units)
         )
+        // Prune on write. `validAnchors` only filters what the fit may use, so
+        // without this the stored list — and the Settings display — grows forever.
+        updated.calibrationAnchors = Calibration.retained(updated.calibrationAnchors, now: now)
         settings = updated
     }
 

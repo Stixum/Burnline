@@ -6,7 +6,7 @@
 
 ## What this is
 
-A macOS menu bar app (SwiftUI, `MenuBarExtra`, macOS 14+, Swift 6) showing estimated Claude usage against the pace target for the current weekly window. Menu bar reads `◐ 40/71` — actual over target.
+A macOS menu bar app (SwiftUI, `MenuBarExtra`, macOS 14+, Swift 6) showing estimated Claude usage against the pace target for the current weekly window. Menu bar reads `64/65` — actual over target, no glyph and no colour (see the menu bar gotcha below).
 
 Personal tool. Locally built and installed to `/Applications`, never App Store. **Unsandboxed on purpose** — that's what gives plain read access to `~/.claude` with no entitlement or TCC work. Don't add the sandbox entitlement; it breaks the only data source.
 

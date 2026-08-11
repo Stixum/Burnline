@@ -37,6 +37,24 @@ public struct Weights: Equatable, Sendable, Codable {
         self.defaultMultiplier = defaultMultiplier
     }
 
+    /// Clamps every weight to zero or above.
+    ///
+    /// Zero is legitimate — it means "ignore this token class" — but a negative
+    /// weight makes units run backwards, so the estimate would fall as tokens
+    /// are burned. Nothing in the Settings text fields prevents one being typed.
+    public func sanitized() -> Weights {
+        Weights(
+            input: max(0, input),
+            cacheWrite: max(0, cacheWrite),
+            cacheRead: max(0, cacheRead),
+            output: max(0, output),
+            modelMultipliers: modelMultipliers.map {
+                ModelMultiplier(match: $0.match, multiplier: max(0, $0.multiplier))
+            },
+            defaultMultiplier: max(0, defaultMultiplier)
+        )
+    }
+
     public static let `default` = Weights(
         input: 1.0,
         cacheWrite: 1.25,

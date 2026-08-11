@@ -98,7 +98,11 @@ struct PopoverView: View {
             row("Day", String(format: "%.1f of 7", snapshot.window.dayIndex))
             row("Resets", resetDescription)
             row("Time left", remainingDescription)
-            row("At this rate", snapshot.projectedPercent.map { "\(Int($0.rounded()))% by reset" } ?? "—")
+            // The one row that should change what you do next, so it is allowed
+            // to shout when the week is heading past the limit.
+            row("At this rate", Projection.description(snapshot.projectedPercent),
+                tint: Projection.isOverLimit(snapshot.projectedPercent)
+                    ? Theme.danger : Theme.textSecondary)
             // Only when a live capture carries one — it's absent on plans that
             // don't report a 5-hour limit, and dies with its own window.
             if let fiveHour = snapshot.fiveHour {
@@ -107,11 +111,12 @@ struct PopoverView: View {
         }
     }
 
-    private func row(_ label: String, _ value: String) -> some View {
+    private func row(_ label: String, _ value: String,
+                     tint: Color = Theme.textSecondary) -> some View {
         HStack {
             Text(label).foregroundStyle(Theme.textMuted)
             Spacer()
-            Text(value).foregroundStyle(Theme.textSecondary).monospacedDigit()
+            Text(value).foregroundStyle(tint).monospacedDigit()
         }
         .font(.system(size: 11.5))
     }

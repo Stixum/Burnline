@@ -57,10 +57,26 @@ public struct ScanCache: Equatable, Sendable, Codable {
         return total
     }
 
-    /// Drops files not modified since `cutoff`. If such a file is touched again
-    /// it re-reads from zero; the buckets it recomputes fall outside any live
-    /// window, so the double-read is harmless.
+    /// Drops files not modified since `cutoff`, and stale buckets inside the
+    /// files that survive.
+    ///
+    /// If an evicted file is touched again it re-reads from zero; the buckets it
+    /// recomputes fall outside any live window, so the double-read is harmless.
+    ///
+    /// The per-bucket half matters for the opposite case: a file appended to
+    /// continuously never ages out, so without it that file's buckets would
+    /// accumulate forever. Retention is longer than any window, so a bucket
+    /// below the cutoff can never be counted again.
     public mutating func evict(before cutoff: Date) {
-        files = files.filter { $0.value.modifiedAt >= cutoff }
+        let oldestKey = Bucket.key(for: cutoff)
+        files = files.compactMapValues { state in
+            guard state.modifiedAt >= cutoff else { return nil }
+            var state = state
+            state.buckets = state.buckets.filter { key, _ in
+                guard let key = Int(key) else { return false }
+                return key >= oldestKey
+            }
+            return state
+        }
     }
 }
