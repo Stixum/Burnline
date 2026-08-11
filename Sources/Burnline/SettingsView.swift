@@ -14,21 +14,27 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Reset").eyebrow()
 
-                HStack {
-                    Picker("Day", selection: $store.settings.resetSchedule.weekday) {
-                        ForEach(1...7, id: \.self) { Text(weekdayNames[$0 - 1]).tag($0) }
-                    }
-                    .frame(maxWidth: 190)
+                Picker("Day", selection: $store.settings.resetSchedule.weekday) {
+                    ForEach(1...7, id: \.self) { Text(weekdayNames[$0 - 1]).tag($0) }
+                }
+                .frame(maxWidth: 220)
 
+                HStack(spacing: 10) {
                     Stepper(value: $store.settings.resetSchedule.hour, in: 0...23) {
-                        Text(String(format: "%02d:00", store.settings.resetSchedule.hour))
+                        Text("Hour \(String(format: "%02d", store.settings.resetSchedule.hour))")
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Stepper(value: $store.settings.resetSchedule.minute, in: 0...59, step: 5) {
+                        Text("Min \(String(format: "%02d", store.settings.resetSchedule.minute))")
                             .monospacedDigit()
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
 
-                Text("Times are in \(store.settings.resetSchedule.timeZone.identifier).")
+                Text("Resets \(weekdayNames[store.settings.resetSchedule.weekday - 1]) at \(String(format: "%02d:%02d", store.settings.resetSchedule.hour, store.settings.resetSchedule.minute)), \(store.settings.resetSchedule.timeZone.identifier). Read this off Claude Code's /usage.")
                     .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Toggle("Launch at login", isOn: Binding(
                     get: { store.settings.launchAtLogin },
