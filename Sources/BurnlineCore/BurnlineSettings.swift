@@ -6,15 +6,18 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
     public var calibrationAnchors: [CalibrationAnchor]
     public var launchAtLogin: Bool
     public var targetMode: TargetMode
+    public var dayBoundary: DayBoundary
 
     public init(resetSchedule: ResetSchedule, weights: Weights,
                 calibrationAnchors: [CalibrationAnchor], launchAtLogin: Bool,
-                targetMode: TargetMode = .realTime) {
+                targetMode: TargetMode = .realTime,
+                dayBoundary: DayBoundary = .windowDay) {
         self.resetSchedule = resetSchedule
         self.weights = weights
         self.calibrationAnchors = calibrationAnchors
         self.launchAtLogin = launchAtLogin
         self.targetMode = targetMode
+        self.dayBoundary = dayBoundary
     }
 
     /// Thursday 09:00 local is a placeholder — replaced by the real reset as
@@ -24,7 +27,8 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         weights: .default,
         calibrationAnchors: [],
         launchAtLogin: false,
-        targetMode: .realTime
+        targetMode: .realTime,
+        dayBoundary: .windowDay
     )
 
     // Hand-written so that settings files predating a field still decode.
@@ -36,5 +40,6 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         calibrationAnchors = try container.decode([CalibrationAnchor].self, forKey: .calibrationAnchors)
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
         targetMode = try container.decodeIfPresent(TargetMode.self, forKey: .targetMode) ?? .realTime
+        dayBoundary = try container.decodeIfPresent(DayBoundary.self, forKey: .dayBoundary) ?? .windowDay
     }
 }

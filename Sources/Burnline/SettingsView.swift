@@ -62,6 +62,21 @@ struct SettingsView: View {
                     .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
+                HStack(spacing: 8) {
+                    Text("\"Today\" ends").font(.system(size: 11))
+                        .foregroundStyle(Theme.textMuted)
+                    Picker("", selection: $store.settings.dayBoundary) {
+                        ForEach(DayBoundary.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+                .padding(.top, 2)
+
+                Text(dayBoundaryExplanation)
+                    .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Divider().overlay(Theme.hairline)
 
                 Toggle("Launch at login", isOn: Binding(
@@ -123,6 +138,25 @@ struct SettingsView: View {
             return "\(TargetMode.realTime.explanation) Right now that's \(now)%. The bar still shades today's allowance out to \(today)%."
         case .endOfDay:
             return "\(TargetMode.endOfDay.explanation) Right now that's \(today)%, versus \(now)% this second. More forgiving during the day."
+        }
+    }
+
+    /// Names the actual clock time each option resolves to, since the two only
+    /// differ by however far the reset sits from midnight.
+    private var dayBoundaryExplanation: String {
+        let schedule = store.settings.resetSchedule
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        formatter.timeZone = schedule.timeZone
+        let resetClock = formatter.string(from: store.snapshot.window.end)
+
+        let base = store.settings.dayBoundary.explanation
+        let today = Int(store.snapshot.endOfDayPercent.rounded())
+        switch store.settings.dayBoundary {
+        case .windowDay:
+            return "\(base) Yours end at \(resetClock) — currently \(today)%."
+        case .calendarDay:
+            return "\(base) Yours end at 12:00 AM, \(resetClock.hasPrefix("12:00") ? "the same as the reset" : "not at the \(resetClock) reset") — currently \(today)%."
         }
     }
 

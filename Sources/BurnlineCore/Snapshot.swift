@@ -17,11 +17,16 @@ public struct Snapshot: Equatable, Sendable {
     /// user's configured schedule.
     public let isScheduleAutomatic: Bool
     public let isScanning: Bool
+    public let dayBoundary: DayBoundary
+    /// Timezone the calendar-day boundary is evaluated in.
+    public let dayTimeZoneIdentifier: String
 
     public init(window: Window, targetPercent: Double, estimatedPercent: Double?,
                 projectedPercent: Double?, unitsInWindow: Double,
                 calibrationAge: TimeInterval?, source: UsageSource = .paceOnly,
-                isScheduleAutomatic: Bool = false, isScanning: Bool) {
+                isScheduleAutomatic: Bool = false, isScanning: Bool,
+                dayBoundary: DayBoundary = .windowDay,
+                dayTimeZoneIdentifier: String = TimeZone.current.identifier) {
         self.window = window
         self.targetPercent = targetPercent
         self.estimatedPercent = estimatedPercent
@@ -31,6 +36,8 @@ public struct Snapshot: Equatable, Sendable {
         self.source = source
         self.isScheduleAutomatic = isScheduleAutomatic
         self.isScanning = isScanning
+        self.dayBoundary = dayBoundary
+        self.dayTimeZoneIdentifier = dayTimeZoneIdentifier
     }
 
     /// Age of the live capture, when there is one.
@@ -39,8 +46,11 @@ public struct Snapshot: Equatable, Sendable {
         return Date().timeIntervalSince(capturedAt)
     }
 
-    /// Where you may be by the end of the current window-day.
-    public var endOfDayPercent: Double { window.endOfDayPercent }
+    /// Where you may be by the end of the current day.
+    public var endOfDayPercent: Double {
+        window.endOfDayPercent(boundary: dayBoundary,
+                               timeZone: TimeZone(identifier: dayTimeZoneIdentifier) ?? .current)
+    }
 
     /// The target the headline numbers compare against, per the user's mode.
     public func activeTarget(_ mode: TargetMode) -> Double {
