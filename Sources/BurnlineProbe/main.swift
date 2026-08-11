@@ -44,7 +44,7 @@ func percent(_ value: Double?) -> String {
 
 func describeSource(_ source: UsageSource) -> String {
     switch source {
-    case .live(let at): return "live (captured \(Int(now.timeIntervalSince(at)))s ago)"
+    case .live(let at): return "live (captured \(DisplayValue.seconds(now.timeIntervalSince(at)))s ago)"
     case .calibrated:   return "calibrated (manual anchors)"
     case .paceOnly:     return "pace only"
     }
@@ -55,7 +55,7 @@ if let capture {
     let inWindow = capture.capturedDate >= snapshot.window.start
         && capture.capturedDate < snapshot.window.end
     captureNote = "\(capture.sevenDay.usedPercent)% used, resets \(capture.sevenDay.resetsDate), "
-        + "captured \(Int(now.timeIntervalSince(capture.capturedDate)))s ago, "
+        + "captured \(DisplayValue.seconds(now.timeIntervalSince(capture.capturedDate)))s ago, "
         + "inCurrentWindow=\(inWindow)"
 }
 

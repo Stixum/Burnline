@@ -37,21 +37,32 @@ public struct Weights: Equatable, Sendable, Codable {
         self.defaultMultiplier = defaultMultiplier
     }
 
-    /// Clamps every weight to zero or above.
+    /// Weights are relative, so a spread wider than this is already meaningless.
+    /// The ceiling exists to keep `weight × tokens` finite: unbounded above, a
+    /// number typed into the Settings text field overflows the product to
+    /// infinity, and infinity then propagates into every downstream figure.
+    public static let maximumWeight: Double = 1_000_000
+
+    /// Clamps every weight into `0...maximumWeight`.
     ///
     /// Zero is legitimate — it means "ignore this token class" — but a negative
-    /// weight makes units run backwards, so the estimate would fall as tokens
-    /// are burned. Nothing in the Settings text fields prevents one being typed.
+    /// weight makes units run backwards, so the estimate would *fall* as tokens
+    /// are burned. Nothing in the Settings text fields prevents either extreme
+    /// being typed, and `Double.nan` survives a plain `max(0,)` untouched.
     public func sanitized() -> Weights {
-        Weights(
-            input: max(0, input),
-            cacheWrite: max(0, cacheWrite),
-            cacheRead: max(0, cacheRead),
-            output: max(0, output),
+        func clamp(_ value: Double) -> Double {
+            guard !value.isNaN else { return 0 }
+            return min(max(0, value), Weights.maximumWeight)
+        }
+        return Weights(
+            input: clamp(input),
+            cacheWrite: clamp(cacheWrite),
+            cacheRead: clamp(cacheRead),
+            output: clamp(output),
             modelMultipliers: modelMultipliers.map {
-                ModelMultiplier(match: $0.match, multiplier: max(0, $0.multiplier))
+                ModelMultiplier(match: $0.match, multiplier: clamp($0.multiplier))
             },
-            defaultMultiplier: max(0, defaultMultiplier)
+            defaultMultiplier: clamp(defaultMultiplier)
         )
     }
 

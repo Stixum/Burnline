@@ -70,7 +70,5 @@ public enum MenuBarFormatter {
         return label
     }
 
-    private static func whole(_ value: Double) -> Int {
-        Int(min(max(value, -displayCeiling), displayCeiling).rounded())
-    }
+    private static func whole(_ value: Double) -> Int { DisplayValue.whole(value) }
 }
