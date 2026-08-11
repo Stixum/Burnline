@@ -47,6 +47,16 @@ public enum SnapshotBuilder {
             source = .paceOnly
         }
 
+        // The 5-hour reading stands on its own reset instant, so it survives or
+        // dies independently of the weekly window.
+        let fiveHour = rateLimit?.fiveHour.flatMap { reading -> FiveHourStatus? in
+            let remaining = reading.resetsDate.timeIntervalSince(now)
+            guard remaining > 0 else { return nil }
+            return FiveHourStatus(usedPercent: reading.usedPercent,
+                                  resetsAt: reading.resetsDate,
+                                  timeRemaining: remaining)
+        }
+
         return Snapshot(
             window: window,
             targetPercent: window.targetPercent,
@@ -59,7 +69,8 @@ public enum SnapshotBuilder {
             isScheduleAutomatic: scheduleIsAutomatic,
             isScanning: isScanning,
             dayBoundary: settings.dayBoundary,
-            dayTimeZoneIdentifier: settings.resetSchedule.timeZoneIdentifier
+            dayTimeZoneIdentifier: settings.resetSchedule.timeZoneIdentifier,
+            fiveHour: fiveHour
         )
     }
 

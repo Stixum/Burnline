@@ -69,4 +69,5 @@ Burnline probe
   estimated        \(percent(snapshot.estimatedPercent))
   projected        \(percent(snapshot.projectedPercent))
   pace-only        \(snapshot.isPaceOnly)
+  5-hour           \(snapshot.fiveHour?.rowValue ?? "—")
 """)

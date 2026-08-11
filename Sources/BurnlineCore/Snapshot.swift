@@ -1,5 +1,34 @@
 import Foundation
 
+/// The 5-hour rate limit as the UI needs it. Entirely independent of the weekly
+/// window: it carries its own reset instant, and — like the weekly percentage —
+/// the number dies with the window it was measured in.
+public struct FiveHourStatus: Equatable, Sendable {
+    public let usedPercent: Double
+    public let resetsAt: Date
+    /// Seconds until `resetsAt`, resolved at build time so no view does clock
+    /// arithmetic of its own.
+    public let timeRemaining: TimeInterval
+
+    public init(usedPercent: Double, resetsAt: Date, timeRemaining: TimeInterval) {
+        self.usedPercent = usedPercent
+        self.resetsAt = resetsAt
+        self.timeRemaining = timeRemaining
+    }
+
+    public var remainingDescription: String {
+        let total = Int(max(0, timeRemaining))
+        let hours = total / 3_600
+        let minutes = (total % 3_600) / 60
+        return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+    }
+
+    /// The popover row value, assembled here so the view body stays declarative.
+    public var rowValue: String {
+        "\(Int(usedPercent.rounded()))% · \(remainingDescription) left"
+    }
+}
+
 /// Everything the UI renders, computed in one pass. Views read this and do no
 /// arithmetic of their own.
 public struct Snapshot: Equatable, Sendable {
@@ -20,13 +49,17 @@ public struct Snapshot: Equatable, Sendable {
     public let dayBoundary: DayBoundary
     /// Timezone the calendar-day boundary is evaluated in.
     public let dayTimeZoneIdentifier: String
+    /// The 5-hour limit, when a live capture carries one that is still inside
+    /// its own window. `nil` on plans that don't report it.
+    public let fiveHour: FiveHourStatus?
 
     public init(window: Window, targetPercent: Double, estimatedPercent: Double?,
                 projectedPercent: Double?, unitsInWindow: Double,
                 calibrationAge: TimeInterval?, source: UsageSource = .paceOnly,
                 isScheduleAutomatic: Bool = false, isScanning: Bool,
                 dayBoundary: DayBoundary = .windowDay,
-                dayTimeZoneIdentifier: String = TimeZone.current.identifier) {
+                dayTimeZoneIdentifier: String = TimeZone.current.identifier,
+                fiveHour: FiveHourStatus? = nil) {
         self.window = window
         self.targetPercent = targetPercent
         self.estimatedPercent = estimatedPercent
@@ -38,6 +71,7 @@ public struct Snapshot: Equatable, Sendable {
         self.isScanning = isScanning
         self.dayBoundary = dayBoundary
         self.dayTimeZoneIdentifier = dayTimeZoneIdentifier
+        self.fiveHour = fiveHour
     }
 
     /// Age of the live capture, when there is one.

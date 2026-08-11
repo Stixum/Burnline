@@ -99,6 +99,11 @@ struct PopoverView: View {
             row("Resets", resetDescription)
             row("Time left", remainingDescription)
             row("At this rate", snapshot.projectedPercent.map { "\(Int($0.rounded()))% by reset" } ?? "—")
+            // Only when a live capture carries one — it's absent on plans that
+            // don't report a 5-hour limit, and dies with its own window.
+            if let fiveHour = snapshot.fiveHour {
+                row("5-hour", fiveHour.rowValue)
+            }
         }
     }
 
