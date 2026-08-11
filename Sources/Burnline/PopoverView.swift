@@ -8,6 +8,15 @@ struct PopoverView: View {
     @State private var isCalibrating = false
 
     private var snapshot: Snapshot { store.snapshot }
+    private var mode: TargetMode { store.settings.targetMode }
+
+    /// Names the target being compared against, so the number is never ambiguous.
+    private var legendTarget: String {
+        switch mode {
+        case .realTime: return "now \(Int(snapshot.targetPercent.rounded()))%  ·  today \(Int(snapshot.endOfDayPercent.rounded()))%"
+        case .endOfDay: return "today \(Int(snapshot.endOfDayPercent.rounded()))%  ·  now \(Int(snapshot.targetPercent.rounded()))%"
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -16,8 +25,10 @@ struct PopoverView: View {
             hero
 
             UsageBar(estimatedPercent: snapshot.estimatedPercent,
-                     targetPercent: snapshot.targetPercent)
-                .padding(.top, 10)
+                     targetPercent: snapshot.targetPercent,
+                     endOfDayPercent: snapshot.endOfDayPercent,
+                     mode: mode)
+                .padding(.top, 12)
 
             legend
             Divider().overlay(Theme.hairline).padding(.vertical, 9)
@@ -35,7 +46,7 @@ struct PopoverView: View {
     @ViewBuilder private var hero: some View {
         if snapshot.isPaceOnly {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(Int(snapshot.targetPercent.rounded()))%")
+                Text("\(Int(snapshot.activeTarget(mode).rounded()))%")
                     .font(.system(size: 34, weight: .heavy)).monospacedDigit()
                     .foregroundStyle(Theme.textPrimary)
                 Text("of the window elapsed")
@@ -48,8 +59,8 @@ struct PopoverView: View {
                 .foregroundStyle(Theme.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
-            let delta = snapshot.deltaPercent ?? 0
-            let under = snapshot.isUnderBudget ?? true
+            let delta = snapshot.delta(mode) ?? 0
+            let under = snapshot.isUnder(mode) ?? true
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(Int(abs(delta).rounded()))")
                     .font(.system(size: 34, weight: .heavy)).monospacedDigit()
@@ -75,7 +86,7 @@ struct PopoverView: View {
         HStack {
             Text(snapshot.estimatedPercent.map { "\(Int($0.rounded()))% used" } ?? "usage unknown")
             Spacer()
-            Text("should be \(Int(snapshot.targetPercent.rounded()))%")
+            Text(legendTarget)
         }
         .font(.system(size: 10)).monospacedDigit()
         .foregroundStyle(Theme.textMuted)
