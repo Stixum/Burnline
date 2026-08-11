@@ -69,8 +69,8 @@ private func window(dayIndex: Double) -> Window {
     let snapshot = Snapshot(window: w, targetPercent: w.targetPercent, estimatedPercent: 64.1,
                             projectedPercent: nil, unitsInWindow: 0, calibrationAge: nil,
                             isScanning: false)
-    #expect(MenuBarFormatter.text(for: snapshot, mode: .realTime) == "64/65")
-    #expect(MenuBarFormatter.text(for: snapshot, mode: .endOfDay) == "64/71")
+    #expect(MenuBarFormatter.text(for: snapshot, target: .realTime) == "64/65")
+    #expect(MenuBarFormatter.text(for: snapshot, target: .endOfDay) == "64/71")
 }
 
 @Test func uncalibratedMenuBarStillHonoursTheMode() {
@@ -78,8 +78,8 @@ private func window(dayIndex: Double) -> Window {
     let snapshot = Snapshot(window: w, targetPercent: w.targetPercent, estimatedPercent: nil,
                             projectedPercent: nil, unitsInWindow: 0, calibrationAge: nil,
                             isScanning: false)
-    #expect(MenuBarFormatter.text(for: snapshot, mode: .realTime) == "65")
-    #expect(MenuBarFormatter.text(for: snapshot, mode: .endOfDay) == "71")
+    #expect(MenuBarFormatter.text(for: snapshot, target: .realTime) == "65")
+    #expect(MenuBarFormatter.text(for: snapshot, target: .endOfDay) == "71")
 }
 
 @Test func targetModeDefaultsToRealTimeInSettings() {

@@ -79,6 +79,34 @@ struct SettingsView: View {
 
                 Divider().overlay(Theme.hairline)
 
+                Text("Menu bar").eyebrow()
+
+                // Five options won't fit across 380pt as a segmented control.
+                Picker("", selection: $store.settings.menuBarMode) {
+                    ForEach(MenuBarMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+
+                Text(store.settings.menuBarMode.explanation)
+                    .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                // The live value, so the choice is concrete rather than
+                // described. Formatting comes from the same tested unit the
+                // menu bar itself uses.
+                HStack(spacing: 6) {
+                    Text("Right now").font(.system(size: 11))
+                        .foregroundStyle(Theme.textMuted)
+                    Text(menuBarPreview)
+                        .font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                        .foregroundStyle(Theme.textPrimary)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusRow))
+                }
+
+                Divider().overlay(Theme.hairline)
+
                 Toggle("Launch at login", isOn: Binding(
                     get: { store.settings.launchAtLogin },
                     set: { setLaunchAtLogin($0) }
@@ -158,6 +186,12 @@ struct SettingsView: View {
         case .calendarDay:
             return "\(base) Yours end at 12:00 AM, \(resetClock.hasPrefix("12:00") ? "the same as the reset" : "not at the \(resetClock) reset") — currently \(today)%."
         }
+    }
+
+    private var menuBarPreview: String {
+        MenuBarFormatter.text(for: store.snapshot,
+                              target: store.settings.targetMode,
+                              display: store.settings.menuBarMode)
     }
 
     private var automaticResetDescription: String {
