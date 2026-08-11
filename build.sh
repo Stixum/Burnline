@@ -39,6 +39,9 @@ if [ "${1:-}" = "--install" ]; then
   sleep 1
   rm -rf "/Applications/${APP_NAME}.app"
   cp -R "${APP}" /Applications/
+  # Drop the staging copy: two registered bundles make a bare `open -a Burnline`
+  # ambiguous, and it can resolve to this build directory instead.
+  rm -rf "${APP}"
   echo "    Installed. Launch with: open -a ${APP_NAME}"
 else
   echo "==> Built at ${APP} (pass --install to copy to /Applications)"
