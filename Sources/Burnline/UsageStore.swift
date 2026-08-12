@@ -33,6 +33,8 @@ final class UsageStore {
     @ObservationIgnored private let rateLimitStore = RateLimitStore()
     @ObservationIgnored private let captureDirectory = CaptureDirectory()
     @ObservationIgnored private let utilizationStore = UtilizationStore()
+    @ObservationIgnored private let poller = UsagePoller()
+    @ObservationIgnored private var lastPollAt: Date?
     @ObservationIgnored private let highWaterStore = HighWaterStore()
     @ObservationIgnored private var highWater = HighWaterStore().load()
     @ObservationIgnored private var scanTask: Task<Void, Never>?
@@ -138,6 +140,19 @@ final class UsageStore {
         // reset, prune against the previous window and delete the very capture
         // proving the new one had started.
         captureDirectory.prune(before: snapshot.window.start.timeIntervalSince1970)
+
+        // Last, and only when the anchor has actually gone stale. Nothing else
+        // on this Mac will move it: an idle session republishes its cached
+        // reading forever, and a desktop session never publishes at all.
+        if PollDecision.shouldPoll(enabled: storedSettings.refreshesUsageAutomatically,
+                                   anchorAge: snapshot.liveAge,
+                                   lastPollAt: lastPollAt,
+                                   now: Date()) {
+            lastPollAt = Date()
+            await poller.poll()
+            // The poll refreshed ~/.claude.json, not our own files.
+            rebuild()
+        }
     }
 
     /// Records a `/usage` reading as a calibration anchor. Only a fallback now —

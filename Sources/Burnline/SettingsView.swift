@@ -117,6 +117,18 @@ struct SettingsView: View {
                         .font(.system(size: 11)).foregroundStyle(Theme.danger)
                 }
 
+                Toggle("Refresh usage automatically", isOn: Binding(
+                    get: { store.settings.refreshesUsageAutomatically },
+                    set: { store.settings.refreshesUsageAutomatically = $0 }
+                ))
+                // Says plainly what it does, because it spawns processes. Off by
+                // default for that reason.
+                Text("Runs `/usage` in a brief background Claude Code session when the figure "
+                     + "goes stale. Uses no message quota. Without it, usage only updates while "
+                     + "you're working in a terminal session.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Divider().overlay(Theme.hairline)
 
                 DisclosureGroup("Advanced") {

@@ -8,12 +8,19 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
     public var targetMode: TargetMode
     public var dayBoundary: DayBoundary
     public var menuBarMode: MenuBarMode
+    /// Spawn a short-lived Claude Code session running `/usage` when the anchor
+    /// goes stale. **Off by default**: reading files is one kind of app, and
+    /// spawning processes on someone's machine is another. Costs no model
+    /// tokens — `/usage` produces no assistant turn — but it does create real
+    /// sessions. See `PollDecision`.
+    public var refreshesUsageAutomatically: Bool
 
     public init(resetSchedule: ResetSchedule, weights: Weights,
                 calibrationAnchors: [CalibrationAnchor], launchAtLogin: Bool,
                 targetMode: TargetMode = .realTime,
                 dayBoundary: DayBoundary = .windowDay,
-                menuBarMode: MenuBarMode = .usedOverTarget) {
+                menuBarMode: MenuBarMode = .usedOverTarget,
+                refreshesUsageAutomatically: Bool = false) {
         self.resetSchedule = resetSchedule
         self.weights = weights
         self.calibrationAnchors = calibrationAnchors
@@ -21,6 +28,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         self.targetMode = targetMode
         self.dayBoundary = dayBoundary
         self.menuBarMode = menuBarMode
+        self.refreshesUsageAutomatically = refreshesUsageAutomatically
     }
 
     /// Thursday 09:00 local is a placeholder — replaced by the real reset as
@@ -45,5 +53,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         targetMode = try container.decodeIfPresent(TargetMode.self, forKey: .targetMode) ?? .realTime
         dayBoundary = try container.decodeIfPresent(DayBoundary.self, forKey: .dayBoundary) ?? .windowDay
         menuBarMode = try container.decodeIfPresent(MenuBarMode.self, forKey: .menuBarMode) ?? .usedOverTarget
+        refreshesUsageAutomatically = try container.decodeIfPresent(
+            Bool.self, forKey: .refreshesUsageAutomatically) ?? false
     }
 }

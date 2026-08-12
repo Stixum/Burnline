@@ -49,3 +49,16 @@ private func tempDirectory() -> URL {
 @Test func missingCacheFileYieldsEmptyCache() {
     #expect(CacheStore(directory: tempDirectory()).load().files.isEmpty)
 }
+
+/// Off by default, and a settings file written before the flag existed must
+/// decode to off rather than silently start spawning Claude Code sessions.
+@Test func settingsWithoutTheRefreshFlagDecodeToItBeingOff() throws {
+    let json = """
+    {"resetSchedule":{"weekday":5,"hour":9,"minute":0,"timeZoneIdentifier":"America/Chicago"},
+     "weights":\(String(data: try JSONEncoder().encode(Weights.default), encoding: .utf8)!),
+     "calibrationAnchors":[],"launchAtLogin":false}
+    """
+    let decoded = try JSONDecoder().decode(BurnlineSettings.self, from: Data(json.utf8))
+    #expect(decoded.refreshesUsageAutomatically == false)
+    #expect(BurnlineSettings.default.refreshesUsageAutomatically == false)
+}
