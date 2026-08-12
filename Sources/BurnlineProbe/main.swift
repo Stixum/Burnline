@@ -71,8 +71,17 @@ if let onDisk {
         : "on disk \(raw)% accepted"
 }
 
+// First line, before anything else: which directory this run is reading and
+// writing. `BURNLINE_DATA_DIR` is what makes the statusline helper safe to
+// exercise, and a typo'd export fails by silently using live data — so the
+// probe is the place to confirm the export landed *before* running the helper.
+let dataDirectoryNote = ApplicationSupport.isOverridden()
+    ? "\(ApplicationSupport.directory().path)   (BURNLINE_DATA_DIR override — not live data)"
+    : "\(ApplicationSupport.directory().path)   (live data)"
+
 print("""
 Burnline probe
+  data dir         \(dataDirectoryNote)
   capture          \(captureNote)
   high water       \(highWaterNote)
   source           \(describeSource(snapshot.source))
