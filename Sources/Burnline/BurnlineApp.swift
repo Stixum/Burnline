@@ -23,6 +23,14 @@ struct BurnlineApp: App {
         .windowResizability(.contentSize)
         .defaultPosition(.center)
 
+        Window("Welcome to Burnline", id: OnboardingWindow.id) {
+            OnboardingView(store: store)
+                .preferredColorScheme(.dark)
+                .windowBackground()
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+
         // The popover's contents in a plain window, so they can be screenshotted
         // from a terminal. A MenuBarExtra popover can only be opened by clicking
         // it, and three defects in this app were invisible in code review and

@@ -38,7 +38,28 @@ struct MenuBarLabel: View {
                 if ProcessInfo.processInfo.environment["BURNLINE_OPEN_POPOVER"] == "1" {
                     PopoverWindow.open(using: openWindow)
                 }
+                if ProcessInfo.processInfo.environment["BURNLINE_OPEN_ONBOARDING"] == "1" {
+                    OnboardingWindow.open(using: openWindow)
+                }
+                openOnboardingIfFirstRun()
             }
+    }
+
+    /// Shown once, and only when there is something to do about it.
+    ///
+    /// Every existing install decodes `hasSeenOnboarding` as false, so gating on
+    /// that alone would greet a correctly-configured upgrader with a window
+    /// telling them everything is fine. The flag is still set either way — an
+    /// install that was already wired has been "offered" onboarding in the only
+    /// sense that matters, and someone who declines to wire it has answered.
+    @MainActor
+    private func openOnboardingIfFirstRun() {
+        guard !store.settings.hasSeenOnboarding else { return }
+        store.refreshWiringState()
+        if store.wiringState != .configured {
+            OnboardingWindow.open(using: openWindow)
+        }
+        store.markOnboardingSeen()
     }
 }
 
