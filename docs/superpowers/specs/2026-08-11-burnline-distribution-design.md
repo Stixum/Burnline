@@ -324,6 +324,61 @@ config are being reasonable and must not be second-class.
 
 ---
 
+## 5a. Permissions at install time
+
+Audited 2026-08-12. **Burnline requests no macOS permissions, and on a clean
+machine the core function produces no prompts at all.** That is worth stating in
+the README rather than leaving a reader to wonder.
+
+Why it holds:
+
+- **No TCC-gated API is used anywhere.** No camera, location, contacts,
+  calendar, notifications, Accessibility, Screen Recording or AppleScript.
+  `Info.plist` declares no `NS*UsageDescription` key, and none is needed.
+- **Everything read is a home dotfile.** `~/.claude/projects/**`,
+  `~/.claude.json`, and the app's own Application Support directory.
+  `~/Documents`, `~/Desktop` and `~/Downloads` are TCC-protected; a dotfolder is
+  not. **This is the concrete payoff of being unsandboxed** — the app reads its
+  only data source with no entitlement, no prompt, and no Full Disk Access.
+- **Writing `~/.claude/settings.json` needs no permission either.** It is a trust
+  question, not an OS one, and §5's refuse-to-clobber rule is the answer.
+
+### The one sharp edge: the poller's child process
+
+`UsagePoller` spawns `claude` with `currentDirectoryURL` set to the home
+directory. Spawning needs no permission — but **macOS attributes a child's TCC
+requests to the responsible process, which is Burnline.** If Claude Code touches
+a protected location while running under the poller, the prompt a user sees will
+say *Burnline* wants access to their Documents, and a denial will be recorded
+against Burnline rather than against Claude Code.
+
+This has not been observed, and may never fire: `/usage` is a slash command that
+should touch nothing protected. But it has also never been tested on a machine
+whose TCC database is empty, which is exactly what every new user has. **Plan 6
+Task 9 verifies it, and it is the only permission question in the project that
+cannot be answered by reading code.**
+
+If it does fire, the fix is not an entitlement — it is to narrow what the child
+can reach, or to say plainly in the confirmation dialog that a prompt may appear
+and why.
+
+### Launch at login
+
+`SMAppService.mainApp.register()` shows no approval dialog. It creates an entry
+under System Settings → General → Login Items, and macOS posts a notification
+saying Burnline added one. ⚠️ **A user can disable it there, and `register()`
+does not obviously report that afterwards** — the Settings toggle can therefore
+disagree with reality. Not a blocker for 1.0; worth a look before anyone asks
+why launch-at-login "stopped working".
+
+### What this means for the install experience
+
+A notarized DMG, dragged to Applications and launched, should produce **zero
+permission dialogs** — no Gatekeeper warning (notarized and stapled), no TCC
+prompt, no login-item approval. The only dialog Burnline shows on a fresh
+install is its own onboarding window. Any prompt beyond that is a finding, and
+Plan 6 Task 8 should treat it as one.
+
 ## 6. Sparkle (1.1)
 
 ### Mechanics

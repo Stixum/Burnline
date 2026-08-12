@@ -489,6 +489,12 @@ ship as a feature that quietly never runs on anyone's machine but yours.
 - [ ] **Step 4:** Confirm `~/.claude.json`'s `fetchedAtMs` actually moved. A
       launched process that never delivered `/usage` looks identical to success
       in the log alone.
+- [ ] **Step 4b: Watch for a TCC prompt naming Burnline.** The poller's child
+      inherits Burnline as its responsible process, so anything Claude Code
+      touches under `$HOME` that is protected will prompt with *Burnline's* name
+      on it. A machine with an empty TCC database — i.e. every new user's — is
+      the only place this shows up. If a prompt appears, record exactly what it
+      asked for; that is a release blocker, not a curiosity.
 - [ ] **Step 5:** Confirm the poll's own captures went to its throwaway directory
       and **not** to the real Application Support directory — the isolation that
       stops it laundering a stale reading as fresh.
