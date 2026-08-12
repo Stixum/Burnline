@@ -32,9 +32,34 @@ let drift = abs(warmCache.units(from: now.addingTimeInterval(-30 * 86_400), to: 
 
 // Same inputs the app uses, so the probe can diagnose what the app is doing —
 // including the high-water reconciliation, without persisting a new mark.
-let onDisk = RateLimitStore().load()
+let rawOnDisk = RateLimitStore().load()
+// Same dating the app applies, so the probe reports what the app will show.
+let onDisk = rawOnDisk.map { loaded in
+    loaded.dated(mintedAt: loaded.transcriptPath.flatMap {
+        TranscriptDating.mintedAt(transcriptPath: $0, observedAt: loaded.capturedAt)
+    })
+}
 let storedMark = HighWaterStore().load()
 let capture = onDisk.map { RateLimitHighWater.reconcile($0, against: storedMark).capture }
+
+// Which evidence dated the reading. "wall clock" means neither rule applied and
+// the figure is only as honest as the writing session was fresh.
+var datingNote = "no capture"
+if let raw = rawOnDisk {
+    let minted = raw.transcriptPath.flatMap {
+        TranscriptDating.mintedAt(transcriptPath: $0, observedAt: raw.capturedAt)
+    }
+    let session = raw.sessionId.map { String($0.prefix(8)) } ?? "unknown"
+    if minted != nil {
+        datingNote = "transcript, session \(session)"
+    } else if raw.isRepublishedCache {
+        datingNote = "five-hour replay rule (no transcript evidence)"
+    } else {
+        datingNote = raw.sessionId == nil
+            ? "wall clock — payload carried no session_id"
+            : "wall clock — session \(session) transcript unreadable"
+    }
+}
 let snapshot = SnapshotBuilder.build(cache: cache, settings: settings,
                                      rateLimit: capture, now: now, isScanning: false)
 
@@ -83,6 +108,7 @@ print("""
 Burnline probe
   data dir         \(dataDirectoryNote)
   capture          \(captureNote)
+  dated by         \(datingNote)
   high water       \(highWaterNote)
   source           \(describeSource(snapshot.source))
   auto schedule    \(snapshot.isScheduleAutomatic)

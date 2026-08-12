@@ -163,7 +163,15 @@ final class UsageStore {
         // Claude Code session writes this same file on its own timer, and an idle
         // one keeps publishing the stale rate_limits snapshot it started with —
         // so the last writer is routinely not the freshest.
-        var capture = rateLimitStore.load()
+        //
+        // Dating happens here, not in the helper: reading a transcript is file
+        // I/O, and the helper runs every 30s in every open session under a
+        // contract that it never fails and never delays the user's prompt.
+        var capture = rateLimitStore.load().map { loaded in
+            loaded.dated(mintedAt: loaded.transcriptPath.flatMap {
+                TranscriptDating.mintedAt(transcriptPath: $0, observedAt: loaded.capturedAt)
+            })
+        }
         // Kept so the popover can say the file was overridden. Silently
         // disagreeing with the user's own terminal status line reads as a broken
         // app rather than as the protection it is.
