@@ -114,3 +114,33 @@ private func decode(_ json: String) throws -> StatuslinePayload {
         try decode("[1,2,3]")
     }
 }
+
+@Test func decodesTheSessionIdAndTranscriptPath() throws {
+    let p = try decode(#"{"session_id":"abc-123","transcript_path":"/tmp/abc-123.jsonl"}"#)
+    #expect(p.sessionId == "abc-123")
+    #expect(p.transcriptPath == "/tmp/abc-123.jsonl")
+}
+
+/// Per-property decoding, like every other field: a wrong-typed session_id must
+/// not cost us rate_limits.
+@Test func aNumericSessionIdDoesNotCostTheRateLimits() throws {
+    let p = try decode(#"{"session_id":123,"rate_limits":{"seven_day":{"used_percentage":64,"resets_at":1786000000}}}"#)
+    #expect(p.sessionId == nil)
+    #expect(p.rateLimits?.sevenDay?.usedPercentage == 64)
+}
+
+@Test func theCaptureCarriesTheSessionThatProducedIt() throws {
+    let p = try decode(#"{"session_id":"abc","transcript_path":"/tmp/abc.jsonl","rate_limits":{"seven_day":{"used_percentage":64,"resets_at":1786000000}}}"#)
+    let capture = try #require(p.capture(capturedAt: 1_785_900_000))
+    #expect(capture.sessionId == "abc")
+    #expect(capture.transcriptPath == "/tmp/abc.jsonl")
+}
+
+/// The documented fields have never been observed at runtime. Their absence
+/// must cost the mint time and nothing else.
+@Test func aPayloadWithoutSessionFieldsStillProducesACapture() throws {
+    let p = try decode(#"{"rate_limits":{"seven_day":{"used_percentage":64,"resets_at":1786000000}}}"#)
+    let capture = try #require(p.capture(capturedAt: 1_785_900_000))
+    #expect(capture.sessionId == nil)
+    #expect(capture.transcriptPath == nil)
+}

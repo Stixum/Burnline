@@ -67,6 +67,11 @@ public struct StatuslinePayload: Sendable, Decodable {
     public var contextWindow: ContextWindow?
     public var cost: Cost?
     public var rateLimits: RateLimits?
+    /// Identifies the session whose cached `rate_limits` this is, which is what
+    /// lets the app date the reading exactly. Documented, but never yet observed
+    /// at runtime — everything downstream treats it as optional.
+    public var sessionId: String?
+    public var transcriptPath: String?
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -74,6 +79,8 @@ public struct StatuslinePayload: Sendable, Decodable {
         case contextWindow = "context_window"
         case cost
         case rateLimits = "rate_limits"
+        case sessionId = "session_id"
+        case transcriptPath = "transcript_path"
     }
 
     // Each top-level property is decoded independently, exactly like the jq
@@ -96,6 +103,8 @@ public struct StatuslinePayload: Sendable, Decodable {
         contextWindow = try? c.decodeIfPresent(ContextWindow.self, forKey: .contextWindow)
         cost = try? c.decodeIfPresent(Cost.self, forKey: .cost)
         rateLimits = try? c.decodeIfPresent(RateLimits.self, forKey: .rateLimits)
+        sessionId = try? c.decodeIfPresent(String.self, forKey: .sessionId)
+        transcriptPath = try? c.decodeIfPresent(String.self, forKey: .transcriptPath)
     }
 
     /// The capture to persist, or `nil` when this payload carries nothing worth
@@ -129,7 +138,11 @@ public struct StatuslinePayload: Sendable, Decodable {
             version: RateLimitCapture.currentVersion,
             capturedAt: capturedAt,
             sevenDay: .init(usedPercent: usedPercent, resetsAt: resetsAt),
-            fiveHour: fiveHourReading
+            fiveHour: fiveHourReading,
+            // Recorded, not acted on: dating is file I/O and belongs in the app,
+            // not in a helper that runs every 30s inside the user's prompt.
+            sessionId: sessionId,
+            transcriptPath: transcriptPath
         ).correctedForRepublishing()
     }
 }

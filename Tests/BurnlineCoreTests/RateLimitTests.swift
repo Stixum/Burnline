@@ -209,3 +209,43 @@ private func cache(_ entries: [(Date, Double)]) -> ScanCache {
     #expect(store.load() == capture)
     #expect(store.load()?.fiveHour == nil)
 }
+
+/// A capture written before session fields existed must still load.
+@Test func aCaptureFileWithoutSessionFieldsStillDecodes() throws {
+    let json = #"{"version":1,"capturedAt":5,"sevenDay":{"usedPercent":1,"resetsAt":9}}"#
+    let capture = try JSONDecoder().decode(RateLimitCapture.self, from: Data(json.utf8))
+    #expect(capture.isCompatible)
+    #expect(capture.sessionId == nil)
+}
+
+@Test func anExactMintTimeReplacesTheObservationTime() {
+    let capture = RateLimitCapture(version: 1, capturedAt: 9_000,
+                                   sevenDay: .init(usedPercent: 69, resetsAt: 90_000),
+                                   fiveHour: nil)
+    #expect(capture.dated(mintedAt: 6_000).capturedAt == 6_000)
+}
+
+/// A reading cannot have been minted after we saw it.
+@Test func aMintTimeAfterTheObservationIsIgnored() {
+    let capture = RateLimitCapture(version: 1, capturedAt: 9_000,
+                                   sevenDay: .init(usedPercent: 69, resetsAt: 90_000),
+                                   fiveHour: nil)
+    #expect(capture.dated(mintedAt: 99_999).capturedAt == 9_000)
+}
+
+/// No transcript evidence — the five-hour rule still applies.
+@Test func datingWithoutAMintTimeFallsBackToTheFiveHourRule() {
+    let capture = RateLimitCapture(version: 1, capturedAt: 9_000,
+                                   sevenDay: .init(usedPercent: 69, resetsAt: 90_000),
+                                   fiveHour: .init(usedPercent: 5, resetsAt: 4_000))
+    #expect(capture.dated(mintedAt: nil).capturedAt == 4_000)
+}
+
+/// Both kinds of evidence present and disagreeing: take the earlier. They cannot
+/// both be true, and overstating freshness is the failure that matters.
+@Test func theEarlierOfTheTwoDatingRulesWins() {
+    let capture = RateLimitCapture(version: 1, capturedAt: 9_000,
+                                   sevenDay: .init(usedPercent: 69, resetsAt: 90_000),
+                                   fiveHour: .init(usedPercent: 5, resetsAt: 4_000))
+    #expect(capture.dated(mintedAt: 7_000).capturedAt == 4_000)
+}

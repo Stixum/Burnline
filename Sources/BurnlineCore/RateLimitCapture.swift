@@ -28,12 +28,27 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
     public var capturedAt: TimeInterval
     public var sevenDay: Reading
     public var fiveHour: Reading?
+    /// Which Claude Code session produced this reading, when the payload said so.
+    ///
+    /// `rate_limits` is that session's own cached snapshot, refreshed only when
+    /// *it* calls the API — so knowing the session is what makes an exact mint
+    /// time derivable at all.
+    ///
+    /// Optional, and no version bump: a file written before these fields existed
+    /// decodes with `nil` and keeps working.
+    public var sessionId: String?
+    /// That session's transcript. The app reads its tail to find the last
+    /// assistant turn; the helper never touches it.
+    public var transcriptPath: String?
 
-    public init(version: Int, capturedAt: TimeInterval, sevenDay: Reading, fiveHour: Reading?) {
+    public init(version: Int, capturedAt: TimeInterval, sevenDay: Reading, fiveHour: Reading?,
+                sessionId: String? = nil, transcriptPath: String? = nil) {
         self.version = version
         self.capturedAt = capturedAt
         self.sevenDay = sevenDay
         self.fiveHour = fiveHour
+        self.sessionId = sessionId
+        self.transcriptPath = transcriptPath
     }
 
     public var capturedDate: Date { Date(timeIntervalSince1970: capturedAt) }
@@ -73,6 +88,25 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
         var corrected = self
         corrected.capturedAt = fiveHour.resetsAt
         return corrected
+    }
+
+    /// `capturedAt` narrowed by every piece of evidence available.
+    ///
+    /// `mintedAt` is the exact instant this session last called the API, which is
+    /// when its `rate_limits` was refreshed — precise, where
+    /// `correctedForRepublishing` only ever supplies an upper bound, needs
+    /// `five_hour` to exist, and cannot see a replay younger than five hours.
+    ///
+    /// Both rules are applied and the **earlier** wins. They cannot both be true
+    /// when they disagree, and overstating freshness is the failure that
+    /// matters — a figure that looks live is acted on; one that looks old isn't.
+    public func dated(mintedAt: TimeInterval?) -> RateLimitCapture {
+        var result = correctedForRepublishing()
+        if let mintedAt {
+            // A reading cannot have been minted after we saw it.
+            result.capturedAt = min(result.capturedAt, mintedAt)
+        }
+        return result
     }
 }
 
