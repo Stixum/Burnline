@@ -66,4 +66,15 @@ public struct RateLimitStore: Sendable {
         else { return nil }
         return capture
     }
+
+    /// Written by the `burnline-statusline` helper after every assistant
+    /// response.
+    ///
+    /// `.atomic` is required, not tidiness: `UsageStore` re-reads this file on a
+    /// 10-second timer and must never observe a partial write. Foundation
+    /// implements it as a write-to-temporary plus rename, matching the
+    /// `> tmp && mv -f` contract of the shell script this replaced.
+    public func save(_ capture: RateLimitCapture) throws {
+        try JSONEncoder().encode(capture).write(to: url, options: .atomic)
+    }
 }
