@@ -19,6 +19,11 @@ let package = Package(
             dependencies: ["BurnlineCore"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        .executableTarget(
+            name: "BurnlineStatusline",
+            dependencies: ["BurnlineCore"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .testTarget(
             name: "BurnlineCoreTests",
             dependencies: ["BurnlineCore"],

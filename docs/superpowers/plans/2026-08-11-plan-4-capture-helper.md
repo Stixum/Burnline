@@ -334,6 +334,16 @@ Expected: FAIL — `cannot find 'StatusLineRenderer' in scope`
 
 - [ ] **Step 3: Implement**
 
+**`Int(Double)` traps** outside `Int`'s range, NaN, or infinite — and a plain
+20-digit integer literal in JSON decodes to a perfectly finite `1e20`, no
+exotic syntax required. Both `percent` and `money` must route their
+Double→Int conversions through `DisplayValue` (which clamps then converts)
+rather than call `Int(_:)` directly, or an absurd `used_percentage` /
+`total_cost_usd` crashes this process inside the user's terminal prompt. This
+needed a new `DisplayValue.floor(_:ceiling:)` alongside the existing
+`DisplayValue.whole(_:ceiling:)`, since percentages floor (42.99% reads as
+42%, not 43%) where `whole` rounds.
+
 ```swift
 import Foundation
 
@@ -346,7 +356,7 @@ public enum StatusLineRenderer {
     static let separator = "  ·  "
     /// Printed when the payload carries nothing renderable, so the status line
     /// is never blank.
-    static let fallback = "burnline"
+    public static let fallback = "burnline"
 
     public static func render(_ payload: StatuslinePayload) -> String {
         var fields: [String] = []
@@ -355,7 +365,11 @@ public enum StatusLineRenderer {
             fields.append(name)
         }
         if let dir = payload.workspace?.currentDir,
-           let last = dir.split(separator: "/").last, !last.isEmpty {
+           let last = dir.split(separator: "/").last {
+            // Deliberate divergence from jq: its `split("/") | last` yields ""
+            // for a trailing slash, where Swift's split omits empty
+            // subsequences and yields the real last component. current_dir
+            // realistically never has one, and a name beats a blank field.
             fields.append(String(last))
         }
         if let ctx = payload.contextWindow?.usedPercentage {
@@ -374,17 +388,21 @@ public enum StatusLineRenderer {
         return fields.isEmpty ? fallback : fields.joined(separator: separator)
     }
 
-    /// Floors. 42.99% is not 43% of the way through anything.
     private static func percent(_ value: Double) -> String {
-        "\(Int(value.rounded(.down)))%"
+        "\(DisplayValue.floor(value))%"
     }
 
     /// Two decimal places with trailing zeros dropped, matching how jq prints
     /// the number: $1.2, not $1.20.
+    ///
+    /// `.rounded()` is away-from-zero and must stay that way: 0.005 * 100 is
+    /// exactly 0.5 in binary, which banker's rounding would take to 0 and
+    /// render as "$0".
     private static func money(_ value: Double) -> String {
-        let rounded = (value * 100).rounded() / 100
+        let clamped = min(max(value, -1e15), 1e15)
+        let rounded = (clamped * 100).rounded() / 100
         if rounded == rounded.rounded(.towardZero) {
-            return "$\(Int(rounded))"
+            return "$\(DisplayValue.floor(rounded, ceiling: 1e15))"
         }
         return "$" + String(format: "%.2f", rounded)
             .replacingOccurrences(of: #"0$"#, with: "", options: .regularExpression)
@@ -395,7 +413,7 @@ public enum StatusLineRenderer {
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `swift test --filter StatusLineRenderer`
-Expected: PASS, 8 tests
+Expected: PASS, 11 tests
 
 - [ ] **Step 5: Commit**
 

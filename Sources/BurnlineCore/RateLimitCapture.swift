@@ -1,13 +1,13 @@
 import Foundation
 
-/// What the Burnline statusline script captured from Claude Code.
+/// What the Burnline statusline helper captured from Claude Code.
 ///
 /// This is the only supported source of true subscription usage — there is no
 /// API, no CLI and no other local file that exposes it. Claude Code pipes
-/// session JSON to a statusline script on every assistant response, and that
+/// session JSON to a statusline command on every assistant response, and that
 /// payload carries `rate_limits.seven_day.{used_percentage,resets_at}`.
 ///
-/// Timestamps stay as unix seconds because that is what the script writes;
+/// Timestamps stay as unix seconds because that is what the helper writes;
 /// `Date` accessors sit on top rather than needing custom decoders.
 public struct RateLimitCapture: Equatable, Sendable, Codable {
     public static let currentVersion = 1
@@ -57,7 +57,7 @@ public struct RateLimitStore: Sendable {
         url = directory.appendingPathComponent("rate-limits.json")
     }
 
-    /// Written by `~/.claude/burnline-statusline.sh`. Absent until Claude Code
+    /// Written by the `burnline-statusline` helper. Absent until Claude Code
     /// has produced at least one response with the statusline configured.
     public func load() -> RateLimitCapture? {
         guard let data = try? Data(contentsOf: url),
@@ -65,5 +65,16 @@ public struct RateLimitStore: Sendable {
               capture.isCompatible
         else { return nil }
         return capture
+    }
+
+    /// Written by the `burnline-statusline` helper after every assistant
+    /// response.
+    ///
+    /// `.atomic` is required, not tidiness: `UsageStore` re-reads this file on a
+    /// 10-second timer and must never observe a partial write. Foundation
+    /// implements it as a write-to-temporary plus rename, matching the
+    /// `> tmp && mv -f` contract of the shell script this replaced.
+    public func save(_ capture: RateLimitCapture) throws {
+        try JSONEncoder().encode(capture).write(to: url, options: .atomic)
     }
 }

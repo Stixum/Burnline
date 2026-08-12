@@ -159,3 +159,50 @@ private func cache(_ entries: [(Date, Double)]) -> ScanCache {
                                    sevenDay: .init(usedPercent: 5, resetsAt: 2), fiveHour: nil)
     #expect(capture.isCompatible == false)
 }
+
+// MARK: - Atomic writes
+
+@Test func saveThenLoadRoundTripsACapture() throws {
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let store = RateLimitStore(directory: dir)
+    let capture = RateLimitCapture(
+        version: RateLimitCapture.currentVersion,
+        capturedAt: 1_785_900_000,
+        sevenDay: .init(usedPercent: 64, resetsAt: 1_786_000_000),
+        fiveHour: .init(usedPercent: 3, resetsAt: 1_785_000_000)
+    )
+
+    try store.save(capture)
+    #expect(store.load() == capture)
+}
+
+@Test func saveOverwritesAnExistingCapture() throws {
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let store = RateLimitStore(directory: dir)
+    try store.save(.init(version: 1, capturedAt: 1, sevenDay: .init(usedPercent: 10, resetsAt: 2), fiveHour: nil))
+    try store.save(.init(version: 1, capturedAt: 3, sevenDay: .init(usedPercent: 20, resetsAt: 4), fiveHour: nil))
+
+    #expect(store.load()?.sevenDay.usedPercent == 20)
+}
+
+@Test func saveRoundTripsACaptureWithNoFiveHour() throws {
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let store = RateLimitStore(directory: dir)
+    let capture = RateLimitCapture(version: RateLimitCapture.currentVersion,
+                                   capturedAt: 1, sevenDay: .init(usedPercent: 5, resetsAt: 2), fiveHour: nil)
+    try store.save(capture)
+    #expect(store.load() == capture)
+    #expect(store.load()?.fiveHour == nil)
+}

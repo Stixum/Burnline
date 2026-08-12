@@ -32,6 +32,47 @@ import Foundation
     #expect(DisplayValue.seconds(4_200) == 4_200)
 }
 
+/// `whole`'s own `ceiling` parameter must not be able to trap it: every current
+/// caller passes a safe constant, but a type whose stated purpose is "never
+/// trap" should not have a trapping parameter. `min`/`max` against a non-finite
+/// ceiling would let the clamp through untouched into `Int(Double)`.
+@Test func wholeFallsBackToThePercentCeilingWhenGivenANonFiniteCeiling() {
+    #expect(DisplayValue.whole(1e308, ceiling: .infinity) == Int(DisplayValue.percentCeiling))
+    #expect(DisplayValue.whole(-1e308, ceiling: .infinity) == -Int(DisplayValue.percentCeiling))
+    #expect(DisplayValue.whole(1e308, ceiling: .nan) == Int(DisplayValue.percentCeiling))
+}
+
+// MARK: - Flooring conversion
+
+/// `floor` exists for percentages, where 42.99% must read as "42%" — rounding
+/// it to "43%" overstates how far through the window it actually is.
+@Test func floorTruncatesAFraction() {
+    #expect(DisplayValue.floor(42.99) == 42)
+    #expect(DisplayValue.floor(42.0) == 42)
+}
+
+@Test func floorClampsAHugeValueBeforeConverting() {
+    #expect(DisplayValue.floor(1e308) == Int(DisplayValue.percentCeiling))
+    #expect(DisplayValue.floor(.infinity) == Int(DisplayValue.percentCeiling))
+    #expect(DisplayValue.floor(-.infinity) == -Int(DisplayValue.percentCeiling))
+}
+
+@Test func floorOfNotANumberIsZero() {
+    #expect(DisplayValue.floor(.nan) == 0)
+}
+
+@Test func floorHandlesNegativeValues() {
+    #expect(DisplayValue.floor(-3.2) == -4)
+}
+
+/// Same guard as `whole`'s: `floor(1e308, ceiling: .infinity)` must saturate,
+/// not trap, even though every current caller happens to pass a safe constant.
+@Test func floorFallsBackToThePercentCeilingWhenGivenANonFiniteCeiling() {
+    #expect(DisplayValue.floor(1e308, ceiling: .infinity) == Int(DisplayValue.percentCeiling))
+    #expect(DisplayValue.floor(-1e308, ceiling: .infinity) == -Int(DisplayValue.percentCeiling))
+    #expect(DisplayValue.floor(1e308, ceiling: .nan) == Int(DisplayValue.percentCeiling))
+}
+
 // MARK: - The call sites that were trapping
 
 @Test func theProjectionRowSurvivesAnAbsurdEstimate() {
