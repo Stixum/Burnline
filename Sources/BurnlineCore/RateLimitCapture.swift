@@ -38,6 +38,42 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
 
     public var capturedDate: Date { Date(timeIntervalSince1970: capturedAt) }
     public var isCompatible: Bool { version == Self.currentVersion }
+
+    /// Whether the five-hour block proves this payload is a replay of a cached
+    /// reading rather than something fresh.
+    ///
+    /// Every open Claude Code session runs the statusline on its own timer and
+    /// republishes the `rate_limits` block from *its own* last API response, so
+    /// an idle session rewrites this file forever with a reading that never
+    /// changes. A payload produced while the current five-hour window ended at
+    /// `T` cannot have been produced after `T` — so a five-hour window that had
+    /// already expired at stamping time dates the payload as a replay.
+    ///
+    /// **Sufficient, not necessary.** `five_hour` is absent on some plans, and a
+    /// replay less than five hours old hasn't outlived its own window yet. This
+    /// catches the case that actually bites: a session idle for hours.
+    public var isRepublishedCache: Bool {
+        guard let fiveHour else { return false }
+        return fiveHour.resetsAt < capturedAt
+    }
+
+    /// The same capture, dated to the latest instant it could actually have been
+    /// produced.
+    ///
+    /// The percentage is left alone: it is a real reading and the best available.
+    /// Discarding it would drop the app to pace-only on a Mac where every session
+    /// is idle, which is precisely the situation being detected. Only the
+    /// timestamp was a lie, and an honest one lets the popover's existing
+    /// "Extrapolated" styling tell the truth by itself.
+    ///
+    /// Idempotent: a corrected capture has `capturedAt == fiveHour.resetsAt`,
+    /// and the test above is strict.
+    public func correctedForRepublishing() -> RateLimitCapture {
+        guard isRepublishedCache, let fiveHour else { return self }
+        var corrected = self
+        corrected.capturedAt = fiveHour.resetsAt
+        return corrected
+    }
 }
 
 /// Where the usage figure came from. Drives what the popover claims.
@@ -59,12 +95,15 @@ public struct RateLimitStore: Sendable {
 
     /// Written by the `burnline-statusline` helper. Absent until Claude Code
     /// has produced at least one response with the statusline configured.
+    /// Corrected on the way in, not just on the way out of the helper: this file
+    /// has many writers. The rollback script, or an older build still sitting in
+    /// someone's bundle, will keep stamping replays with `Date()`.
     public func load() -> RateLimitCapture? {
         guard let data = try? Data(contentsOf: url),
               let capture = try? JSONDecoder().decode(RateLimitCapture.self, from: data),
               capture.isCompatible
         else { return nil }
-        return capture
+        return capture.correctedForRepublishing()
     }
 
     /// Written by the `burnline-statusline` helper after every assistant

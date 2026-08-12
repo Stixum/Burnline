@@ -169,11 +169,14 @@ private func cache(_ entries: [(Date, Double)]) -> ScanCache {
     defer { try? FileManager.default.removeItem(at: dir) }
 
     let store = RateLimitStore(directory: dir)
+    // The five-hour reset is ahead of `capturedAt`, as in any genuinely fresh
+    // payload. Behind it, `load()` would date the capture as a replay and the
+    // round trip would legitimately not be an identity.
     let capture = RateLimitCapture(
         version: RateLimitCapture.currentVersion,
         capturedAt: 1_785_900_000,
         sevenDay: .init(usedPercent: 64, resetsAt: 1_786_000_000),
-        fiveHour: .init(usedPercent: 3, resetsAt: 1_785_000_000)
+        fiveHour: .init(usedPercent: 3, resetsAt: 1_785_910_000)
     )
 
     try store.save(capture)

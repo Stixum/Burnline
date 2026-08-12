@@ -79,18 +79,34 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
     }
 
     /// Equal counts as fresh: re-reporting the same percentage is a new
-    /// confirmation of it, so the age moves even though the value doesn't.
+    /// confirmation of it, so the age moves even though the value doesn't — but
+    /// only ever *forwards*. Timestamps stopped being monotonic once a
+    /// republished payload started being dated by its own expired five-hour
+    /// window (see `RateLimitCapture.correctedForRepublishing`), so a replay of
+    /// a value already confirmed more recently must not pull the age backwards.
+    ///
+    /// A strictly *higher* reading keeps its own date even when that date is
+    /// older, because it is new information and the figure is only as fresh as
+    /// the moment it was actually learned.
     private static func best(_ reading: RateLimitCapture.Reading,
                              capturedAt: TimeInterval,
                              against mark: Mark?) -> (RateLimitCapture.Reading, Mark) {
-        if let mark, mark.resetsAt == reading.resetsAt, reading.usedPercent < mark.usedPercent {
+        guard let mark, mark.resetsAt == reading.resetsAt else {
+            return (reading, Mark(resetsAt: reading.resetsAt,
+                                  usedPercent: reading.usedPercent,
+                                  capturedAt: capturedAt))
+        }
+        if reading.usedPercent < mark.usedPercent {
             return (RateLimitCapture.Reading(usedPercent: mark.usedPercent,
                                              resetsAt: mark.resetsAt),
                     mark)
         }
+        let confirmedAt = reading.usedPercent == mark.usedPercent
+            ? max(capturedAt, mark.capturedAt)
+            : capturedAt
         return (reading, Mark(resetsAt: reading.resetsAt,
                               usedPercent: reading.usedPercent,
-                              capturedAt: capturedAt))
+                              capturedAt: confirmedAt))
     }
 }
 

@@ -53,8 +53,12 @@ private func decode(_ json: String) throws -> StatuslinePayload {
     #expect(p.model?.displayName == "Haiku")
 }
 
+/// The five-hour reset sits *after* `capturedAt`, as it must in a genuinely
+/// fresh payload — a five-hour window that had already expired would date the
+/// payload as a replay and pull `capturedAt` back. See
+/// `theHelperDatesARepublishedPayloadHonestlyInsteadOfStampingItNow`.
 @Test func buildsACaptureFromAFullPayload() throws {
-    let p = try decode(#"{"rate_limits":{"seven_day":{"used_percentage":64,"resets_at":1786000000},"five_hour":{"used_percentage":3,"resets_at":1785000000}}}"#)
+    let p = try decode(#"{"rate_limits":{"seven_day":{"used_percentage":64,"resets_at":1786000000},"five_hour":{"used_percentage":3,"resets_at":1785910000}}}"#)
     let capture = try #require(p.capture(capturedAt: 1_785_900_000))
     #expect(capture.version == RateLimitCapture.currentVersion)
     #expect(capture.capturedAt == 1_785_900_000)

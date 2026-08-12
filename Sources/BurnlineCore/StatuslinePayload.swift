@@ -121,11 +121,15 @@ public struct StatuslinePayload: Sendable, Decodable {
             fiveHourReading = .init(usedPercent: percent, resetsAt: resets)
         }
 
+        // `capturedAt` is "now", which is only the truth for a payload that is
+        // actually fresh. An idle session republishes the block it cached hours
+        // ago, and stamping that with `Date()` is what made a three-hour-old
+        // reading render as thirty seconds old.
         return RateLimitCapture(
             version: RateLimitCapture.currentVersion,
             capturedAt: capturedAt,
             sevenDay: .init(usedPercent: usedPercent, resetsAt: resetsAt),
             fiveHour: fiveHourReading
-        )
+        ).correctedForRepublishing()
     }
 }
