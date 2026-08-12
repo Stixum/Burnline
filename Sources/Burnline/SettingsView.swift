@@ -129,6 +129,28 @@ struct SettingsView: View {
                     .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if store.settings.refreshesUsageAutomatically {
+                    HStack {
+                        Text("Check at least every").font(.system(size: 11.5))
+                        Picker("", selection: Binding(
+                            get: { store.settings.usageRefreshInterval },
+                            set: { store.settings.usageRefreshInterval = $0 }
+                        )) {
+                            ForEach(RefreshInterval.allCases, id: \.self) { option in
+                                Text(option.title).tag(option)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 92)
+                    }
+                    // A ceiling, not a fixed cadence — worth saying, or the
+                    // observed rate looks like the setting being ignored.
+                    Text("A ceiling. Burnline checks more often than this as you approach a "
+                         + "limit — down to every 10 minutes — and never less often.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Divider().overlay(Theme.hairline)
 
                 DisclosureGroup("Advanced") {

@@ -14,13 +14,17 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
     /// tokens — `/usage` produces no assistant turn — but it does create real
     /// sessions. See `PollDecision`.
     public var refreshesUsageAutomatically: Bool
+    /// Ceiling on how often the anchor is refreshed. Pressure on any limit
+    /// tightens below this; nothing loosens past it.
+    public var usageRefreshInterval: RefreshInterval
 
     public init(resetSchedule: ResetSchedule, weights: Weights,
                 calibrationAnchors: [CalibrationAnchor], launchAtLogin: Bool,
                 targetMode: TargetMode = .realTime,
                 dayBoundary: DayBoundary = .windowDay,
                 menuBarMode: MenuBarMode = .usedOverTarget,
-                refreshesUsageAutomatically: Bool = false) {
+                refreshesUsageAutomatically: Bool = false,
+                usageRefreshInterval: RefreshInterval = .fortyFive) {
         self.resetSchedule = resetSchedule
         self.weights = weights
         self.calibrationAnchors = calibrationAnchors
@@ -29,6 +33,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         self.dayBoundary = dayBoundary
         self.menuBarMode = menuBarMode
         self.refreshesUsageAutomatically = refreshesUsageAutomatically
+        self.usageRefreshInterval = usageRefreshInterval
     }
 
     /// Thursday 09:00 local is a placeholder — replaced by the real reset as
@@ -55,5 +60,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         menuBarMode = try container.decodeIfPresent(MenuBarMode.self, forKey: .menuBarMode) ?? .usedOverTarget
         refreshesUsageAutomatically = try container.decodeIfPresent(
             Bool.self, forKey: .refreshesUsageAutomatically) ?? false
+        usageRefreshInterval = try container.decodeIfPresent(
+            RefreshInterval.self, forKey: .usageRefreshInterval) ?? .fortyFive
     }
 }

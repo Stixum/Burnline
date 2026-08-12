@@ -16,41 +16,69 @@ import Foundation
 /// `/usage` refreshes `~/.claude.json` and costs **no model tokens** — verified
 /// by pty sessions that produced no transcript and no assistant turns.
 public enum PollDecision {
-    /// Refresh **before** the UI would call the figure stale.
+    /// Never let the anchor reach the age at which the UI calls it stale.
     ///
-    /// This was originally equal to `CaptureAge.stalenessThreshold`, on the
-    /// reasoning that the app should never spawn a session while still calling
-    /// the figure live. The side effect was worse than the thing avoided: the
-    /// anchor had to actually go stale before anything refreshed it, so in
-    /// normal hourly operation the footer flipped to amber and the menu bar grew
-    /// a tilde for the ~30s the poll took. Every hour, for nothing.
-    ///
-    /// With headroom the figure simply stays live, and those two signals become
-    /// what they are for — evidence the refresh itself failed.
-    ///
-    /// 45 minutes is the largest value that still leaves room for one retry
-    /// before the hour is up (`staleAfter + minimumInterval <= 3600`), which is
-    /// pinned by a test.
-    public static let staleAfter: TimeInterval = 45 * 60
+    /// Derived from that threshold rather than hardcoded: the two were once
+    /// equal, which meant the anchor had to actually go stale before anything
+    /// refreshed it — so in normal operation the footer flipped amber and the
+    /// menu bar grew a tilde for the ~30s each poll took. With headroom the
+    /// figure simply stays live, and those signals mean what they should: the
+    /// refresh itself failed.
+    public static let relaxed: TimeInterval = CaptureAge.stalenessThreshold - 5 * 60
+    public static let normal: TimeInterval = 45 * 60
+    /// Approaching a limit, or projected to exceed one.
+    public static let elevated: TimeInterval = 20 * 60
+    /// About to hit one. Worth 3.5 CPU-seconds every ten minutes.
+    public static let critical: TimeInterval = 10 * 60
 
-    /// Backstop. If a poll fails to refresh anything — Claude Code missing, not
-    /// signed in, the command renamed — the anchor stays stale and the condition
-    /// above stays true forever. Without a floor that spawns a session every
-    /// scan tick.
-    public static let minimumInterval: TimeInterval = 15 * 60
+    /// How often to refresh, given where usage actually stands.
+    ///
+    /// **The worst signal wins.** Any of the three can be the binding
+    /// constraint, and the five-hour window especially: it moves several times
+    /// faster than the weekly one (3% → 17% in a morning) and is deliberately
+    /// never extrapolated between anchors, so between polls it is simply
+    /// whatever was last read.
+    ///
+    /// Missing signals are not pressure. Early in a window there is no estimate
+    /// and no projection, and treating `nil` as urgent would poll a brand new
+    /// window at the tightest rate for nothing.
+    public static func interval(weeklyPercent: Double?,
+                                fiveHourPercent: Double?,
+                                projectedPercent: Double?,
+                                ceiling: RefreshInterval) -> TimeInterval {
+        let banded: TimeInterval
+        if (weeklyPercent ?? 0) > 92 || (fiveHourPercent ?? 0) > 90 {
+            banded = critical
+        } else if (weeklyPercent ?? 0) > 80
+                    || (fiveHourPercent ?? 0) > 70
+                    || (projectedPercent ?? 0) > 100 {
+            banded = elevated
+        } else if (weeklyPercent ?? 0) > 50 || (fiveHourPercent ?? 0) > 50 {
+            banded = normal
+        } else {
+            banded = relaxed
+        }
+        // A ceiling only ever tightens.
+        return min(banded, ceiling.seconds)
+    }
 
     /// - Parameters:
     ///   - anchorAge: seconds since the freshest usable reading; `nil` when
     ///     there is none, which is the strongest case for polling rather than
     ///     the weakest.
     ///   - lastPollAt: when this app last spawned a poll, successful or not.
+    ///   - interval: from `interval(weeklyPercent:...)`. Doubles as the retry
+    ///     floor: a poll that fails to refresh anything leaves the anchor stale
+    ///     and the first condition true forever, so without this it would spawn
+    ///     a session on every scan tick.
     public static func shouldPoll(enabled: Bool,
                                   anchorAge: TimeInterval?,
                                   lastPollAt: Date?,
+                                  interval: TimeInterval,
                                   now: Date) -> Bool {
         guard enabled else { return false }
-        if let lastPollAt, now.timeIntervalSince(lastPollAt) < minimumInterval { return false }
+        if let lastPollAt, now.timeIntervalSince(lastPollAt) < interval { return false }
         guard let anchorAge else { return true }
-        return anchorAge > staleAfter
+        return anchorAge > interval
     }
 }

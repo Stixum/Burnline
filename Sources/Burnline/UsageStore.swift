@@ -144,9 +144,18 @@ final class UsageStore {
         // Last, and only when the anchor has actually gone stale. Nothing else
         // on this Mac will move it: an idle session republishes its cached
         // reading forever, and a desktop session never publishes at all.
+        // Adaptive: the tighter the pressure on any limit, the more often the
+        // anchor is worth 3.5 CPU-seconds and a ~27s process.
+        let interval = PollDecision.interval(
+            weeklyPercent: snapshot.estimatedPercent,
+            fiveHourPercent: snapshot.fiveHour?.usedPercent,
+            projectedPercent: snapshot.projectedPercent,
+            ceiling: storedSettings.usageRefreshInterval)
+
         if PollDecision.shouldPoll(enabled: storedSettings.refreshesUsageAutomatically,
                                    anchorAge: snapshot.liveAge,
                                    lastPollAt: lastPollAt,
+                                   interval: interval,
                                    now: Date()) {
             lastPollAt = Date()
             await poller.poll()
