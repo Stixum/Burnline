@@ -62,3 +62,45 @@ private func tempDirectory() -> URL {
     #expect(decoded.refreshesUsageAutomatically == false)
     #expect(BurnlineSettings.default.refreshesUsageAutomatically == false)
 }
+
+// Onboarding was added after settings.json had been in use for a while. Every
+// existing file lacks the key, and a decode that threw on it would silently
+// reset the user's whole configuration — SettingsStore.load falls back to
+// defaults on any failure, so the loss would be invisible.
+@Test func settingsPredatingOnboardingStillDecode() throws {
+    let dir = tempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    // Copied from the shape a real pre-onboarding settings.json has on disk:
+    // no hasSeenOnboarding, no usageRefreshInterval, no refreshesUsageAutomatically.
+    let legacy = """
+    {"resetSchedule":{"weekday":6,"hour":2,"minute":0,"timeZoneIdentifier":"America/Chicago"},
+     "weights":{"input":1,"cacheWrite":1.25,"cacheRead":0.1,"output":5,
+                "defaultMultiplier":1,
+                "modelMultipliers":[{"match":"opus","multiplier":5}]},
+     "calibrationAnchors":[],
+     "launchAtLogin":true,
+     "menuBarMode":"delta"}
+    """
+    try legacy.write(to: dir.appendingPathComponent("settings.json"),
+                     atomically: true, encoding: .utf8)
+
+    let loaded = SettingsStore(directory: dir).load()
+    #expect(loaded.hasSeenOnboarding == false)
+    // The positive control: proves we actually decoded the file rather than
+    // falling back to .default, which would also report hasSeenOnboarding false.
+    #expect(loaded.launchAtLogin == true)
+    #expect(loaded.menuBarMode == .delta)
+}
+
+@Test func hasSeenOnboardingSurvivesASaveLoadRoundTrip() throws {
+    let dir = tempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let store = SettingsStore(directory: dir)
+
+    var settings = BurnlineSettings.default
+    settings.hasSeenOnboarding = true
+    try store.save(settings)
+
+    #expect(store.load().hasSeenOnboarding == true)
+}

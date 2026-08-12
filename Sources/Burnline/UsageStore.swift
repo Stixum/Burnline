@@ -27,6 +27,18 @@ final class UsageStore {
         }
     }
 
+    /// What `~/.claude/settings.json` says about the statusline.
+    ///
+    /// Deliberately **not** refreshed on the capture timer. It only changes when
+    /// the user (or this app) edits that file, so re-parsing someone's JSON
+    /// every tick forever would buy nothing — and it would be doing it to drive
+    /// an indicator in a window that is usually closed. Refreshed when the
+    /// onboarding window appears, and after we write.
+    private(set) var wiringState: StatuslineWiring.State = .noSettingsFile
+    /// Non-nil when we could not read or write the settings file. Distinct from
+    /// a conflict: a conflict is a decision, this is a failure.
+    private(set) var wiringError: String?
+
     @ObservationIgnored private var cache: ScanCache
     @ObservationIgnored private let settingsStore = SettingsStore()
     @ObservationIgnored private let cacheStore = CacheStore()
@@ -162,6 +174,63 @@ final class UsageStore {
             // The poll refreshed ~/.claude.json, not our own files.
             rebuild()
         }
+    }
+
+    // MARK: - Statusline wiring
+
+    /// The capture helper inside *this* bundle.
+    ///
+    /// Resolved at runtime, never hardcoded: the user may have Burnline
+    /// somewhere other than /Applications, and moving it must not silently
+    /// break the statusline. `StatuslineWiring.stalePath` is what detects that
+    /// afterwards, and it can only work if this is the real current path.
+    var helperPath: String {
+        Bundle.main.bundleURL
+            .appendingPathComponent("Contents/MacOS/burnline-statusline")
+            .path
+    }
+
+    func refreshWiringState() {
+        do {
+            wiringState = StatuslineWiring.state(
+                settings: try ClaudeSettingsFile().read(), helperPath: helperPath
+            )
+            wiringError = nil
+        } catch {
+            // A settings.json we cannot parse is the user's to fix, and we must
+            // not offer to overwrite it. Reported as a conflict so the
+            // automatic button stays hidden, plus an explicit error so the
+            // window can say what actually went wrong.
+            wiringState = .conflict(command: "")
+            wiringError = "~/.claude/settings.json could not be read: \(error.localizedDescription)"
+        }
+    }
+
+    /// Writes our statusline into `~/.claude/settings.json`.
+    ///
+    /// Guarded on `isAutomaticallyFixable`, so a foreign statusline is never
+    /// overwritten even if a caller asks. `ClaudeSettingsFile` backs the file up
+    /// first regardless.
+    func configureStatusline() {
+        guard wiringState.isAutomaticallyFixable else { return }
+        do {
+            let file = ClaudeSettingsFile()
+            let existing = try file.read() ?? [:]
+            try file.write(StatuslineWiring.merged(into: existing, helperPath: helperPath))
+            wiringError = nil
+        } catch {
+            wiringError = "Could not write ~/.claude/settings.json: \(error.localizedDescription)"
+        }
+        refreshWiringState()
+    }
+
+    /// Marks onboarding as offered. Called once at launch whatever the user
+    /// then does — declining is an answer.
+    func markOnboardingSeen() {
+        guard !storedSettings.hasSeenOnboarding else { return }
+        var updated = storedSettings
+        updated.hasSeenOnboarding = true
+        settings = updated
     }
 
     /// Records a `/usage` reading as a calibration anchor. Only a fallback now —
