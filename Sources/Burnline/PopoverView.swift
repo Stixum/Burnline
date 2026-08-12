@@ -121,6 +121,12 @@ struct PopoverView: View {
             if let fiveHour = snapshot.fiveHour {
                 row("5-hour", fiveHour.rowValue)
             }
+            // Per-model weekly limit. Only the utilization source reports this —
+            // the statusline payload omits it entirely, which is why this was
+            // recorded for months as impossible to obtain.
+            if let scoped = snapshot.scopedWeekly {
+                row(scoped.modelName, scoped.rowValue)
+            }
             // Exceptions-only, per the portfolio status-chip standard: absent
             // unless the file actually disagrees with what's on screen.
             if let rejected = snapshot.rejectedReading {

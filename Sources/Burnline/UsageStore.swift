@@ -211,6 +211,7 @@ final class UsageStore {
         snapshot = SnapshotBuilder.build(cache: cache, settings: storedSettings,
                                          rateLimit: capture,
                                          now: Date(), isScanning: isScanning,
-                                         rejected: rejected)
+                                         rejected: rejected,
+                                         scopedWeekly: utilization?.scopedWeekly)
     }
 }

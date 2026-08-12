@@ -138,3 +138,25 @@ private func utilizationCapture(_ percent: Double, fetchedAt: TimeInterval) thro
 
     #expect(CaptureDirectory.freshest(of: [frozen, fresh])?.sevenDay.usedPercent == 75)
 }
+
+// MARK: - Reaching the popover
+
+/// The per-model weekly bar the backlog recorded as 🔴 impossible: "the only
+/// faithful figure isn't obtainable". It was missing from the statusline
+/// payload, not from the machine.
+@Test func theSnapshotCarriesTheScopedWeeklyLimit() throws {
+    let scoped = try #require(try decodeUtilization(realUtilization).scopedWeekly)
+    let snapshot = SnapshotBuilder.build(cache: ScanCache(), settings: .default,
+                                         rateLimit: nil, now: Date(), isScanning: false,
+                                         scopedWeekly: scoped)
+
+    #expect(snapshot.scopedWeekly?.modelName == "Fable")
+    #expect(snapshot.scopedWeekly?.rowValue == "2%")
+}
+
+/// Absent on plans that don't report one, so the row must simply not render.
+@Test func noScopedLimitMeansNoRow() {
+    let snapshot = SnapshotBuilder.build(cache: ScanCache(), settings: .default,
+                                         rateLimit: nil, now: Date(), isScanning: false)
+    #expect(snapshot.scopedWeekly == nil)
+}

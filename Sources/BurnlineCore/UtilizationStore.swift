@@ -19,10 +19,32 @@ public final class UtilizationStore {
     /// Test observability: proves the cache actually prevents re-parsing.
     private(set) public var parseCount = 0
 
+    /// Redirects the config this reads, the counterpart to `BURNLINE_DATA_DIR`.
+    ///
+    /// ⚠️ **`NSHomeDirectory()` ignores `$HOME`** — verified 2026-08-12, exactly
+    /// like `FileManager.urls(for:in:)`. Without this override there is no way to
+    /// exercise the utilization source, or screenshot the per-model row, without
+    /// reading the user's real `~/.claude.json` — a file holding hundreds of
+    /// project paths.
+    public static let overrideKey = "BURNLINE_CLAUDE_CONFIG"
+
+    /// Any non-empty value wins, including a relative path. As with
+    /// `BURNLINE_DATA_DIR`, validating and falling back to the real config would
+    /// fail *open* — straight back to reading the file this exists to avoid.
+    static func defaultPath(environment: [String: String]) -> URL {
+        if let override = environment[overrideKey], !override.isEmpty {
+            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude.json")
+    }
+
+    public convenience init() {
+        self.init(path: Self.defaultPath(environment: ProcessInfo.processInfo.environment))
+    }
+
     /// Injectable so tests never touch the real config. **No test may read the
     /// user's own `~/.claude.json`.**
-    public init(path: URL = URL(fileURLWithPath: NSHomeDirectory())
-        .appendingPathComponent(".claude.json")) {
+    public init(path: URL) {
         self.path = path
     }
 

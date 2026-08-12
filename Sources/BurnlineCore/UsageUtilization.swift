@@ -37,6 +37,10 @@ public struct UsageUtilization: Sendable, Decodable {
         public let percent: Double
         public let severity: String
         public let modelName: String
+
+        /// Assembled here like `FiveHourStatus.rowValue`, so no view body does
+        /// formatting of its own.
+        public var rowValue: String { "\(DisplayValue.whole(percent))%" }
     }
 
     public let fetchedAt: TimeInterval

@@ -71,3 +71,31 @@ private let configWithBlock = """
     #expect(store.load()?.sevenDay?.percent == 88)
     #expect(store.parseCount == 2)
 }
+
+// MARK: - Making the real config avoidable
+
+// ⚠️ `NSHomeDirectory()` IGNORES $HOME — verified 2026-08-12, exactly like
+// `FileManager.urls(for:in:)`, which is why BURNLINE_DATA_DIR exists. Without an
+// explicit override there is no way to exercise this source, or screenshot the
+// per-model row, without reading the user's own ~/.claude.json.
+
+@Test func theConfigPathFallsBackToTheRealHomeWhenUnset() {
+    let url = UtilizationStore.defaultPath(environment: [:])
+    #expect(url.lastPathComponent == ".claude.json")
+    #expect(url.deletingLastPathComponent().path == NSHomeDirectory())
+}
+
+@Test func theConfigPathHonoursTheOverride() {
+    let url = UtilizationStore.defaultPath(
+        environment: [UtilizationStore.overrideKey: "/tmp/elsewhere/.claude.json"])
+    #expect(url.path == "/tmp/elsewhere/.claude.json")
+    #expect(url.path != NSHomeDirectory() + "/.claude.json")
+}
+
+@Test func theConfigPathExpandsATildeAndIgnoresAnEmptyOverride() {
+    #expect(UtilizationStore.defaultPath(
+        environment: [UtilizationStore.overrideKey: "~/somewhere.json"]).path
+        == NSHomeDirectory() + "/somewhere.json")
+    #expect(UtilizationStore.defaultPath(
+        environment: [UtilizationStore.overrideKey: ""]).lastPathComponent == ".claude.json")
+}

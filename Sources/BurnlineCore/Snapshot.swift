@@ -56,6 +56,10 @@ public struct Snapshot: Equatable, Sendable {
     /// so the popover can explain a disagreement with the user's own terminal
     /// status line instead of looking broken.
     public let rejectedReading: RateLimitHighWater.RejectedReading?
+    /// The per-model weekly limit, when the utilization source reports one.
+    /// Absent on plans that don't, and absent entirely when only the statusline
+    /// source is available — it omits this figure.
+    public let scopedWeekly: UsageUtilization.ScopedLimit?
 
     public init(window: Window, targetPercent: Double, estimatedPercent: Double?,
                 projectedPercent: Double?, unitsInWindow: Double,
@@ -64,7 +68,8 @@ public struct Snapshot: Equatable, Sendable {
                 dayBoundary: DayBoundary = .windowDay,
                 dayTimeZoneIdentifier: String = TimeZone.current.identifier,
                 fiveHour: FiveHourStatus? = nil,
-                rejectedReading: RateLimitHighWater.RejectedReading? = nil) {
+                rejectedReading: RateLimitHighWater.RejectedReading? = nil,
+                scopedWeekly: UsageUtilization.ScopedLimit? = nil) {
         self.window = window
         self.targetPercent = targetPercent
         self.estimatedPercent = estimatedPercent
@@ -78,6 +83,7 @@ public struct Snapshot: Equatable, Sendable {
         self.dayTimeZoneIdentifier = dayTimeZoneIdentifier
         self.fiveHour = fiveHour
         self.rejectedReading = rejectedReading
+        self.scopedWeekly = scopedWeekly
     }
 
     /// Age of the live capture, when there is one.
