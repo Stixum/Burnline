@@ -4,6 +4,13 @@ import Foundation
 
 private let reset: TimeInterval = 1_786_690_800
 
+private func highWaterScratch() -> URL {
+    let url = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("burnline-highwater-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
+}
+
 private func capture(_ percent: Double, at captured: TimeInterval,
                      resetsAt: TimeInterval = reset,
                      fiveHour: RateLimitCapture.Reading? = nil) -> RateLimitCapture {
@@ -103,4 +110,40 @@ private func capture(_ percent: Double, at captured: TimeInterval,
     let (result, _) = RateLimitHighWater.reconcile(capture(64, at: 2_000), against: mark)
 
     #expect(result.fiveHour == nil)
+}
+
+// MARK: - Schema version
+
+/// A mark written before capture dating existed carries a `capturedAt` that the
+/// old code took straight from `Date()` — a republished reading stamped as
+/// fresh. Because the mark ties on percentage, the "equal re-confirmation takes
+/// the later date" rule then preserves that stale timestamp for the rest of the
+/// window. Hit for real on 2026-08-11 and cleared by hand; every upgrading user
+/// would hit it once, with no symptom except a figure that looks fresher than
+/// it is. Discard rather than migrate — it rebuilds from the next capture.
+@Test func aHighWaterFileWithoutAVersionIsDiscarded() throws {
+    let directory = highWaterScratch()
+    let legacy = #"{"sevenDay":{"resetsAt":9000,"usedPercent":69,"capturedAt":1000}}"#
+    try Data(legacy.utf8).write(to: directory.appendingPathComponent("rate-limit-highwater.json"))
+
+    #expect(HighWaterStore(directory: directory).load() == .empty)
+}
+
+@Test func anIncompatibleHighWaterVersionIsDiscarded() throws {
+    let directory = highWaterScratch()
+    let future = #"{"version":99,"sevenDay":{"resetsAt":9000,"usedPercent":69,"capturedAt":1000}}"#
+    try Data(future.utf8).write(to: directory.appendingPathComponent("rate-limit-highwater.json"))
+
+    #expect(HighWaterStore(directory: directory).load() == .empty)
+}
+
+@Test func highWaterRoundTripsAtTheCurrentVersion() throws {
+    let directory = highWaterScratch()
+    let store = HighWaterStore(directory: directory)
+    let mark = RateLimitHighWater(
+        sevenDay: .init(resetsAt: 9_000, usedPercent: 69, capturedAt: 1_000))
+
+    try store.save(mark)
+    #expect(store.load() == mark)
+    #expect(store.load().version == RateLimitHighWater.currentVersion)
 }

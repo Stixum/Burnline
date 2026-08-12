@@ -67,13 +67,31 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         }
     }
 
+    /// Bump when the *meaning* of a stored mark changes, not merely its shape.
+    ///
+    /// Marks written before capture dating existed hold a `capturedAt` taken
+    /// straight from `Date()` — a republished reading stamped as fresh. Since a
+    /// mark ties on percentage, the "equal re-confirmation takes the later date"
+    /// rule then preserves that stale timestamp for the rest of the window. The
+    /// only symptom is a figure that looks fresher than it is, which is exactly
+    /// the class of bug this file exists to prevent.
+    ///
+    /// Same treatment as `ScanCache`: discard, never migrate. This is derived
+    /// state and rebuilds from the next capture.
+    public static let currentVersion = 1
+
+    public var version: Int
     public var sevenDay: Mark?
     public var fiveHour: Mark?
 
-    public init(sevenDay: Mark? = nil, fiveHour: Mark? = nil) {
+    public init(version: Int = RateLimitHighWater.currentVersion,
+                sevenDay: Mark? = nil, fiveHour: Mark? = nil) {
+        self.version = version
         self.sevenDay = sevenDay
         self.fiveHour = fiveHour
     }
+
+    public var isCompatible: Bool { version == Self.currentVersion }
 
     public static let empty = RateLimitHighWater()
 
@@ -151,9 +169,13 @@ public struct HighWaterStore: Sendable {
         url = directory.appendingPathComponent("rate-limit-highwater.json")
     }
 
+    /// A mark with no version, or a version this build doesn't know, is
+    /// discarded. A pre-versioning file has no `version` key at all, so the
+    /// decode itself fails — which is the intended migration, not an accident.
     public func load() -> RateLimitHighWater {
         guard let data = try? Data(contentsOf: url),
-              let mark = try? JSONDecoder().decode(RateLimitHighWater.self, from: data)
+              let mark = try? JSONDecoder().decode(RateLimitHighWater.self, from: data),
+              mark.isCompatible
         else { return .empty }
         return mark
     }
