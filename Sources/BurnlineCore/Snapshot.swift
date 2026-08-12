@@ -52,6 +52,10 @@ public struct Snapshot: Equatable, Sendable {
     /// The 5-hour limit, when a live capture carries one that is still inside
     /// its own window. `nil` on plans that don't report it.
     public let fiveHour: FiveHourStatus?
+    /// Set only when the reading on disk was overridden by the high-water mark,
+    /// so the popover can explain a disagreement with the user's own terminal
+    /// status line instead of looking broken.
+    public let rejectedReading: RateLimitHighWater.RejectedReading?
 
     public init(window: Window, targetPercent: Double, estimatedPercent: Double?,
                 projectedPercent: Double?, unitsInWindow: Double,
@@ -59,7 +63,8 @@ public struct Snapshot: Equatable, Sendable {
                 isScheduleAutomatic: Bool = false, isScanning: Bool,
                 dayBoundary: DayBoundary = .windowDay,
                 dayTimeZoneIdentifier: String = TimeZone.current.identifier,
-                fiveHour: FiveHourStatus? = nil) {
+                fiveHour: FiveHourStatus? = nil,
+                rejectedReading: RateLimitHighWater.RejectedReading? = nil) {
         self.window = window
         self.targetPercent = targetPercent
         self.estimatedPercent = estimatedPercent
@@ -72,6 +77,7 @@ public struct Snapshot: Equatable, Sendable {
         self.dayBoundary = dayBoundary
         self.dayTimeZoneIdentifier = dayTimeZoneIdentifier
         self.fiveHour = fiveHour
+        self.rejectedReading = rejectedReading
     }
 
     /// Age of the live capture, when there is one.

@@ -33,7 +33,25 @@ struct MenuBarLabel: View {
                     FileHandle.standardError.write(Data(
                         "BURNLINE effectiveAppearance=\(NSApplication.shared.effectiveAppearance.name.rawValue)\n".utf8))
                 }
+                // Same idea for the popover, which otherwise opens only by
+                // clicking the menu bar item and so can't be screenshotted.
+                if ProcessInfo.processInfo.environment["BURNLINE_OPEN_POPOVER"] == "1" {
+                    PopoverWindow.open(using: openWindow)
+                }
             }
+    }
+}
+
+/// Verification-only window carrying the popover's contents. Same activation
+/// dance as `SettingsWindow` — an `LSUIElement` process is never activated, so
+/// `openWindow` alone leaves the window created but never shown.
+enum PopoverWindow {
+    static let id = "burnline-popover"
+
+    @MainActor
+    static func open(using openWindow: OpenWindowAction) {
+        openWindow(id: id)
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 }
 

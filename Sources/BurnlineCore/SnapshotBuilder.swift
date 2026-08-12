@@ -11,7 +11,8 @@ public enum SnapshotBuilder {
                              settings: BurnlineSettings,
                              rateLimit: RateLimitCapture? = nil,
                              now: Date,
-                             isScanning: Bool) -> Snapshot {
+                             isScanning: Bool,
+                             rejected: RateLimitHighWater.RejectedReading? = nil) -> Snapshot {
 
         // A capture pins the window exactly: its resets_at IS the boundary, so
         // no user-configured schedule is involved.
@@ -70,7 +71,8 @@ public enum SnapshotBuilder {
             isScanning: isScanning,
             dayBoundary: settings.dayBoundary,
             dayTimeZoneIdentifier: settings.resetSchedule.timeZoneIdentifier,
-            fiveHour: fiveHour
+            fiveHour: fiveHour,
+            rejectedReading: rejected
         )
     }
 

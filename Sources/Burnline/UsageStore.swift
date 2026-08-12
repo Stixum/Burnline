@@ -164,8 +164,13 @@ final class UsageStore {
         // one keeps publishing the stale rate_limits snapshot it started with —
         // so the last writer is routinely not the freshest.
         var capture = rateLimitStore.load()
+        // Kept so the popover can say the file was overridden. Silently
+        // disagreeing with the user's own terminal status line reads as a broken
+        // app rather than as the protection it is.
+        var rejected: RateLimitHighWater.RejectedReading?
         if let incoming = capture {
             let (resolved, mark) = RateLimitHighWater.reconcile(incoming, against: highWater)
+            rejected = RateLimitHighWater.rejection(onDisk: incoming, resolved: resolved)
             capture = resolved
             if mark != highWater {
                 highWater = mark
@@ -175,6 +180,7 @@ final class UsageStore {
 
         snapshot = SnapshotBuilder.build(cache: cache, settings: storedSettings,
                                          rateLimit: capture,
-                                         now: Date(), isScanning: isScanning)
+                                         now: Date(), isScanning: isScanning,
+                                         rejected: rejected)
     }
 }

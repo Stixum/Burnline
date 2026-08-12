@@ -110,7 +110,39 @@ struct PopoverView: View {
             if let fiveHour = snapshot.fiveHour {
                 row("5-hour", fiveHour.rowValue)
             }
+            // Exceptions-only, per the portfolio status-chip standard: absent
+            // unless the file actually disagrees with what's on screen.
+            if let rejected = snapshot.rejectedReading {
+                rejectionRow(rejected)
+            }
         }
+    }
+
+    /// Explains a disagreement with the user's own terminal status line.
+    ///
+    /// Another Claude Code session republishing a lower reading is the normal
+    /// case, not an error — every open session rewrites the same file on its own
+    /// timer, carrying whatever its last API response said. Without this row the
+    /// app just quietly shows a different number than the terminal does, which
+    /// is what made the 2026-08-11 investigation start from "the app is stuck".
+    ///
+    /// Symbol + word + colour. Never colour alone.
+    private func rejectionRow(_ rejected: RateLimitHighWater.RejectedReading) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9))
+            Text("Stale session")
+            Spacer()
+            Text(rejected.rowValue).monospacedDigit()
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(Theme.warning)
+        .help("""
+              Another Claude Code session reported \
+              \(DisplayValue.whole(rejected.reportedPercent))%, which is lower than the \
+              \(DisplayValue.whole(rejected.usingPercent))% already seen this window, so it was \
+              ignored. Usage inside a window cannot go down, so the lower reading is \
+              always the older one — an idle session republishing what it cached.
+              """)
     }
 
     private func row(_ label: String, _ value: String,

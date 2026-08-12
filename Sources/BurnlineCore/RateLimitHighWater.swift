@@ -20,6 +20,40 @@ import Foundation
 /// clears by itself at the next reset.
 public struct RateLimitHighWater: Equatable, Sendable, Codable {
 
+    /// A reading on disk that the high-water mark overrode, kept so the popover
+    /// can say so.
+    ///
+    /// Without this the app silently disagrees with the user's own terminal
+    /// status line — which reads as a broken app rather than as the protection
+    /// it is. `BurnlineProbe` has always printed it; the UI never did.
+    public struct RejectedReading: Equatable, Sendable {
+        public let reportedPercent: Double
+        public let usingPercent: Double
+
+        public init(reportedPercent: Double, usingPercent: Double) {
+            self.reportedPercent = reportedPercent
+            self.usingPercent = usingPercent
+        }
+
+        /// Assembled here, like `FiveHourStatus.rowValue`, so no view body does
+        /// formatting of its own.
+        public var rowValue: String {
+            "said \(DisplayValue.whole(reportedPercent))%, kept \(DisplayValue.whole(usingPercent))%"
+        }
+    }
+
+    /// What the file said versus what is being shown, when the two differ.
+    ///
+    /// `nil` in the ordinary case — this surfaces as an exceptions-only row, per
+    /// the portfolio status-chip standard.
+    public static func rejection(onDisk: RateLimitCapture,
+                                 resolved: RateLimitCapture) -> RejectedReading? {
+        let reported = onDisk.sevenDay.usedPercent
+        let using = resolved.sevenDay.usedPercent
+        guard using > reported else { return nil }
+        return RejectedReading(reportedPercent: reported, usingPercent: using)
+    }
+
     /// A high-water mark for one reading, tied to the window it was taken in.
     public struct Mark: Equatable, Sendable, Codable {
         public var resetsAt: TimeInterval
