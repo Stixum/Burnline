@@ -18,7 +18,7 @@ A weekly limit resets on a fixed weekday and time. Seven days is 100%, so each d
 
 **The usage half comes from one of three sources, and the popover always says which is in play.**
 
-1. **Live** — Claude Code pipes session JSON to a [statusline script](https://code.claude.com/docs/en/statusline) on every response, carrying `rate_limits.seven_day.{used_percentage,resets_at}`. That's Anthropic's own percentage *and* the true reset instant. `~/.claude/burnline-statusline.sh` captures it; the app reads it. This is the normal state.
+1. **Live** — Claude Code pipes session JSON to a [statusline command](https://code.claude.com/docs/en/statusline) on every response, carrying `rate_limits.seven_day.{used_percentage,resets_at}`. That's Anthropic's own percentage *and* the true reset instant. The `burnline-statusline` binary, shipped inside `Burnline.app`, captures it; the app reads it. This is the normal state.
 2. **Calibrated** — no usable capture, but you've typed `/usage` readings in by hand. Fallback.
 3. **Pace only** — neither. The clock target alone, which is useful on its own.
 
@@ -40,7 +40,7 @@ swift test
 
 `--install` is what copies to `/Applications` — plain `./build.sh` only assembles the bundle in `build/`. Launch-at-login is a toggle in Settings.
 
-Built with SwiftPM, not Xcode. Three targets: `BurnlineCore` (all logic, no SwiftUI), `Burnline` (the app), `BurnlineProbe` (a CLI that prints a Snapshot off the real transcripts — the fastest way to see what the app is seeing).
+Built with SwiftPM, not Xcode. Four targets: `BurnlineCore` (all logic, no SwiftUI), `Burnline` (the app), `BurnlineProbe` (a CLI that prints a Snapshot off the real transcripts — the fastest way to see what the app is seeing), `BurnlineStatusline` (the capture helper, shipped inside the app bundle).
 
 ```bash
 swift run BurnlineProbe
