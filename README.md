@@ -18,7 +18,11 @@ A weekly limit resets on a fixed weekday and time. Seven days is 100%, so each d
 
 **The usage half comes from one of three sources, and the popover always says which is in play.**
 
-1. **Live** — Claude Code pipes session JSON to a [statusline command](https://code.claude.com/docs/en/statusline) on every response, carrying `rate_limits.seven_day.{used_percentage,resets_at}`. That's Anthropic's own percentage *and* the true reset instant. The `burnline-statusline` binary, shipped inside `Burnline.app`, captures it; the app reads it. This is the normal state.
+1. **Live** — Anthropic's own percentage and the true reset instant, from either of two local sources, whichever is fresher:
+   - Claude Code pipes session JSON to a [statusline command](https://code.claude.com/docs/en/statusline) on every response, carrying `rate_limits.seven_day.{used_percentage,resets_at}`. The `burnline-statusline` binary, shipped inside `Burnline.app`, captures it.
+   - `~/.claude.json` holds a `cachedUsageUtilization` block with its own timestamp, and — uniquely — the per-model weekly limit that the statusline payload omits.
+
+   This is the normal state.
 2. **Calibrated** — no usable capture, but you've typed `/usage` readings in by hand. Fallback.
 3. **Pace only** — neither. The clock target alone, which is useful on its own.
 
@@ -26,7 +30,17 @@ A capture does the whole job by itself: the true percentage, plus — paired wit
 
 Between captures the app extrapolates from token counts in `~/.claude/projects/**/*.jsonl`, which see only **Claude Code on this Mac**. claude.ai in a browser, the desktop app, and other machines are invisible to them. Every capture that lands is account-wide and corrects for all of it; only the forward extrapolation is blind. Past an hour the popover says "Extrapolated" rather than "Live".
 
-No API calls, no credentials, no network access.
+## What Burnline reads, and what it never does
+
+Everything above comes from files already on your Mac. Burnline holds no credentials, sends no telemetry, and never transmits anything it reads.
+
+It reads three things, all locally:
+
+- `~/.claude/projects/**/*.jsonl` — transcript token counts, for the estimate between captures
+- `~/Library/Application Support/Burnline/` — its own captures, cache and settings
+- `~/.claude.json` — **one field**, `cachedUsageUtilization`. That file also contains a list of your project paths; Burnline does not read, store, or transmit it
+
+**One optional setting makes network activity happen indirectly, and it is off by default.** "Refresh usage automatically" spawns a short-lived Claude Code session that runs `/usage`, because a stale figure otherwise has nothing to correct it — measured sitting 2h18m behind reality. It costs no model tokens (`/usage` produces no assistant turn), but it does start real Claude Code sessions, and those talk to Anthropic. With the setting off, Burnline makes no network requests of any kind.
 
 ## Build
 
