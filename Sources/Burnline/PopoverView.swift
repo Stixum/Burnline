@@ -24,6 +24,17 @@ struct PopoverView: View {
 
             hero
 
+            // Exceptions-only. Names the cause of a frozen figure instead of
+            // leaving the user to infer it from an age string — which is what
+            // made "stuck at 69%" read as a broken app.
+            if let explanation = CaptureAge.scarcityExplanation(snapshot.liveAge) {
+                Text(explanation)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 5)
+            }
+
             UsageBar(estimatedPercent: snapshot.estimatedPercent,
                      targetPercent: snapshot.targetPercent,
                      endOfDayPercent: snapshot.endOfDayPercent,

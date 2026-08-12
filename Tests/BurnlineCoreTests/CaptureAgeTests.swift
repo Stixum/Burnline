@@ -53,3 +53,26 @@ import Foundation
 @Test func anAbsentCaptureAgeReadsAsNow() {
     #expect(CaptureAge.description(nil) == "now")
 }
+
+// MARK: - Why the figure stopped moving
+
+/// Exceptions-only: nothing to explain while captures are landing.
+@Test func aFreshCaptureNeedsNoExplanation() {
+    #expect(CaptureAge.scarcityExplanation(60) == nil)
+    #expect(CaptureAge.scarcityExplanation(nil) == nil)
+}
+
+/// The copy has to name the cause, not just the symptom. "3h ago" alone is what
+/// made this read as a broken app rather than an idle one.
+@Test func aStaleCaptureExplainsWhyAndWhatToDo() throws {
+    let text = try #require(CaptureAge.scarcityExplanation(3 * 3_600))
+    #expect(text.contains("3h"))
+    #expect(text.lowercased().contains("terminal"))
+    // The symptom phrasing must not leak the "ago" suffix mid-sentence.
+    #expect(text.contains("ago") == false)
+}
+
+@Test func theScarcityThresholdMatchesTheStalenessThreshold() {
+    #expect(CaptureAge.scarcityExplanation(CaptureAge.stalenessThreshold) == nil)
+    #expect(CaptureAge.scarcityExplanation(CaptureAge.stalenessThreshold + 1) != nil)
+}
