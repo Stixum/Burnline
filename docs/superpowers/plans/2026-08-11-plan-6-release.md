@@ -10,6 +10,22 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-11-burnline-distribution-design.md` §3, §7, §9. **Depends on:** Plans 4 and 5 complete — do not publish a release without the onboarding, or the first user experience is a pace-only app with no explanation.
 
+> ## Revision note — 2026-08-12
+>
+> - **Task 5 Step 4's privacy bullet is now a section**, not a sentence. The app
+>   reads `~/.claude.json` and can spawn Claude Code sessions; both need saying
+>   out loud. A first draft already landed in commit `1363ce4` — refine it for an
+>   outside reader rather than starting over.
+> - **Task 5 Step 5 is obsolete.** It said the README's "no network access" line
+>   was true for 1.0 and should not be pre-emptively weakened. It was already
+>   false when written; `UsagePoller` had made it so. Corrected.
+> - **New Task 9** verifies the poller still works from a *notarized, hardened
+>   runtime* bundle. Nothing in signing should block `posix_spawn`, but the
+>   poller fails silently by design, so an untested assumption here would ship as
+>   a feature that quietly never runs.
+> - `BURNLINE_DATA_DIR` and `BURNLINE_CLAUDE_CONFIG` now exist, so any warning
+>   below about testing being unable to avoid live data is obsolete.
+
 ---
 
 ## Background for the implementer
@@ -314,9 +330,22 @@ Structure:
 6. **Privacy** — unsandboxed, reads `~/.claude`, why that is required, and that nothing read is ever transmitted. Strangers will ask and the answer is good
 7. Build-from-source instructions, moved below install
 
-- [ ] **Step 5: Verify the README's claims are still true**
+- [ ] **Step 5: Verify the README's claims are still true — against the code, not against this plan**
 
-`README.md:29` currently reads "No API calls, no credentials, no network access." That stays accurate for **1.0** and must be corrected in Plan 7 when Sparkle lands. Do not pre-emptively weaken it now — it is true today.
+> ⚠️ **This step previously asserted that "No API calls, no credentials, no
+> network access" was true for 1.0 and should not be weakened. That was wrong** —
+> `UsagePoller` had already made it false. Corrected 2026-08-12 in `1363ce4`.
+> The instruction stands, but as a *check*, not a reassurance.
+
+Re-derive each claim from the current source before publishing:
+
+```bash
+grep -rn "URLSession\|Process()\|openpty\|NWConnection\|CFSocket" Sources/
+```
+
+Every hit must be accounted for in the README's privacy section. **A claim that
+was true when written is not evidence it is true now**, and this file is about to
+become the front page of a public repository.
 
 - [ ] **Step 6: Commit and make public**
 
@@ -414,6 +443,31 @@ brew install --cask stixum/tap/burnline
 Expected: downloads, verifies the checksum, installs to `/Applications` with **no Gatekeeper prompt**. A prompt here means notarization or stapling did not take.
 
 - [ ] **Step 5: Add the one-liner to the README and commit**
+
+---
+
+### Task 9: Verify the poller survives notarization
+
+**Files:** none — this is a verification gate.
+
+The poller spawns `claude` via `Process` + `openpty` from inside a hardened
+runtime, Developer ID signed, notarized bundle. Nothing in that should block
+process creation — hardened runtime restricts code *injection*, not spawning —
+but **the poller is silent by design when it fails**, so an assumption here would
+ship as a feature that quietly never runs on anyone's machine but yours.
+
+- [ ] **Step 1:** On the test machine from Task 8, enable "Refresh usage
+      automatically" and confirm through the new first-enable dialog.
+- [ ] **Step 2:** Launch with the diagnostic log:
+      `BURNLINE_POLL_LOG=/tmp/poll.log open -a Burnline`
+- [ ] **Step 3:** Wait for a poll and read the log. Expected: `launched pid …`,
+      not `FAILED: claude not found` or an `openpty` failure.
+- [ ] **Step 4:** Confirm `~/.claude.json`'s `fetchedAtMs` actually moved. A
+      launched process that never delivered `/usage` looks identical to success
+      in the log alone.
+- [ ] **Step 5:** Confirm the poll's own captures went to its throwaway directory
+      and **not** to the real Application Support directory — the isolation that
+      stops it laundering a stale reading as fresh.
 
 ---
 

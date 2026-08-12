@@ -1,12 +1,42 @@
 # Burnline — Public Distribution Design Spec
 
-> Status: **APPROVED 2026-08-11, NOT YET IMPLEMENTED.**
+> Status: **APPROVED 2026-08-11. Plan 4 shipped; Plans 5–7 outstanding.**
 >
 > Covers taking Burnline from a locally-built personal tool to a public GitHub
 > Releases download. Companion to `2026-08-11-burnline-design.md` (the product
 > design); this spec changes nothing about what the app computes or displays,
 > only how it is signed, packaged, delivered, updated, and set up on a machine
 > that has never seen it before.
+>
+> ## Revision note — 2026-08-12
+>
+> The app changed underneath this spec between Plan 4 and Plan 5. Three
+> subsystems landed that did not exist when it was written, and each one moves
+> something here:
+>
+> - **A second usage source.** `UtilizationStore` reads `~/.claude.json` →
+>   `cachedUsageUtilization`, a peer to the statusline capture competing on age,
+>   and the only source carrying the per-model weekly limit. **§5's premise
+>   softens:** a user with no statusline configured is no longer necessarily
+>   stuck in `.paceOnly`.
+> - **`UsagePoller` spawns subprocesses.** Opt-in and off by default, it runs
+>   `claude` in a pty and types `/usage` to refresh the anchor. **This is the
+>   single largest change to the distribution posture in this document** — the
+>   app went from "reads some files" to "can start Claude Code sessions", and
+>   §7's privacy note grows from a paragraph to a section because of it.
+> - **`BURNLINE_DATA_DIR` and `BURNLINE_CLAUDE_CONFIG` exist.** Every warning in
+>   Plans 4–6 about testing being unable to avoid live data is now obsolete;
+>   the capture path is safely exercisable.
+>
+> **§6's "four false claims" task is overtaken and already done.** Those claims
+> did not survive to Sparkle — the poller made them false first, while they were
+> still published on the README. Corrected 2026-08-12 (commit `1363ce4` and the
+> Obsidian notes). Sparkle still adds *dynamic loading*, which remains a separate
+> correction when it lands.
+>
+> **Decisions taken at the same time:** the poller **ships in 1.0**, gated behind
+> an explicit first-enable confirmation (§5); spec and plans are revised in place
+> rather than superseded.
 
 - **Platform:** macOS 14+, SwiftUI, Swift 6, SwiftPM (no Xcode project)
 - **Distribution:** public GitHub Releases + a self-owned Homebrew tap
@@ -33,6 +63,17 @@ having left the machine it was built on:
 Each of the three fails silently. A stranger on macOS 14 downloads the app, is
 blocked by Gatekeeper, works around it, sees a pace-only reading, and has no
 signal anywhere explaining why the usage half is missing.
+
+**A fourth silent failure was added after this spec was written** (2026-08-12).
+`UsagePoller` resolves the `claude` executable from `PATH` plus four known
+locations — a deliberate fix for the fact that a Finder-launched app inherits
+roughly `/usr/bin:/bin:/usr/sbin:/sbin` and never sees Homebrew. That covers the
+common installs. It does not cover nvm, asdf, or a custom prefix, and when it
+misses, the poll does nothing forever and the only diagnostic is the
+`BURNLINE_POLL_LOG` environment variable. **A user who enables the setting and
+gets silence cannot tell that from a working poller with nothing to do** —
+exactly the failure class Plan 4 existed to remove, reintroduced in a new place.
+Plan 5 surfaces it.
 
 ### Non-goals
 
@@ -63,6 +104,7 @@ signal anywhere explaining why the usage half is missing.
 | Onboarding | In-app first-run window that writes the config | Only path where a stranger succeeds unaided |
 | Auto-update | Sparkle, **deferred to 1.1** | Highest-risk item; must not block the first release |
 | Release automation | Local `release.sh` | Keeps the Developer ID cert out of GitHub secrets |
+| `UsagePoller` in 1.0 | **Ships, off by default, first-enable confirmation** | Solves a measured 2h18m staleness; spawning processes warrants an explicit yes (§5) |
 
 ### Release sequencing
 
@@ -191,12 +233,54 @@ process, a trap this project already hit and documented.
 
 Shown automatically on first launch, and reachable from the popover thereafter.
 
+### Revised premise — 2026-08-12
+
+This section was written when the statusline capture was the only way to a real
+number, so onboarding was pass/fail: wire it or sit in `.paceOnly` forever.
+`UtilizationStore` changed that. A user who configures nothing may still get a
+live figure from `~/.claude.json`, because Claude Code writes
+`cachedUsageUtilization` whether or not Burnline is involved.
+
+**The statusline is still the path to recommend, and onboarding should still
+push it** — it is event-driven, free, updates on every response, and needs no
+subprocess. The utilization file does not self-refresh; it goes stale until
+something runs `/usage`. So the framing changes from *"do this or the app cannot
+work"* to *"do this and the app works properly"*, which is both true and a
+better thing to say to a stranger.
+
+Onboarding must therefore show **which sources are actually feeding the figure**,
+not merely whether the statusline is wired.
+
 ### Displays
 
 - Which source is currently in play (`.live` / `.calibrated` / `.paceOnly`)
 - Whether a `statusLine` is configured in `~/.claude/settings.json`, and whether
   it points at this bundle
 - A live indicator: *capture detected N seconds ago*, or *no capture yet*
+- Whether `~/.claude.json` is supplying a utilization reading, and its age
+- **Whether the `claude` executable was found**, if the poller is enabled — see
+  §1's fourth silent failure. A poller that can never run must say so here rather
+  than in an environment variable.
+
+### The poller's first-enable confirmation
+
+**Decided 2026-08-12: the poller ships in 1.0, behind an explicit confirmation
+the first time it is switched on.**
+
+Off by default is the right posture and stays. But "off by default" protects a
+user who never touches the setting; it says nothing to one who flips it because
+the label sounded useful. Spawning Claude Code sessions on someone's machine is a
+different category of act from reading files, and the person doing it should know
+that before it happens, not discover it in a process list.
+
+The confirmation states: it starts short-lived Claude Code sessions; those
+sessions talk to Anthropic; it costs no model tokens because `/usage` produces no
+assistant turn; it runs at most once per the configured interval; and it can be
+turned off again at any time. Confirm/cancel, and cancelling leaves the setting
+off.
+
+Shown once per enable, not once ever — a user re-enabling it a year later on a
+new machine deserves the same sentence.
 
 ### "Set up automatically"
 
@@ -264,8 +348,25 @@ config are being reasonable and must not be second-class.
 
 ### Consequence: four documented claims become false
 
-Sparkle is a dynamically loaded framework that makes a network request. These must
-be corrected **in the same commit that adds it**:
+> **✅ OVERTAKEN 2026-08-12 — this task is already done, and not by Sparkle.**
+> `UsagePoller` made all four statements false before Sparkle was written, while
+> they were still published on the README. Corrected in commit `1363ce4` plus the
+> Obsidian notes; `CHANGELOG.md:345` was annotated as a historical record rather
+> than rewritten.
+>
+> **What Sparkle still costs:** *dynamic loading*. `CHANGELOG.md:345`'s
+> "no dynamic loading" and the reasoning in `build.sh`'s hardened-runtime comment
+> both need a further pass when the framework is embedded. The network half is
+> already spent.
+>
+> **The lesson, which is the reason this note is kept rather than deleted:** a
+> documented property that a *planned* feature will cost is worth re-checking
+> against the code every time you touch it. Something else may spend it first,
+> and the schedule for correcting it silently becomes a schedule for leaving a
+> false statement in public.
+
+The original analysis, retained for the record — Sparkle is a dynamically loaded
+framework that makes a network request:
 
 | Location | Current text |
 |---|---|
@@ -291,9 +392,31 @@ its premise is stated in absolute terms that will no longer be true.
   — the only hardcoded personal path in the repo, already flagged in the backlog.
   This spec deliberately uses no absolute personal paths.
 - **LICENSE.** MIT unless there is a reason otherwise.
-- **Privacy note**, in the README rather than a separate file nobody opens: the app
-  is unsandboxed, it reads `~/.claude`, why that is required, and that nothing read
-  is ever transmitted. Strangers will ask, and the answer is good.
+- **Privacy section** — upgraded from a paragraph on 2026-08-12, because what the
+  app touches grew. In the README, not a separate file nobody opens. It must
+  cover, plainly:
+  - Unsandboxed, and *why* — `~/.claude` is a home dotfolder, not TCC-protected,
+    so this is what makes the data source reachable at all. Sandboxing would
+    break it.
+  - The three things read: transcript token counts under
+    `~/.claude/projects/**/*.jsonl`; the app's own Application Support directory;
+    and **exactly one field of `~/.claude.json`**.
+  - ⚠️ **`~/.claude.json` deserves its own sentence.** It also contains a list of
+    every project path on the machine — which for many users means client names.
+    Burnline reads `cachedUsageUtilization` and nothing else, stores nothing
+    else, and transmits nothing at all. Say so explicitly; a reader who knows
+    what is in that file will otherwise assume the worst, and would be right to.
+  - **The poller, stated honestly.** Off by default. When on, it starts real
+    Claude Code sessions that talk to Anthropic. It costs no model tokens
+    (`/usage` produces no assistant turn, measured) but it is the one setting
+    that makes network activity happen, and the README must not bury that.
+  - The standing guarantee: no credentials, no telemetry, nothing read ever
+    leaves the machine.
+
+  A first draft of this landed early, in commit `1363ce4`, because the old
+  unqualified "no network access" line was already false and could not be left
+  standing on a soon-to-be-public page. Plan 6 refines it for an outside reader
+  rather than writing it from scratch.
 - **README rewritten outward.** Screenshot, `brew install` one-liner, DMG link, and
   **the statusline requirement above the fold** — it is the difference between the
   app working and the app appearing broken.

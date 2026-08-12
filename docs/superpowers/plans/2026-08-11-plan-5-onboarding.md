@@ -10,11 +10,35 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-11-burnline-distribution-design.md` §5. **Depends on:** Plan 4 (the helper binary must exist at a known path inside the bundle).
 
+> ## Revision note — 2026-08-12
+>
+> Written before `UtilizationStore`, `UsagePoller` and `BURNLINE_DATA_DIR`
+> existed. Three changes, none of which invalidate the design:
+>
+> 1. **The premise softened.** A user who configures nothing is no longer
+>    necessarily stuck in `.paceOnly` — `~/.claude.json` may feed a live figure
+>    on its own. The statusline is still the right recommendation (event-driven,
+>    free, refreshes on every response, no subprocess), so onboarding still
+>    pushes it — but the copy changes from *"do this or it cannot work"* to
+>    *"do this and it works properly"*. **Do not write copy that claims the app
+>    is broken without a statusline; a stranger can now disprove it in one
+>    glance, and that costs you their trust in everything else the window says.**
+> 2. **Two tasks added** — Task 5 (poller first-enable confirmation) and Task 6
+>    (surface "Claude Code not found"). Both come from spec §5 and §1 as revised.
+>    The old Task 5 (clean-account end-to-end) is now Task 7.
+> 3. **`BURNLINE_DATA_DIR` exists**, so the capture path is safely testable.
+>    Any warning below about being unable to avoid live data is obsolete.
+>
+> `StatuslineWiring` and `ClaudeSettingsFile` as specified are unaffected. The
+> refuse-to-clobber rule is unchanged and remains the most important line here.
+
 ---
 
 ## Background for the implementer
 
-**Why this exists.** Without a `statusLine` entry in `~/.claude/settings.json`, Burnline runs in `.paceOnly` forever. That is a valid mode and the app says so — but a new user has no idea it is a *fixable* state. Today the fix is undocumented outside the author's own notes.
+**Why this exists.** Without a `statusLine` entry in `~/.claude/settings.json`, Burnline depends entirely on `~/.claude.json` — which does not self-refresh, so the figure goes stale and stays stale until something runs `/usage`. The statusline is what makes the number move on its own: event-driven, free, updating on every response, no subprocess. A new user has no idea any of that is configurable, and today the fix is undocumented outside the author's own notes.
+
+⚠️ **Do not write copy claiming the app cannot work without it.** That was true when this plan was drafted and is not true now — a stranger can disprove it at a glance, which costs you their trust in everything else the window says.
 
 **The single most important rule in this plan: never clobber an existing statusline.** Plenty of Claude Code users have one — a custom prompt, `ccusage`, a shell script they wrote. Silently replacing it is unrecoverable without the backup and is the worst thing this app could do to a stranger's setup. When there is a conflict, **Burnline loses** and shows the manual snippet instead.
 
@@ -530,7 +554,83 @@ git commit -m "feat: first-run onboarding window for the statusline capture"
 
 ---
 
-### Task 5: End-to-end on a clean account
+### Task 5: The poller's first-enable confirmation
+
+**Files:**
+- Modify: `Sources/Burnline/SettingsView.swift`
+- Modify: `Sources/Burnline/OnboardingView.swift` (if the toggle is mirrored there)
+
+`refreshesUsageAutomatically` is already correctly `false` by default, with the
+reasoning recorded in `BurnlineSettings`: *"reading files is one kind of app, and
+spawning processes on someone's machine is another."* That protects a user who
+never touches the setting. It says nothing to one who flips it because the label
+sounded useful.
+
+- [ ] **Step 1: Write the confirmation**
+
+An alert on the transition **off → on** only. It must state: it starts
+short-lived Claude Code sessions; those sessions talk to Anthropic; it costs no
+model tokens because `/usage` produces no assistant turn (measured, not assumed);
+it runs at most once per the configured interval; it can be turned off at any
+time.
+
+Confirm / Cancel. **Cancel must leave the setting off** — verify the binding
+actually reverts rather than rendering stale.
+
+- [ ] **Step 2: Shown once per enable, not once ever**
+
+No `hasSeenPollerWarning` flag. Someone re-enabling this a year later, or on a
+new machine, deserves the same sentence. It is two clicks on a setting nobody
+toggles often.
+
+- [ ] **Step 3: Verify both paths by hand**
+
+Toggle on → cancel → setting still off, no process spawned (`pgrep -f "claude --model haiku"`).
+Toggle on → confirm → setting on, and a poll eventually runs
+(`BURNLINE_POLL_LOG=/tmp/poll.log`).
+
+- [ ] **Step 4: Screenshot it** in dark mode, system alert included.
+
+- [ ] **Step 5: Commit**
+
+---
+
+### Task 6: Surface "Claude Code not found"
+
+**Files:**
+- Modify: `Sources/Burnline/UsagePoller.swift` (expose the resolution result)
+- Modify: `Sources/Burnline/SettingsView.swift`
+
+`resolveClaude()` checks `PATH` plus four known locations, which correctly fixes
+the Finder-launched-app PATH problem. It does not cover nvm, asdf, or a custom
+prefix — and when it misses, **the poll does nothing forever and the only
+diagnostic is an environment variable.** A user who enables the setting and gets
+silence cannot distinguish that from a working poller with nothing to do.
+
+This is the same silent-failure class Plan 4 existed to remove.
+
+- [ ] **Step 1: Make the resolution result observable**
+
+Lift `resolveClaude()` to something the UI can query without spawning anything.
+Keep it cheap — it is four `isExecutableFile` calls.
+
+- [ ] **Step 2: Show it beside the toggle**
+
+Found → the resolved path, muted, monospaced.
+Not found → *"Claude Code not found — automatic refresh will do nothing"*, with
+the searched locations. **Word + icon + colour, never colour alone.**
+
+- [ ] **Step 3: Test the negative case**
+
+The path that matters and the one that will rot. Inject the candidate list rather
+than depending on the machine's real installation, so the not-found branch is
+covered in CI where `claude` may not exist at all.
+
+- [ ] **Step 4: Commit**
+
+---
+
+### Task 7: End-to-end on a clean account
 
 The only test that proves this works for someone who is not you.
 

@@ -20,16 +20,15 @@
 
 **The part Xcode normally does for you.** With an Xcode project, a *Copy Files* build phase embeds the framework and a *Code Sign on Copy* checkbox signs it. There is no Xcode project here. `build.sh` must copy the framework and `release.sh` must sign it, in the right order, or the app will either fail to launch (framework not found at runtime) or fail notarization (unsigned nested code).
 
-**Three things break the moment this ships,** and they are corrected in this plan, not left for later:
+**What documentation this breaks — read Task 6 before assuming.** This plan
+originally listed four claims that Sparkle would falsify. **Three of the four were
+already corrected on 2026-08-12**, because `UsagePoller` spent the network
+property first, while the claims were still published. See Task 6.
 
-| Location | Current text |
-|---|---|
-| `README.md:29` | "No API calls, no credentials, no network access." |
-| `ARCHITECTURE.md:5` (Obsidian) | "unsandboxed, no network access" |
-| `Burnline.md:8` (Obsidian) | "unsandboxed, no network" |
-| `CHANGELOG.md:345` (Obsidian) | "No networking, no subprocess, **no dynamic loading**" |
-
-All four become false. Sparkle is a dynamically loaded framework that makes a network request.
+Sparkle's remaining cost is **dynamic loading** — an embedded framework, plus an
+updater that downloads and executes code. That second part also changes the
+*hardened runtime* reasoning in `build.sh`, which currently argues the value is
+"honestly low" on the grounds that there is nothing to protect. There will be.
 
 ## File Structure
 
@@ -330,7 +329,24 @@ Expected: the XML. A 404 means Pages is not serving `docs/` yet.
 
 ---
 
-### Task 6: Correct the four false claims
+### Task 6: Correct the remaining false claim
+
+> **⚠️ Mostly done already — 2026-08-12.** `UsagePoller` made the *network*
+> claims false before Sparkle existed, while they were still on the README. Fixed
+> in commit `1363ce4` and the Obsidian notes. **Do not redo that work; check it,
+> then handle only what Sparkle actually adds.**
+
+What Sparkle still costs is **dynamic loading**. Remaining work:
+
+- `CHANGELOG.md:345` (Obsidian) — annotated as historical on 2026-08-12, but its
+  "no dynamic loading" is a further inaccuracy once the framework is embedded.
+  Extend the annotation rather than rewriting the entry.
+- `build.sh`'s hardened-runtime comment reasons from "no secrets, no network, no
+  privilege boundary" to justify the value being low. With an embedded framework
+  and an updater that downloads and executes code, **that reasoning genuinely
+  changes** — hardened runtime stops being cheap hygiene and starts closing a
+  real hole. Rewrite the comment to say so.
+- Re-read the README's privacy section as a whole and add the update check.
 
 Do this **in the same commit that ships Sparkle**, not afterwards.
 
