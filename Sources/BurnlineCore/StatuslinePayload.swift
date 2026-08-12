@@ -34,6 +34,15 @@ public struct StatuslinePayload: Sendable, Decodable {
             case usedPercentage = "used_percentage"
             case resetsAt = "resets_at"
         }
+
+        // Each field is decoded independently: a wrong-typed `used_percentage`
+        // must not cost us `resets_at`, or vice versa. See the type-level doc
+        // on `StatuslinePayload` for why this can't just be `Optional`.
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            usedPercentage = try? c.decodeIfPresent(Double.self, forKey: .usedPercentage)
+            resetsAt = try? c.decodeIfPresent(TimeInterval.self, forKey: .resetsAt)
+        }
     }
 
     public struct RateLimits: Sendable, Decodable {
@@ -42,6 +51,14 @@ public struct StatuslinePayload: Sendable, Decodable {
         enum CodingKeys: String, CodingKey {
             case sevenDay = "seven_day"
             case fiveHour = "five_hour"
+        }
+
+        // A malformed `five_hour` (wrong type, not even an object) must not
+        // cost us `seven_day`, and vice versa.
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            sevenDay = try? c.decodeIfPresent(Limit.self, forKey: .sevenDay)
+            fiveHour = try? c.decodeIfPresent(Limit.self, forKey: .fiveHour)
         }
     }
 
@@ -57,6 +74,28 @@ public struct StatuslinePayload: Sendable, Decodable {
         case contextWindow = "context_window"
         case cost
         case rateLimits = "rate_limits"
+    }
+
+    // Each top-level property is decoded independently, exactly like the jq
+    // filter this replaced extracted each path on its own: a cosmetic field
+    // (say, `model.display_name`) arriving with an unexpected TYPE must not
+    // cost us `rate_limits`. Plain `Optional` properties only protect against
+    // a field that DISAPPEARS — this protects against one that changes shape.
+    //
+    // `try?` on `decodeIfPresent` flattens `String??` down to `String?`:
+    // "missing key", "present but null", and "present but wrong type" all
+    // become `nil` here, which is exactly the semantics we want.
+    //
+    // A top-level value that isn't a keyed container (a JSON array, string,
+    // or bare number) still throws out of `container(keyedBy:)`, so
+    // `main.swift` still falls back to printing "burnline".
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        model = try? c.decodeIfPresent(Model.self, forKey: .model)
+        workspace = try? c.decodeIfPresent(Workspace.self, forKey: .workspace)
+        contextWindow = try? c.decodeIfPresent(ContextWindow.self, forKey: .contextWindow)
+        cost = try? c.decodeIfPresent(Cost.self, forKey: .cost)
+        rateLimits = try? c.decodeIfPresent(RateLimits.self, forKey: .rateLimits)
     }
 
     /// The capture to persist, or `nil` when this payload carries nothing worth

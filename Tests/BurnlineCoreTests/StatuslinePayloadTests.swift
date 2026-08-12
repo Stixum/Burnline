@@ -80,3 +80,33 @@ private func decode(_ json: String) throws -> StatuslinePayload {
     #expect(capture.sevenDay.usedPercent == 64)
     #expect(capture.fiveHour == nil)
 }
+
+// MARK: - A malformed cosmetic field must cost only itself (Fix 2)
+
+@Test func numericModelDisplayNameStillYieldsACaptureAndRendersRateLimits() throws {
+    let p = try decode(#"{"model":{"display_name":123},"rate_limits":{"seven_day":{"used_percentage":64,"resets_at":1786690800}}}"#)
+    #expect(p.model?.displayName == nil)
+    let capture = try #require(p.capture(capturedAt: 1))
+    #expect(capture.sevenDay.usedPercent == 64)
+    #expect(StatusLineRenderer.render(p) == "week 64%")
+}
+
+@Test func malformedFiveHourStillYieldsTheSevenDayCapture() throws {
+    let p = try decode(#"{"rate_limits":{"seven_day":{"used_percentage":64,"resets_at":1786000000},"five_hour":"nope"}}"#)
+    #expect(p.rateLimits?.fiveHour == nil)
+    let capture = try #require(p.capture(capturedAt: 1))
+    #expect(capture.sevenDay.usedPercent == 64)
+    #expect(capture.fiveHour == nil)
+}
+
+@Test func stringSevenDayUsedPercentageYieldsNoCaptureWithoutThrowing() throws {
+    let p = try decode(#"{"rate_limits":{"seven_day":{"used_percentage":"lots","resets_at":1786000000}}}"#)
+    #expect(p.rateLimits?.sevenDay?.usedPercentage == nil)
+    #expect(p.capture(capturedAt: 1) == nil)
+}
+
+@Test func topLevelArrayStillThrows() {
+    #expect(throws: (any Error).self) {
+        try decode("[1,2,3]")
+    }
+}

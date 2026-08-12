@@ -10,7 +10,17 @@ import BurnlineCore
 // every single response. A missed capture is a minor inconvenience; a noisy
 // failure is a serious one. Hence: no `try!`, no fatalError, no early exit.
 
-let input = FileHandle.standardInput.readDataToEndOfFile()
+// Claude Code may close the pipe before we write. Default SIGPIPE disposition
+// kills the process with signal 13 — a non-zero exit, which this program is
+// not allowed to produce.
+signal(SIGPIPE, SIG_IGN)
+
+// `readDataToEndOfFile()` raises an uncatchable Objective-C exception on a
+// read failure (closed fd, a directory piped in, ...) — `try?` cannot catch
+// it, and it crashes with a non-zero exit and a stderr backtrace. The
+// throwing `readToEnd()` reports the same failures as a catchable Swift
+// error instead.
+let input = (try? FileHandle.standardInput.readToEnd()) ?? Data()
 
 guard let payload = try? JSONDecoder().decode(StatuslinePayload.self, from: input) else {
     // Empty stdin, malformed JSON, a type mismatch, or a number too large for
