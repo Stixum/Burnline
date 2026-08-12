@@ -32,18 +32,33 @@ let drift = abs(warmCache.units(from: now.addingTimeInterval(-30 * 86_400), to: 
 
 // Same inputs the app uses, so the probe can diagnose what the app is doing —
 // including the high-water reconciliation, without persisting a new mark.
-let rawOnDisk = RateLimitStore().load()
-// Same dating the app applies, so the probe reports what the app will show.
-let onDisk = rawOnDisk.map { loaded in
+// Exactly the resolution UsageStore performs, so the probe reports what the app
+// will show. Reading only the shared file here would make the probe disagree
+// with the app the moment two sessions are open — which is the case the
+// per-session files exist for.
+func date(_ loaded: RateLimitCapture) -> RateLimitCapture {
     loaded.dated(mintedAt: loaded.transcriptPath.flatMap {
         TranscriptDating.mintedAt(transcriptPath: $0, observedAt: loaded.capturedAt)
     })
+}
+let sessionCaptures = CaptureDirectory().load()
+let sharedCapture = RateLimitStore().load()
+let onDisk = CaptureDirectory.freshest(of: (sessionCaptures + [sharedCapture].compactMap { $0 })
+    .map(date))
+let rawOnDisk = onDisk.flatMap { resolved in
+    (sessionCaptures + [sharedCapture].compactMap { $0 })
+        .first { $0.sessionId == resolved.sessionId }
 }
 let storedMark = HighWaterStore().load()
 let capture = onDisk.map { RateLimitHighWater.reconcile($0, against: storedMark).capture }
 
 // Which evidence dated the reading. "wall clock" means neither rule applied and
 // the figure is only as honest as the writing session was fresh.
+let sourcesNote = sessionCaptures.isEmpty
+    ? "shared file only"
+    : "\(sessionCaptures.count) session file(s)"
+        + (sharedCapture == nil ? "" : " + shared file")
+
 var datingNote = "no capture"
 if let raw = rawOnDisk {
     let minted = raw.transcriptPath.flatMap {
@@ -108,6 +123,7 @@ print("""
 Burnline probe
   data dir         \(dataDirectoryNote)
   capture          \(captureNote)
+  read from        \(sourcesNote)
   dated by         \(datingNote)
   high water       \(highWaterNote)
   source           \(describeSource(snapshot.source))

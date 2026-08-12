@@ -31,6 +31,7 @@ final class UsageStore {
     @ObservationIgnored private let settingsStore = SettingsStore()
     @ObservationIgnored private let cacheStore = CacheStore()
     @ObservationIgnored private let rateLimitStore = RateLimitStore()
+    @ObservationIgnored private let captureDirectory = CaptureDirectory()
     @ObservationIgnored private let highWaterStore = HighWaterStore()
     @ObservationIgnored private var highWater = HighWaterStore().load()
     @ObservationIgnored private var scanTask: Task<Void, Never>?
@@ -129,6 +130,13 @@ final class UsageStore {
         lastRefresh = Date()
         isScanning = false
         rebuild()
+
+        // On the 60s scan path, not the 10s rebuild: this is directory I/O plus
+        // deletes. Placed after `rebuild()` so `snapshot.window` is the current
+        // one — pruning from inside `rebuild()` would, for one tick after a
+        // reset, prune against the previous window and delete the very capture
+        // proving the new one had started.
+        captureDirectory.prune(before: snapshot.window.start.timeIntervalSince1970)
     }
 
     /// Records a `/usage` reading as a calibration anchor. Only a fallback now —
@@ -167,11 +175,17 @@ final class UsageStore {
         // Dating happens here, not in the helper: reading a transcript is file
         // I/O, and the helper runs every 30s in every open session under a
         // contract that it never fails and never delays the user's prompt.
-        var capture = rateLimitStore.load().map { loaded in
-            loaded.dated(mintedAt: loaded.transcriptPath.flatMap {
-                TranscriptDating.mintedAt(transcriptPath: $0, observedAt: loaded.capturedAt)
-            })
-        }
+        // Per-session files plus the shared one, all dated, freshest wins. The
+        // shared file competes on equal terms rather than being preferred or
+        // ignored: the rollback script writes only it, and so does a payload
+        // that carries no session_id.
+        let dated = (captureDirectory.load() + [rateLimitStore.load()].compactMap { $0 })
+            .map { loaded in
+                loaded.dated(mintedAt: loaded.transcriptPath.flatMap {
+                    TranscriptDating.mintedAt(transcriptPath: $0, observedAt: loaded.capturedAt)
+                })
+            }
+        var capture = CaptureDirectory.freshest(of: dated)
         // Kept so the popover can say the file was overridden. Silently
         // disagreeing with the user's own terminal status line reads as a broken
         // app rather than as the protection it is.

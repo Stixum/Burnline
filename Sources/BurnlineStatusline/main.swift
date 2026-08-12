@@ -33,7 +33,15 @@ guard let payload = try? JSONDecoder().decode(StatuslinePayload.self, from: inpu
 // Capture first, print second, and print even when the capture is skipped —
 // the ordering the bash script had.
 if let capture = payload.capture(capturedAt: Date().timeIntervalSince1970) {
-    // Best-effort. A failed write must not cost the user their status line.
+    // Both, deliberately. The per-session file is what the app prefers — it is
+    // never overwritten by another session, so no reading is lost. The shared
+    // file stays because `~/.claude/burnline-statusline.sh` is the documented
+    // rollback and writes only that, and because a payload carrying no
+    // session_id has nowhere else to go.
+    //
+    // Best-effort throughout: a failed write must not cost the user their
+    // status line.
+    try? CaptureDirectory().save(capture)
     try? RateLimitStore().save(capture)
 }
 
