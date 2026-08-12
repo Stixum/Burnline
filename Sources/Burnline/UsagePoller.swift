@@ -41,27 +41,10 @@ final class UsagePoller {
         }
     }
 
-    /// ⚠️ **A Finder-launched app does not inherit your shell's PATH.**
-    /// LaunchServices gives it roughly `/usr/bin:/bin:/usr/sbin:/sbin`, so
-    /// `/usr/bin/env claude` resolves from a terminal and fails silently in the
-    /// installed app — which is the only place it matters. Homebrew's location
-    /// in particular is never on that PATH.
-    ///
-    /// Checked in order; `nil` means Claude Code isn't installed where this can
-    /// find it, and the poll simply does nothing.
-    private static func resolveClaude() -> String? {
-        var candidates: [String] = []
-        if let path = ProcessInfo.processInfo.environment["PATH"] {
-            candidates += path.split(separator: ":").map { "\($0)/claude" }
-        }
-        candidates += [
-            "/opt/homebrew/bin/claude",
-            "/usr/local/bin/claude",
-            NSHomeDirectory() + "/.claude/local/claude",
-            NSHomeDirectory() + "/.local/bin/claude",
-        ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    /// Delegates to `ClaudeExecutable`, which lives in BurnlineCore so the
+    /// not-found branch is covered by tests — the branch that will rot, and
+    /// whose failure is otherwise invisible.
+    private static func resolveClaude() -> String? { ClaudeExecutable.resolve() }
 
     /// How long to wait for the TUI to come up before sending the command, and
     /// how long to let it settle afterwards. Generous on purpose — a poll that

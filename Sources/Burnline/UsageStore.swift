@@ -176,6 +176,17 @@ final class UsageStore {
         }
     }
 
+    /// Where `claude` was found, or nil if it wasn't.
+    ///
+    /// Cached rather than resolved in a view body: it is four `stat` calls, and
+    /// it only changes when the user installs or moves Claude Code. Refreshed
+    /// when Settings appears.
+    private(set) var claudeExecutable: String?
+
+    func refreshClaudeExecutable() {
+        claudeExecutable = ClaudeExecutable.resolve()
+    }
+
     // MARK: - Statusline wiring
 
     /// The capture helper inside *this* bundle.

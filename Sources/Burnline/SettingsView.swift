@@ -5,6 +5,7 @@ import BurnlineCore
 struct SettingsView: View {
     @Bindable var store: UsageStore
     @State private var launchAtLoginFailed = false
+    @State private var confirmingPoller = false
 
     private let weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday",
                                 "Thursday", "Friday", "Saturday"]
@@ -117,9 +118,21 @@ struct SettingsView: View {
                         .font(.system(size: 11)).foregroundStyle(Theme.danger)
                 }
 
+                // Enabling asks first. Off-by-default protects someone who
+                // never touches this; it says nothing to someone who flips it
+                // because the label sounded useful. Spawning Claude Code
+                // sessions on a machine is a different category of act from
+                // reading files, and the person doing it should know before it
+                // happens rather than find out from a process list.
                 Toggle("Refresh usage automatically", isOn: Binding(
                     get: { store.settings.refreshesUsageAutomatically },
-                    set: { store.settings.refreshesUsageAutomatically = $0 }
+                    set: { wanted in
+                        if wanted && !store.settings.refreshesUsageAutomatically {
+                            confirmingPoller = true      // not enabled until confirmed
+                        } else {
+                            store.settings.refreshesUsageAutomatically = wanted
+                        }
+                    }
                 ))
                 // Says plainly what it does, because it spawns processes. Off by
                 // default for that reason.
@@ -128,6 +141,8 @@ struct SettingsView: View {
                      + "you're working in a terminal session.")
                     .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
+
+                claudeExecutableStatus
 
                 if store.settings.refreshesUsageAutomatically {
                     HStack {
@@ -188,6 +203,25 @@ struct SettingsView: View {
         // the window instead of leaving dead space below when it is collapsed.
         .frame(width: 380, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+        .onAppear { store.refreshClaudeExecutable() }
+        .alert("Let Burnline refresh your usage?", isPresented: $confirmingPoller) {
+            Button("Cancel", role: .cancel) { }
+            Button("Turn on") {
+                store.settings.refreshesUsageAutomatically = true
+                store.refreshClaudeExecutable()
+            }
+        } message: {
+            // Says the part the inline description doesn't: that this starts
+            // real sessions, and that those sessions reach Anthropic. "Uses no
+            // message quota" is measured — /usage produces no assistant turn —
+            // but it is not the same as "does nothing".
+            Text("Burnline will start a short-lived Claude Code session and run /usage "
+                 + "when your figure goes stale, at most once every "
+                 + "\(store.settings.usageRefreshInterval.title.lowercased()).\n\n"
+                 + "It uses no message quota — /usage produces no assistant turn — but it "
+                 + "does start real Claude Code sessions, and those contact Anthropic.\n\n"
+                 + "You can turn this off again at any time.")
+        }
     }
 
     /// Spells out the choice with the live numbers, so it is concrete rather
@@ -240,6 +274,43 @@ struct SettingsView: View {
             Spacer()
             TextField("", value: value, format: .number)
                 .textFieldStyle(.roundedBorder).frame(width: 70).monospacedDigit()
+        }
+    }
+
+    /// Says whether the poller can actually run.
+    ///
+    /// Without this, a user enables the setting, nothing happens, and the only
+    /// diagnostic is an environment variable — the same silent-failure class
+    /// that the capture helper was rewritten to remove. Word and icon, never
+    /// colour alone.
+    @ViewBuilder private var claudeExecutableStatus: some View {
+        if store.settings.refreshesUsageAutomatically {
+            if let path = store.claudeExecutable {
+                HStack(alignment: .top, spacing: 5) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 10)).foregroundStyle(Theme.success)
+                    Text("Using \(path)")
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(Theme.textMuted)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10)).foregroundStyle(Theme.warning)
+                        Text("Claude Code not found — automatic refresh will do nothing")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Theme.warning)
+                    }
+                    Text("Looked on your PATH and in:\n"
+                         + ClaudeExecutable.searchedLocationsDescription())
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Theme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
     }
 
