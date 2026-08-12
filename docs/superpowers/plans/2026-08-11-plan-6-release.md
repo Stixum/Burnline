@@ -446,6 +446,30 @@ Expected: downloads, verifies the checksum, installs to `/Applications` with **n
 
 ---
 
+### Task 8: Prove it on a machine that is not this one
+
+**Nothing in Task 4's verification substitutes for this.** `spctl` and `stapler validate` run on the machine that holds the signing identity, against an artefact that has never carried a quarantine attribute. They catch the common errors; only a real download proves the result.
+
+- [ ] **Step 1:** On a different Mac — or at minimum a fresh user account on this one — download the DMG **through a browser**, not `curl`. Only a browser sets `com.apple.quarantine`.
+
+- [ ] **Step 2:** Confirm the attribute is present:
+
+```bash
+xattr -p com.apple.quarantine ~/Downloads/Burnline.dmg
+```
+
+Expected: a value. **If this errors, the test is invalid** — you did not download it the way a user will.
+
+- [ ] **Step 3:** Open the DMG, drag to Applications, launch.
+
+Expected: **it opens.** No "damaged" dialog, no "unidentified developer" dialog, no right-click → Open workaround.
+
+- [ ] **Step 4:** Confirm onboarding appears and the whole Plan 5 flow works from a cold start.
+
+- [ ] **Step 5:** Test offline. Disconnect from the network and launch again — a stapled ticket validates without a round trip, and this is what proves the staple rather than a lucky online check.
+
+---
+
 ### Task 9: Verify the poller survives notarization
 
 **Files:** none — this is a verification gate.
@@ -471,30 +495,6 @@ ship as a feature that quietly never runs on anyone's machine but yours.
 
 ---
 
-### Task 8: Prove it on a machine that is not this one
-
-**Nothing in Task 4's verification substitutes for this.** `spctl` and `stapler validate` run on the machine that holds the signing identity, against an artefact that has never carried a quarantine attribute. They catch the common errors; only a real download proves the result.
-
-- [ ] **Step 1:** On a different Mac — or at minimum a fresh user account on this one — download the DMG **through a browser**, not `curl`. Only a browser sets `com.apple.quarantine`.
-
-- [ ] **Step 2:** Confirm the attribute is present:
-
-```bash
-xattr -p com.apple.quarantine ~/Downloads/Burnline.dmg
-```
-
-Expected: a value. **If this errors, the test is invalid** — you did not download it the way a user will.
-
-- [ ] **Step 3:** Open the DMG, drag to Applications, launch.
-
-Expected: **it opens.** No "damaged" dialog, no "unidentified developer" dialog, no right-click → Open workaround.
-
-- [ ] **Step 4:** Confirm onboarding appears and the whole Plan 5 flow works from a cold start.
-
-- [ ] **Step 5:** Test offline. Disconnect from the network and launch again — a stapled ticket validates without a round trip, and this is what proves the staple rather than a lucky online check.
-
----
-
 ## Done when
 
 - [ ] `spctl -a -vv` reports `source=Notarized Developer ID`
@@ -502,4 +502,5 @@ Expected: **it opens.** No "damaged" dialog, no "unidentified developer" dialog,
 - [ ] It launches with the network off
 - [ ] `brew install --cask stixum/tap/burnline` works end to end
 - [ ] `grep -rn seanmccauley` across the working tree and full history is clean
+- [ ] The poller spawns successfully from the notarized bundle, and `fetchedAtMs` moves
 - [ ] The README's first screen tells a stranger about the statusline requirement
