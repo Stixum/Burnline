@@ -104,3 +104,37 @@ private func decodeUtilization(_ json: String) throws -> UsageUtilization {
 @Test func aBlockWithNoSevenDayYieldsNoCapture() throws {
     #expect(try decodeUtilization(#"{"fetchedAtMs":1000}"#).asCapture() == nil)
 }
+
+// MARK: - Competing with the statusline
+
+private func statuslineCapture(_ percent: Double, at capturedAt: TimeInterval) -> RateLimitCapture {
+    RateLimitCapture(version: RateLimitCapture.currentVersion, capturedAt: capturedAt,
+                     sevenDay: .init(usedPercent: percent, resetsAt: 9_000_000_000),
+                     fiveHour: nil, sessionId: "s", transcriptPath: nil)
+}
+
+private func utilizationCapture(_ percent: Double, fetchedAt: TimeInterval) throws
+-> RateLimitCapture {
+    try #require(try decodeUtilization("""
+    {"fetchedAtMs":\(Int(fetchedAt * 1000)),
+     "utilization":{"seven_day":{"utilization":\(percent),"resets_at":"2255-06-05T23:20:00Z"}}}
+    """).asCapture())
+}
+
+/// The whole design: two sources, no precedence, age decides. Utilization knows
+/// its own age exactly; a statusline capture's is derived.
+@Test func utilizationWinsWhenItIsFresherThanTheStatuslineCapture() throws {
+    let stale = statuslineCapture(70, at: 1_000)
+    let fresh = try utilizationCapture(75, fetchedAt: 8_000)
+
+    #expect(CaptureDirectory.freshest(of: [stale, fresh])?.sevenDay.usedPercent == 75)
+}
+
+/// And the converse, which matters because the utilization cache does NOT
+/// self-refresh — it was measured frozen for 5+ minutes of continuous use.
+@Test func theStatuslineCaptureWinsWhenTheUtilizationCacheIsStale() throws {
+    let frozen = try utilizationCapture(70, fetchedAt: 1_000)
+    let fresh = statuslineCapture(75, at: 8_000)
+
+    #expect(CaptureDirectory.freshest(of: [frozen, fresh])?.sevenDay.usedPercent == 75)
+}

@@ -32,6 +32,7 @@ final class UsageStore {
     @ObservationIgnored private let cacheStore = CacheStore()
     @ObservationIgnored private let rateLimitStore = RateLimitStore()
     @ObservationIgnored private let captureDirectory = CaptureDirectory()
+    @ObservationIgnored private let utilizationStore = UtilizationStore()
     @ObservationIgnored private let highWaterStore = HighWaterStore()
     @ObservationIgnored private var highWater = HighWaterStore().load()
     @ObservationIgnored private var scanTask: Task<Void, Never>?
@@ -179,7 +180,14 @@ final class UsageStore {
         // shared file competes on equal terms rather than being preferred or
         // ignored: the rollback script writes only it, and so does a payload
         // that carries no session_id.
-        let dated = (captureDirectory.load() + [rateLimitStore.load()].compactMap { $0 })
+        // Three sources now, competing on age with no precedence between them:
+        // per-session statusline captures, the shared statusline file, and
+        // `cachedUsageUtilization` from ~/.claude.json. The last carries its own
+        // explicit `fetchedAtMs` and no session, so dating leaves it alone.
+        let utilization = utilizationStore.load()
+        let dated = (captureDirectory.load()
+                     + [rateLimitStore.load()].compactMap { $0 }
+                     + [utilization?.asCapture()].compactMap { $0 })
             .map { loaded in
                 loaded.dated(mintedAt: loaded.transcriptPath.flatMap {
                     TranscriptDating.mintedAt(transcriptPath: $0, observedAt: loaded.capturedAt)

@@ -43,24 +43,40 @@ func date(_ loaded: RateLimitCapture) -> RateLimitCapture {
 }
 let sessionCaptures = CaptureDirectory().load()
 let sharedCapture = RateLimitStore().load()
-let onDisk = CaptureDirectory.freshest(of: (sessionCaptures + [sharedCapture].compactMap { $0 })
-    .map(date))
+let utilization = UtilizationStore().load()
+let allCandidates = sessionCaptures
+    + [sharedCapture].compactMap { $0 }
+    + [utilization?.asCapture()].compactMap { $0 }
+let onDisk = CaptureDirectory.freshest(of: allCandidates.map(date))
 let rawOnDisk = onDisk.flatMap { resolved in
-    (sessionCaptures + [sharedCapture].compactMap { $0 })
-        .first { $0.sessionId == resolved.sessionId }
+    allCandidates.first { $0.sessionId == resolved.sessionId }
 }
 let storedMark = HighWaterStore().load()
 let capture = onDisk.map { RateLimitHighWater.reconcile($0, against: storedMark).capture }
 
 // Which evidence dated the reading. "wall clock" means neither rule applied and
 // the figure is only as honest as the writing session was fresh.
-let sourcesNote = sessionCaptures.isEmpty
+var sourcesNote = sessionCaptures.isEmpty
     ? "shared file only"
     : "\(sessionCaptures.count) session file(s)"
         + (sharedCapture == nil ? "" : " + shared file")
+// Figures only, never raw JSON: ~/.claude.json also holds hundreds of project
+// paths, which for consultancy work are client names.
+if let utilization {
+    let age = DisplayValue.seconds(now.timeIntervalSince1970 - utilization.fetchedAt)
+    sourcesNote += " + utilization (fetched \(age)s ago)"
+    if let scoped = utilization.scopedWeekly {
+        sourcesNote += "\n  per-model        \(scoped.modelName) \(scoped.percent)% · \(scoped.severity)"
+    }
+} else {
+    sourcesNote += " + no utilization block"
+}
 
 var datingNote = "no capture"
-if let raw = rawOnDisk {
+if let raw = rawOnDisk, raw == utilization?.asCapture() {
+    // Not a heuristic at all — this source states its own fetch time.
+    datingNote = "explicit fetchedAtMs (~/.claude.json)"
+} else if let raw = rawOnDisk {
     let minted = raw.transcriptPath.flatMap {
         TranscriptDating.mintedAt(transcriptPath: $0, observedAt: raw.capturedAt)
     }

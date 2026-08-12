@@ -140,10 +140,25 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
     /// A strictly *higher* reading keeps its own date even when that date is
     /// older, because it is new information and the figure is only as fresh as
     /// the moment it was actually learned.
+    /// Two sources describe the same window to different precision: the
+    /// statusline reports whole epoch seconds (`1786690800`), while
+    /// `cachedUsageUtilization` reports `2026-08-14T06:59:59.424563+00:00` — the
+    /// same instant, 0.58s earlier. Found against real data 2026-08-12.
+    ///
+    /// Exact equality would treat those as different windows, so each source
+    /// would keep its own mark and the protection would silently degrade
+    /// whenever they alternate. Real windows are five hours or seven days apart,
+    /// so a minute of tolerance cannot merge two of them.
+    static let sameWindowTolerance: TimeInterval = 60
+
+    private static func isSameWindow(_ a: TimeInterval, _ b: TimeInterval) -> Bool {
+        abs(a - b) <= sameWindowTolerance
+    }
+
     private static func best(_ reading: RateLimitCapture.Reading,
                              capturedAt: TimeInterval,
                              against mark: Mark?) -> (RateLimitCapture.Reading, Mark) {
-        guard let mark, mark.resetsAt == reading.resetsAt else {
+        guard let mark, isSameWindow(mark.resetsAt, reading.resetsAt) else {
             return (reading, Mark(resetsAt: reading.resetsAt,
                                   usedPercent: reading.usedPercent,
                                   capturedAt: capturedAt))

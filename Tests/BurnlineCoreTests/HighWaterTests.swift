@@ -147,3 +147,35 @@ private func capture(_ percent: Double, at captured: TimeInterval,
     #expect(store.load() == mark)
     #expect(store.load().version == RateLimitHighWater.currentVersion)
 }
+
+// MARK: - Sub-second disagreement between sources
+
+/// ⚠️ Found against real data 2026-08-12. The statusline reports `resets_at` as
+/// whole epoch seconds (`1786690800`); `cachedUsageUtilization` reports the same
+/// instant as `2026-08-14T06:59:59.424563+00:00` — 0.58s earlier. Exact equality
+/// treats those as two different windows, so each source would keep its own mark
+/// and the stale-session protection would silently degrade whenever the two
+/// alternate. Windows are hours or days apart; a tolerance costs nothing.
+@Test func twoSourcesReportingTheSameWindowSubSecondApartShareAMark() {
+    let fromStatusline = capture(75, at: 5_000, resetsAt: 1_786_690_800)
+    let (_, mark) = RateLimitHighWater.reconcile(fromStatusline, against: .empty)
+
+    let fromUtilization = capture(70, at: 9_000, resetsAt: 1_786_690_799.424563)
+    let (result, _) = RateLimitHighWater.reconcile(fromUtilization, against: mark)
+
+    // Same window, lower reading -> rejected as stale, not adopted as a new one.
+    #expect(result.sevenDay.usedPercent == 75)
+}
+
+/// The counterweight: a genuinely different window must still start clean, or
+/// last week's high would pin this one forever. Five-hour windows are the
+/// tightest real spacing at five hours apart.
+@Test func windowsFarApartStillGetSeparateMarks() {
+    let earlier = capture(90, at: 5_000, resetsAt: 1_786_690_800)
+    let (_, mark) = RateLimitHighWater.reconcile(earlier, against: .empty)
+
+    let fiveHoursLater = capture(10, at: 9_000, resetsAt: 1_786_690_800 + 18_000)
+    let (result, _) = RateLimitHighWater.reconcile(fiveHoursLater, against: mark)
+
+    #expect(result.sevenDay.usedPercent == 10)
+}
