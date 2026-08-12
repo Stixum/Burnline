@@ -16,10 +16,22 @@ import Foundation
 /// `/usage` refreshes `~/.claude.json` and costs **no model tokens** — verified
 /// by pty sessions that produced no transcript and no assistant turns.
 public enum PollDecision {
-    /// Poll only once the anchor is genuinely stale. Kept at or above the
-    /// threshold the UI uses, so the app never spawns a session while still
-    /// presenting the figure as live.
-    public static let staleAfter: TimeInterval = CaptureAge.stalenessThreshold
+    /// Refresh **before** the UI would call the figure stale.
+    ///
+    /// This was originally equal to `CaptureAge.stalenessThreshold`, on the
+    /// reasoning that the app should never spawn a session while still calling
+    /// the figure live. The side effect was worse than the thing avoided: the
+    /// anchor had to actually go stale before anything refreshed it, so in
+    /// normal hourly operation the footer flipped to amber and the menu bar grew
+    /// a tilde for the ~30s the poll took. Every hour, for nothing.
+    ///
+    /// With headroom the figure simply stays live, and those two signals become
+    /// what they are for — evidence the refresh itself failed.
+    ///
+    /// 45 minutes is the largest value that still leaves room for one retry
+    /// before the hour is up (`staleAfter + minimumInterval <= 3600`), which is
+    /// pinned by a test.
+    public static let staleAfter: TimeInterval = 45 * 60
 
     /// Backstop. If a poll fails to refresh anything — Claude Code missing, not
     /// signed in, the command renamed — the anchor stays stale and the condition

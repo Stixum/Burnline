@@ -19,14 +19,11 @@ private let now = Date(timeIntervalSince1970: 100_000)
     #expect(PollDecision.shouldPoll(enabled: true, anchorAge: 2 * 3_600, lastPollAt: nil, now: now))
 }
 
-/// Exactly at the threshold is NOT yet stale — `CaptureAge.isStale` is a strict
-/// `>`. The two must agree, or the app polls while still labelling the figure
-/// live, or labels it stale while refusing to refresh it.
-@Test func theBoundaryBelongsToNotStaleInBothPlaces() {
-    #expect(CaptureAge.isStale(PollDecision.staleAfter) == false)
+/// Exactly at the threshold is not yet eligible — a strict `>`, matching
+/// `CaptureAge.isStale`.
+@Test func theBoundaryBelongsToNotPollingYet() {
     #expect(PollDecision.shouldPoll(enabled: true, anchorAge: PollDecision.staleAfter,
                                     lastPollAt: nil, now: now) == false)
-    #expect(CaptureAge.isStale(PollDecision.staleAfter + 1))
     #expect(PollDecision.shouldPoll(enabled: true, anchorAge: PollDecision.staleAfter + 1,
                                     lastPollAt: nil, now: now))
 }
@@ -55,8 +52,24 @@ private let now = Date(timeIntervalSince1970: 100_000)
                                     lastPollAt: longAgo, now: now))
 }
 
-/// The threshold has to sit above the staleness threshold the UI uses, or the
-/// app would poll while still calling the figure live.
-@Test func theStalenessThresholdsAgree() {
-    #expect(PollDecision.staleAfter >= CaptureAge.stalenessThreshold)
+/// Poll BEFORE the UI would call the figure stale.
+///
+/// The two thresholds were equal at first, so the anchor had to actually go
+/// stale before anything refreshed it: the footer flipped to amber and the menu
+/// bar grew a tilde for the ~30s the poll took, every hour, in normal operation.
+/// With headroom the figure simply stays live, and those signals become what
+/// they should be — evidence that the refresh itself failed.
+@Test func pollsBeforeTheFigureWouldBeCalledStale() {
+    #expect(PollDecision.staleAfter < CaptureAge.stalenessThreshold)
+
+    let age = PollDecision.staleAfter + 1
+    #expect(PollDecision.shouldPoll(enabled: true, anchorAge: age, lastPollAt: nil, now: now))
+    #expect(CaptureAge.isStale(age) == false)
+}
+
+/// A failed poll must get another attempt before the figure goes visibly stale,
+/// or the headroom above buys nothing.
+@Test func aFailedPollRetriesBeforeTheFigureGoesStale() {
+    #expect(PollDecision.staleAfter + PollDecision.minimumInterval
+            <= CaptureAge.stalenessThreshold)
 }
