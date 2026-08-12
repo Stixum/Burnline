@@ -23,7 +23,11 @@ public enum DisplayValue {
         // NaN has no sign to saturate toward, and `min`/`max` propagate it —
         // report nothing rather than a misleading maximum.
         guard !value.isNaN else { return 0 }
-        return Int(min(max(value, -ceiling), ceiling).rounded())
+        // A non-finite ceiling (every current caller passes a safe constant,
+        // but this type's whole purpose is to never trap regardless of caller)
+        // would pass `value` through `min`/`max` untouched into `Int(Double)`.
+        let safeCeiling = ceiling.isFinite ? ceiling : percentCeiling
+        return Int(min(max(value, -safeCeiling), safeCeiling).rounded())
     }
 
     /// Durations need a far larger ceiling than percentages, but still a finite
@@ -39,6 +43,8 @@ public enum DisplayValue {
     /// perfectly finite `1e20`.
     public static func floor(_ value: Double, ceiling: Double = percentCeiling) -> Int {
         guard !value.isNaN else { return 0 }
-        return Int(min(max(value, -ceiling), ceiling).rounded(.down))
+        // Same guard as `whole`'s: see its comment.
+        let safeCeiling = ceiling.isFinite ? ceiling : percentCeiling
+        return Int(min(max(value, -safeCeiling), safeCeiling).rounded(.down))
     }
 }

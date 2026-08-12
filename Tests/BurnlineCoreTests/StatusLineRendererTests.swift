@@ -47,12 +47,12 @@ private func render(_ json: String) throws -> String {
 }
 
 @Test func fiveHourRendersWithoutSevenDay() throws {
-    // The renderer is deliberately laxer than `capture()`: it renders from
-    // used_percentage alone, where capture() also demands resets_at.
     #expect(try render(#"{"rate_limits":{"five_hour":{"used_percentage":3,"resets_at":1}}}"#) == "5h 3%")
 }
 
 @Test func fiveHourRendersWithoutItsResetInstant() throws {
+    // The renderer is deliberately laxer than `capture()`: it renders from
+    // used_percentage alone, where capture() also demands resets_at.
     #expect(try render(#"{"rate_limits":{"five_hour":{"used_percentage":3}}}"#) == "5h 3%")
 }
 
@@ -61,11 +61,16 @@ private func render(_ json: String) throws -> String {
     // syntax — a plain 20-digit integer literal decodes to 1e20, and a bare
     // Int(_:) conversion on that TRAPS. This process runs inside the user's
     // terminal prompt; a crash here is far worse than a silly number.
-    let line = try render(#"{"context_window":{"used_percentage":100000000000000000000}}"#)
-    #expect(line.hasPrefix("ctx "))
-    #expect(line.hasSuffix("%"))
+    // Asserted exactly (not just prefix/suffix) so a clamp regression at, say,
+    // the wrong ceiling shows up as a failure instead of passing silently.
+    #expect(try render(#"{"context_window":{"used_percentage":100000000000000000000}}"#) == "ctx 999%")
 }
 
 @Test func anAbsurdCostDoesNotCrash() throws {
-    #expect(try render(#"{"cost":{"total_cost_usd":1e308}}"#).hasPrefix("$"))
+    #expect(try render(#"{"cost":{"total_cost_usd":1e308}}"#) == "$1000000000000000")
+}
+
+@Test func trailingSlashStillYieldsTheDirectoryName() throws {
+    // Deliberate divergence: jq's `split("/") | last` yields "" here.
+    #expect(try render(#"{"workspace":{"current_dir":"/a/b/Burnline/"}}"#) == "Burnline")
 }
