@@ -44,6 +44,7 @@ private func decode(_ json: String) throws -> StatuslinePayload {
 @Test func decodesWithExplicitNulls() throws {
     let p = try decode(#"{"model":null,"cost":{"total_cost_usd":null}}"#)
     #expect(p.model == nil)
+    #expect(p.cost != nil)
     #expect(p.cost?.totalCostUsd == nil)
 }
 

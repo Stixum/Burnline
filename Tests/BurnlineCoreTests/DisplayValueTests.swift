@@ -32,6 +32,29 @@ import Foundation
     #expect(DisplayValue.seconds(4_200) == 4_200)
 }
 
+// MARK: - Flooring conversion
+
+/// `floor` exists for percentages, where 42.99% must read as "42%" — rounding
+/// it to "43%" overstates how far through the window it actually is.
+@Test func floorTruncatesAFraction() {
+    #expect(DisplayValue.floor(42.99) == 42)
+    #expect(DisplayValue.floor(42.0) == 42)
+}
+
+@Test func floorClampsAHugeValueBeforeConverting() {
+    #expect(DisplayValue.floor(1e308) == Int(DisplayValue.percentCeiling))
+    #expect(DisplayValue.floor(.infinity) == Int(DisplayValue.percentCeiling))
+    #expect(DisplayValue.floor(-.infinity) == -Int(DisplayValue.percentCeiling))
+}
+
+@Test func floorOfNotANumberIsZero() {
+    #expect(DisplayValue.floor(.nan) == 0)
+}
+
+@Test func floorHandlesNegativeValues() {
+    #expect(DisplayValue.floor(-3.2) == -4)
+}
+
 // MARK: - The call sites that were trapping
 
 @Test func theProjectionRowSurvivesAnAbsurdEstimate() {

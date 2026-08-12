@@ -31,4 +31,14 @@ public enum DisplayValue {
     public static func seconds(_ value: Double) -> Int {
         whole(value, ceiling: 100 * 365 * 86_400)
     }
+
+    /// Like `whole`, but floors. 42.99% is not 43% of the way through anything.
+    ///
+    /// Clamps before converting for the same reason `whole` does: `Int(Double)`
+    /// traps outside `Int`'s range, and a 20-digit integer in JSON decodes to a
+    /// perfectly finite `1e20`.
+    public static func floor(_ value: Double, ceiling: Double = percentCeiling) -> Int {
+        guard !value.isNaN else { return 0 }
+        return Int(min(max(value, -ceiling), ceiling).rounded(.down))
+    }
 }
