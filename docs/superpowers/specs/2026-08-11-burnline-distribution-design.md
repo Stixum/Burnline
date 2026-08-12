@@ -352,15 +352,55 @@ a protected location while running under the poller, the prompt a user sees will
 say *Burnline* wants access to their Documents, and a denial will be recorded
 against Burnline rather than against Claude Code.
 
-This has not been observed, and may never fire: `/usage` is a slash command that
-should touch nothing protected. But it has also never been tested on a machine
-whose TCC database is empty, which is exactly what every new user has. **Plan 6
-Task 9 verifies it, and it is the only permission question in the project that
-cannot be answered by reading code.**
+⚠️ **CORRECTED 2026-08-12, hours after the paragraph above was written, which
+claimed this "has not been observed". It has. It is happening on the author's own
+machine.** Burnline prompts for **Documents, Desktop and Downloads**. The poller
+is enabled here, so the child has been running on a timer all along; the audit
+that concluded "zero prompts" checked for TCC-gated APIs *in our own code*, which
+is not the same question as *what does the user see*. **A permission audit that
+does not include the processes you spawn is not a permission audit.**
 
-If it does fire, the fix is not an entitlement — it is to narrow what the child
-can reach, or to say plainly in the confirmation dialog that a prompt may appear
-and why.
+**Mechanism:** `currentDirectoryURL` is `$HOME`, and Claude Code enumerates its
+working directory at startup. From `$HOME` that means the protected folders. The
+existing comment shows the trade being made knowingly in one direction only:
+*"an unfamiliar directory makes Claude Code open a trust prompt … Home is already
+a known project."* Home avoids a hidden trust dialog and buys TCC prompts
+instead.
+
+**This is a release blocker.** A menu bar usage meter that asks a stranger for
+their Documents on first run does not get a second chance.
+
+### The fix, measured 2026-08-12
+
+`claude --print` **skips the workspace trust dialog** — stated in `--help` —
+which removes the only reason `$HOME` was chosen. Measured, running
+`claude -p "/usage" --model haiku` from an untrusted scratch directory:
+
+- exit 0, **no trust dialog**, no pty, seconds rather than the 18s + 8s the TUI
+  path waits out
+- **no project entry added** to `~/.claude.json` (252 before, 252 after) — print
+  mode does not register the directory, so it does not pollute the user's config
+- it printed the authoritative figures, including the per-model line:
+  `Current week (all models): 82% used · resets Aug 14 at 1:59am`
+
+**One caveat that decides the design:** it did **not** move
+`cachedUsageUtilization.fetchedAtMs`. So print mode does not refresh the JSON
+field the current poller exists to refresh — but it prints the same numbers
+directly, and more of them.
+
+Two candidate designs, both of which fix the TCC problem:
+
+1. **Keep the pty, move the cwd** to a scratch directory and accept a trust
+   dialog risk. Smaller change, keeps the JSON-cache mechanism, but the trust
+   dialog is exactly the invisible hang the original comment warned about.
+2. **Replace the pty with `claude -p "/usage"` and parse stdout.** Removes the
+   pty, the 26s of delays, the `$HOME` cwd and the TCC prompts in one move, and
+   gains the per-model figure. Cost: parsing human-readable output, which is
+   fragile — though no more so than depending on an undocumented JSON field.
+
+**Recommended: (2), behind tests over captured `/usage` output**, with the
+existing utilization source kept as the peer it already is so a format change
+degrades rather than blinds the app.
 
 ### Launch at login
 
