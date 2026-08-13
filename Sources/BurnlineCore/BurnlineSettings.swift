@@ -17,6 +17,10 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
     /// Ceiling on how often the anchor is refreshed. Pressure on any limit
     /// tightens below this; nothing loosens past it.
     public var usageRefreshInterval: RefreshInterval
+    /// Whether the first-run onboarding has been offered. Set once at launch
+    /// whatever the user then does with the window — declining to wire the
+    /// statusline is an answer, and re-asking every launch would be nagging.
+    public var hasSeenOnboarding: Bool
 
     public init(resetSchedule: ResetSchedule, weights: Weights,
                 calibrationAnchors: [CalibrationAnchor], launchAtLogin: Bool,
@@ -24,7 +28,8 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
                 dayBoundary: DayBoundary = .windowDay,
                 menuBarMode: MenuBarMode = .usedOverTarget,
                 refreshesUsageAutomatically: Bool = false,
-                usageRefreshInterval: RefreshInterval = .fortyFive) {
+                usageRefreshInterval: RefreshInterval = .fortyFive,
+                hasSeenOnboarding: Bool = false) {
         self.resetSchedule = resetSchedule
         self.weights = weights
         self.calibrationAnchors = calibrationAnchors
@@ -34,6 +39,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         self.menuBarMode = menuBarMode
         self.refreshesUsageAutomatically = refreshesUsageAutomatically
         self.usageRefreshInterval = usageRefreshInterval
+        self.hasSeenOnboarding = hasSeenOnboarding
     }
 
     /// Thursday 09:00 local is a placeholder — replaced by the real reset as
@@ -62,5 +68,10 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
             Bool.self, forKey: .refreshesUsageAutomatically) ?? false
         usageRefreshInterval = try container.decodeIfPresent(
             RefreshInterval.self, forKey: .usageRefreshInterval) ?? .fortyFive
+        // Absent in every settings file written before onboarding existed, so
+        // existing installs are treated as not having seen it. They get the
+        // window once, and only if there is actually something to fix.
+        hasSeenOnboarding = try container.decodeIfPresent(
+            Bool.self, forKey: .hasSeenOnboarding) ?? false
     }
 }

@@ -324,6 +324,101 @@ config are being reasonable and must not be second-class.
 
 ---
 
+## 5a. Permissions at install time
+
+Audited 2026-08-12. **Burnline requests no macOS permissions, and on a clean
+machine the core function produces no prompts at all.** That is worth stating in
+the README rather than leaving a reader to wonder.
+
+Why it holds:
+
+- **No TCC-gated API is used anywhere.** No camera, location, contacts,
+  calendar, notifications, Accessibility, Screen Recording or AppleScript.
+  `Info.plist` declares no `NS*UsageDescription` key, and none is needed.
+- **Everything read is a home dotfile.** `~/.claude/projects/**`,
+  `~/.claude.json`, and the app's own Application Support directory.
+  `~/Documents`, `~/Desktop` and `~/Downloads` are TCC-protected; a dotfolder is
+  not. **This is the concrete payoff of being unsandboxed** — the app reads its
+  only data source with no entitlement, no prompt, and no Full Disk Access.
+- **Writing `~/.claude/settings.json` needs no permission either.** It is a trust
+  question, not an OS one, and §5's refuse-to-clobber rule is the answer.
+
+### The one sharp edge: the poller's child process
+
+`UsagePoller` spawns `claude` with `currentDirectoryURL` set to the home
+directory. Spawning needs no permission — but **macOS attributes a child's TCC
+requests to the responsible process, which is Burnline.** If Claude Code touches
+a protected location while running under the poller, the prompt a user sees will
+say *Burnline* wants access to their Documents, and a denial will be recorded
+against Burnline rather than against Claude Code.
+
+⚠️ **CORRECTED 2026-08-12, hours after the paragraph above was written, which
+claimed this "has not been observed". It has. It is happening on the author's own
+machine.** Burnline prompts for **Documents, Desktop and Downloads**. The poller
+is enabled here, so the child has been running on a timer all along; the audit
+that concluded "zero prompts" checked for TCC-gated APIs *in our own code*, which
+is not the same question as *what does the user see*. **A permission audit that
+does not include the processes you spawn is not a permission audit.**
+
+**Mechanism:** `currentDirectoryURL` is `$HOME`, and Claude Code enumerates its
+working directory at startup. From `$HOME` that means the protected folders. The
+existing comment shows the trade being made knowingly in one direction only:
+*"an unfamiliar directory makes Claude Code open a trust prompt … Home is already
+a known project."* Home avoids a hidden trust dialog and buys TCC prompts
+instead.
+
+**This is a release blocker.** A menu bar usage meter that asks a stranger for
+their Documents on first run does not get a second chance.
+
+### The fix, measured 2026-08-12
+
+`claude --print` **skips the workspace trust dialog** — stated in `--help` —
+which removes the only reason `$HOME` was chosen. Measured, running
+`claude -p "/usage" --model haiku` from an untrusted scratch directory:
+
+- exit 0, **no trust dialog**, no pty, seconds rather than the 18s + 8s the TUI
+  path waits out
+- **no project entry added** to `~/.claude.json` (252 before, 252 after) — print
+  mode does not register the directory, so it does not pollute the user's config
+- it printed the authoritative figures, including the per-model line:
+  `Current week (all models): 82% used · resets Aug 14 at 1:59am`
+
+**One caveat that decides the design:** it did **not** move
+`cachedUsageUtilization.fetchedAtMs`. So print mode does not refresh the JSON
+field the current poller exists to refresh — but it prints the same numbers
+directly, and more of them.
+
+Two candidate designs, both of which fix the TCC problem:
+
+1. **Keep the pty, move the cwd** to a scratch directory and accept a trust
+   dialog risk. Smaller change, keeps the JSON-cache mechanism, but the trust
+   dialog is exactly the invisible hang the original comment warned about.
+2. **Replace the pty with `claude -p "/usage"` and parse stdout.** Removes the
+   pty, the 26s of delays, the `$HOME` cwd and the TCC prompts in one move, and
+   gains the per-model figure. Cost: parsing human-readable output, which is
+   fragile — though no more so than depending on an undocumented JSON field.
+
+**Recommended: (2), behind tests over captured `/usage` output**, with the
+existing utilization source kept as the peer it already is so a format change
+degrades rather than blinds the app.
+
+### Launch at login
+
+`SMAppService.mainApp.register()` shows no approval dialog. It creates an entry
+under System Settings → General → Login Items, and macOS posts a notification
+saying Burnline added one. ⚠️ **A user can disable it there, and `register()`
+does not obviously report that afterwards** — the Settings toggle can therefore
+disagree with reality. Not a blocker for 1.0; worth a look before anyone asks
+why launch-at-login "stopped working".
+
+### What this means for the install experience
+
+A notarized DMG, dragged to Applications and launched, should produce **zero
+permission dialogs** — no Gatekeeper warning (notarized and stapled), no TCC
+prompt, no login-item approval. The only dialog Burnline shows on a fresh
+install is its own onboarding window. Any prompt beyond that is a finding, and
+Plan 6 Task 8 should treat it as one.
+
 ## 6. Sparkle (1.1)
 
 ### Mechanics

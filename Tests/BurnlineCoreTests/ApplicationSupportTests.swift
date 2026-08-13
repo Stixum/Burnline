@@ -89,3 +89,30 @@ private func withOverride(_ path: String) -> [String: String] {
     #expect(files(scratch.appendingPathComponent("rate-limit-highwater.json").path))
     #expect(RateLimitStore(directory: directory).load() == capture)
 }
+
+// The poller's working directory must be empty and must not be $HOME. This is a
+// TCC control, not tidiness: Claude Code enumerates its cwd at startup, and
+// macOS attributes a child's TCC requests to the responsible process — us. From
+// $HOME that asked the user for Documents/Desktop/Downloads on Burnline's
+// behalf.
+@Test func pollWorkingDirectoryIsNotTheHomeDirectory() {
+    let poll = ApplicationSupport.pollWorkingDirectory()
+    #expect(poll.path != FileManager.default.homeDirectoryForCurrentUser.path)
+    #expect(poll.lastPathComponent == "poll-cwd")
+}
+
+@Test func pollWorkingDirectoryIsCreatedAndEmpty() throws {
+    let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: scratch) }
+    setenv(ApplicationSupport.overrideKey, scratch.path, 1)
+    defer { unsetenv(ApplicationSupport.overrideKey) }
+
+    let poll = ApplicationSupport.pollWorkingDirectory()
+    var isDirectory: ObjCBool = false
+    #expect(FileManager.default.fileExists(atPath: poll.path, isDirectory: &isDirectory))
+    #expect(isDirectory.boolValue)
+    // Empty is the whole mechanism — a directory with nothing in it cannot lead
+    // Claude Code to a protected folder.
+    #expect(try FileManager.default.contentsOfDirectory(atPath: poll.path).isEmpty)
+}
