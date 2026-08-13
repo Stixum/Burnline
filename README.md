@@ -1,10 +1,9 @@
 # Burnline
 
-[![Latest release](https://img.shields.io/github/v/release/Stixum/Burnline?label=download&color=7C5CFF)](https://github.com/Stixum/Burnline/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/Stixum/Burnline/total?color=7C5CFF)](https://github.com/Stixum/Burnline/releases)
+[![Download](https://img.shields.io/badge/download-DMG-7C5CFF)](https://github.com/Stixum/Burnline/releases/latest)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-informational)](https://github.com/Stixum/Burnline/releases/latest)
 [![Universal](https://img.shields.io/badge/binary-universal-informational)](https://github.com/Stixum/Burnline/releases/latest)
-[![MIT](https://img.shields.io/github/license/Stixum/Burnline?color=informational)](LICENSE)
+[![MIT](https://img.shields.io/badge/license-MIT-informational)](LICENSE)
 
 A macOS menu bar app that shows where you *should* be in your Claude weekly usage window, next to where you actually are.
 
