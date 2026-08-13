@@ -127,8 +127,10 @@ tell application "Finder"
     set current view of container window to icon view
     set toolbar visible of container window to false
     set statusbar visible of container window to false
-    -- Outer window bounds, title bar included. The background is 600x400, so
-    -- the window must be 28pt taller or the bottom line is clipped.
+    -- Outer window bounds, title bar included: 600x428 outer is 600x400 of
+    -- content plus a 28pt title bar. The background PNG is 600x445 — the extra
+    -- 45pt deliberately overdraws Finder's status bar strip, which cannot be
+    -- hidden reliably from AppleScript.
     set the bounds of container window to {200, 150, 800, 578}
     set opts to the icon view options of container window
     set arrangement of opts to not arranged

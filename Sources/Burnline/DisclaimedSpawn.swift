@@ -59,12 +59,22 @@ enum DisclaimedSpawn {
         posix_spawnattr_init(&attributes)
         defer { posix_spawnattr_destroy(&attributes) }
 
-        // A new session, so the pty is the child's controlling terminal. Claude
-        // Code renders its TUI only when it believes it has one.
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID))
+        // SETSID: a new session, so the pty is the child's controlling terminal.
+        // Claude Code renders its TUI only when it believes it has one. (Checked:
+        // on Darwin the dup2'd replica does become the ctty, unlike Linux.)
+        //
+        // CLOEXEC_DEFAULT: close everything else. Without it the child inherits
+        // every non-cloexec descriptor Burnline holds — including the pty
+        // primary and the spare replica — and passes them to its own children.
+        // A straggler holding a replica copy means the drain never sees EOF.
+        // The adddup2 targets below survive this flag.
+        posix_spawnattr_setflags(
+            &attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT))
 
-        // The point of this file. Best effort: a failure here costs us the
-        // quiet spawn, not the spawn.
+        // Must come AFTER setflags: if disclaim records anything in the flags
+        // word, setting flags afterwards would clobber it.
+        //
+        // Best effort. A failure here costs the quiet spawn, not the spawn.
         _ = setDisclaim?(&attributes, 1)
 
         var fileActions: posix_spawn_file_actions_t?

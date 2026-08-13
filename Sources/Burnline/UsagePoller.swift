@@ -135,6 +135,11 @@ final class UsagePoller {
         // The parent keeps only the primary side; holding the replica open would
         // stop the child ever seeing EOF.
         close(replica)
+        // The drain reads from its own duplicate. Closing `primary` here while a
+        // detached task still reads that number would let the number be reused
+        // — this app opens files every 10s — and the drain would then read an
+        // unrelated descriptor and advance its offset.
+        let drainFD = dup(primary)
         defer { close(primary) }
 
         // ⚠️ **The pty MUST be drained, and not only for diagnostics.** A TUI
@@ -145,7 +150,7 @@ final class UsagePoller {
         // that was missing when the Swift version "ran" but did nothing.
         // `primary` is a mutable local; Swift 6 refuses to send that into a
         // detached task. Copy it first.
-        let fd = primary
+        let fd = drainFD
         let drain = Task.detached { () -> String in
             var output = Data()
             var buffer = [UInt8](repeating: 0, count: 8192)
@@ -154,6 +159,7 @@ final class UsagePoller {
                 guard n > 0 else { break }
                 if output.count < 200_000 { output.append(contentsOf: buffer[0..<n]) }
             }
+            close(fd)
             return String(decoding: output, as: UTF8.self)
         }
 
@@ -163,18 +169,47 @@ final class UsagePoller {
         try? await Task.sleep(for: .seconds(Self.settleDelay))
         Self.log("child still running: \(kill(pid, 0) == 0)")
 
-        // Terminate, then make sure. Sessions accumulated to eight unnoticed
-        // during the 2026-08-11 investigation; this one must never join them.
-        kill(pid, SIGTERM)
+        // Terminate the whole process GROUP, not just the leader. SETSID made
+        // the child a group leader (pgid == pid), and claude spawns descendants
+        // — MCP servers, helpers — that a bare kill(pid) leaves running.
+        // Sessions accumulated to eight unnoticed during the 2026-08-11
+        // investigation; these must never join them. Killing the group also
+        // guarantees the drain sees EOF.
+        kill(-pid, SIGTERM)
         try? await Task.sleep(for: .seconds(1))
-        if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
-        // Reap it, or the child lingers as a zombie for the life of the app.
+        if kill(pid, 0) == 0 { kill(-pid, SIGKILL) }
+
+        // ⚠️ Reap, and do NOT assume one WNOHANG suffices. Measured: a WNOHANG
+        // issued immediately after SIGKILL returns 0 — the child is not a
+        // zombie *yet* — and nothing else in this app ever reaps, so it would
+        // stay one for the life of the process. One per SIGKILL-path poll, up
+        // to six an hour under pressure.
+        //
+        // Polled rather than blocking, because this runs on the MainActor and
+        // SIGKILL delivery is fast but not instantaneous.
         var status: Int32 = 0
-        waitpid(pid, &status, WNOHANG)
+        for _ in 0..<40 {
+            if waitpid(pid, &status, WNOHANG) != 0 { break }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
 
         if ProcessInfo.processInfo.environment["BURNLINE_POLL_LOG"] != nil {
+            // ⚠️ Bounded. `drain.cancel()` does not interrupt a blocking `read`,
+            // so awaiting the value unconditionally could park here forever —
+            // and the defer that clears `running` would never run, killing
+            // automatic refresh until relaunch. A diagnostic must not be able
+            // to disable the feature it diagnoses.
             drain.cancel()
-            let text = (try? await drain.value) ?? ""
+            let text = await withTaskGroup(of: String?.self) { group in
+                group.addTask { await drain.value }
+                group.addTask {
+                    try? await Task.sleep(for: .seconds(3))
+                    return nil
+                }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first ?? ""
+            }
             let plain = text
                 .replacingOccurrences(of: "\u{1B}\\[[0-9;?]*[a-zA-Z]", with: "",
                                       options: .regularExpression)

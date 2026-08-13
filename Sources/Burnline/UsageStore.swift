@@ -201,8 +201,8 @@ final class UsageStore {
     /// people who would rather nothing ran in the background a way to get a
     /// current figure on demand.
     ///
-    /// Does nothing if Claude Code cannot be found; the popover disables the
-    /// button in that case rather than letting it fail silently.
+    /// Does nothing if Claude Code cannot be found; the popover hides the button
+    /// in that case rather than leaving a control that cannot work.
     func pollNow() async {
         guard !isPolling, ClaudeExecutable.resolve() != nil else { return }
         isPolling = true

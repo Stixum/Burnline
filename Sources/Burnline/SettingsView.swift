@@ -235,8 +235,9 @@ struct SettingsView: View {
             // message quota" is measured — /usage produces no assistant turn —
             // but it is not the same as "does nothing".
             Text("Burnline will start a brief Claude Code session running /usage when "
-                 + "the figure goes stale, at most once every "
-                 + "\(store.settings.usageRefreshInterval.title.lowercased()).\n\n"
+                 + "the figure goes stale: normally no more often than every "
+                 + "\(store.settings.usageRefreshInterval.title.lowercased()), and as often "
+                 + "as every 10 minutes when you are close to a limit.\n\n"
                  + "This uses no message quota, but it does start real Claude Code "
                  + "sessions, which contact Anthropic.\n\n"
                  + "macOS will ask for access to folders such as Documents, Downloads "
