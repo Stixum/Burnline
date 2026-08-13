@@ -2,7 +2,7 @@
 
 > Deep project notes live in Obsidian: `Project Notes/Burnline/` (`Burnline.md` overview + `ARCHITECTURE.md`). This file is the in-repo quick reference for agents. When this file and Obsidian disagree, Obsidian wins — update both.
 >
-> **Design spec is the source of truth for behaviour:** `docs/superpowers/specs/2026-08-11-burnline-design.md`.
+> **Design spec is the source of truth for behaviour:** `docs/superpowers/specs/2026-08-11-burnline-design.md`. ⚠️ **Untracked (see `.gitignore`) and therefore present only in a working checkout, not in a fresh clone.** The specs and plans are agent working documents; `ARCHITECTURE.md` in Obsidian is the current source of truth either way.
 
 ## What this is
 
