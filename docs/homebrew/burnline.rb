@@ -1,5 +1,5 @@
 # Staged copy of the cask. The live one belongs in Stixum/homebrew-tap as
-# Casks/burnline.rb — this file is kept here so it is reviewable alongside the
+# Casks/burnline.rb. This file is kept here so it is reviewable alongside the
 # release that produced it.
 #
 # sha256 below is for the DMG built at 1.0. It MUST match the artefact
