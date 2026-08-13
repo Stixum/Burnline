@@ -28,7 +28,7 @@ A weekly limit resets on a fixed weekday and time. Seven days is 100%, so each d
 >
 > Grab `Burnline.dmg`, open it, drag Burnline to Applications. It's signed and notarized, so it opens normally with no right-click-to-open dance.
 >
-> **Universal binary** — Apple silicon and Intel. Requires macOS 14 or later.
+> **Universal binary**, Apple silicon and Intel. Requires macOS 14 or later.
 
 Or with Homebrew:
 
