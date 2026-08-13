@@ -4,6 +4,7 @@ import BurnlineCore
 
 struct SettingsView: View {
     @Bindable var store: UsageStore
+    @Environment(\.openWindow) private var openWindow
     @State private var launchAtLoginFailed = false
     @State private var confirmingPoller = false
 
@@ -108,6 +109,21 @@ struct SettingsView: View {
 
                 Divider().overlay(Theme.hairline)
 
+                // The setup window used to be reachable exactly once, on first
+                // launch, and was marked seen whatever the user did with it.
+                // Anyone who dismissed it kept a permanently stale figure with
+                // no in-app way back — while the README told them to "open the
+                // setup window", an affordance that no longer existed.
+                Text("Status line").eyebrow()
+                HStack(alignment: .firstTextBaseline) {
+                    statuslineStateLabel
+                    Spacer()
+                    Button("Open setup") { OnboardingWindow.open(using: openWindow) }
+                        .buttonStyle(.bordered)
+                }
+
+                Divider().overlay(Theme.hairline)
+
                 Toggle("Launch at login", isOn: Binding(
                     get: { store.settings.launchAtLogin },
                     set: { setLaunchAtLogin($0) }
@@ -203,7 +219,10 @@ struct SettingsView: View {
         // the window instead of leaving dead space below when it is collapsed.
         .frame(width: 380, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
-        .onAppear { store.refreshClaudeExecutable() }
+        .onAppear {
+            store.refreshClaudeExecutable()
+            store.refreshWiringState()
+        }
         .alert("Let Burnline refresh your usage?", isPresented: $confirmingPoller) {
             Button("Cancel", role: .cancel) { }
             Button("Turn on") {
@@ -311,6 +330,24 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+    }
+
+    /// Word and icon, never colour alone.
+    @ViewBuilder private var statuslineStateLabel: some View {
+        switch store.wiringState {
+        case .configured:
+            Label("Connected", systemImage: "checkmark.circle.fill")
+                .font(.system(size: 11.5)).foregroundStyle(Theme.success)
+        case .noSettingsFile, .notConfigured:
+            Label("Not set up", systemImage: "circle.dashed")
+                .font(.system(size: 11.5)).foregroundStyle(Theme.textMuted)
+        case .stalePath:
+            Label("Points at an old copy", systemImage: "arrow.triangle.2.circlepath")
+                .font(.system(size: 11.5)).foregroundStyle(Theme.warning)
+        case .conflict:
+            Label("Another status line is set", systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 11.5)).foregroundStyle(Theme.warning)
         }
     }
 

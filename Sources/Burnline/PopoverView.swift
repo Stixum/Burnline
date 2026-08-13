@@ -51,7 +51,13 @@ struct PopoverView: View {
         .frame(width: Theme.popoverWidth)
         .background(Theme.background)
         .preferredColorScheme(.dark)
-        .onAppear { store.refreshIfStale() }
+        .onAppear {
+            store.refreshIfStale()
+            // wiringState starts at .noSettingsFile, so without this a correctly
+            // configured user would see a spurious "Set up" until something else
+            // refreshed it. One small file read per popover open, not on a timer.
+            store.refreshWiringState()
+        }
     }
 
     @ViewBuilder private var hero: some View {
@@ -190,6 +196,16 @@ struct PopoverView: View {
             HStack(spacing: 12) {
                 sourceLabel
                 Spacer()
+                // Only when the status line is not wired. This is where a user
+                // notices the figure has stopped moving, so it is where the
+                // remedy belongs — but it must not add a row in the normal case,
+                // which is already a dense 300pt panel.
+                if store.wiringState != .configured {
+                    Button("Set up") { OnboardingWindow.open(using: openWindow) }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                }
                 Button("Settings") { SettingsWindow.open(using: openWindow) }
                     .buttonStyle(.plain)
                     .font(.system(size: 11))
