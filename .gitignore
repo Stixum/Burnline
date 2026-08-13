@@ -21,3 +21,10 @@ xcuserdata/
 .claude/
 .superpowers/
 .worktrees/
+
+# Specs and implementation plans. Kept on disk because they are how this project
+# gets worked on, but untracked: they are agent working documents, not
+# documentation. They referenced an Obsidian vault and a DESIGN-STANDARDS.md
+# that no reader of this repo can open, and at 296KB they outweighed the entire
+# source tree on the repo landing page.
+docs/superpowers/
