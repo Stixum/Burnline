@@ -149,7 +149,13 @@ echo "==> Done: ${DMG}"
 shasum -a 256 "${DMG}"
 echo
 echo "    Next: gh release create v${VERSION} ${DMG}"
-echo "    Then update the cask's version + sha256 in Stixum/homebrew-tap."
+echo
+echo "    Cask stanza for Stixum/homebrew-tap (Casks/burnline.rb) — the sha is"
+echo "    printed here rather than kept in a second file, because a copy of it"
+echo "    in this repo drifted from the artefact within hours of being written:"
+echo
+echo "      version \"${VERSION}\""
+echo "      sha256 \"$(shasum -a 256 "${DMG}" | awk '{print $1}')\""
 echo
 echo "    ⚠️  None of the above proves it works for a stranger. Download the DMG"
 echo "        through a BROWSER on another Mac (or a fresh user account) and"
