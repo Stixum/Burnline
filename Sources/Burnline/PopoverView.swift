@@ -97,7 +97,7 @@ struct PopoverView: View {
 
     private var paceOnlyExplanation: String {
         if snapshot.isScanning { return "Scanning transcripts…" }
-        return "Waiting for Claude Code — usage appears after its next response"
+        return "Waiting for Claude Code. Usage appears after its next response."
     }
 
     private var legend: some View {

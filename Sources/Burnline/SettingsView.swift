@@ -18,7 +18,7 @@ struct SettingsView: View {
                 if store.snapshot.isScheduleAutomatic {
                     HStack(alignment: .top, spacing: 6) {
                         Circle().fill(Theme.success).frame(width: 5, height: 5).padding(.top, 5)
-                        Text("Read automatically from Claude Code — resets \(automaticResetDescription). The fields below are unused while this is live.")
+                        Text("Read automatically from Claude Code, resetting \(automaticResetDescription). The fields below are unused while this is live.")
                             .font(.system(size: 11)).foregroundStyle(Theme.success)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -177,7 +177,7 @@ struct SettingsView: View {
                     // A ceiling, not a fixed cadence — worth saying, or the
                     // observed rate looks like the setting being ignored.
                     Text("A ceiling. Burnline checks more often than this as you approach a "
-                         + "limit — down to every 10 minutes — and never less often.")
+                         + "limit, down to every 10 minutes, and never less often.")
                         .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -187,7 +187,7 @@ struct SettingsView: View {
                 DisclosureGroup("Advanced") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Weights").eyebrow().padding(.top, 6)
-                        Text("Relative only — calibration divides out the absolute scale.")
+                        Text("Relative only. Calibration divides out the absolute scale.")
                             .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
 
                         weightRow("Input", $store.settings.weights.input)
@@ -197,7 +197,7 @@ struct SettingsView: View {
 
                         Text("Calibration anchors").eyebrow().padding(.top, 10)
                         if store.settings.calibrationAnchors.isEmpty {
-                            Text("None yet — use Calibrate in the popover.")
+                            Text("None yet. Use Calibrate in the popover.")
                                 .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                         }
                         ForEach(store.settings.calibrationAnchors) { anchor in
@@ -276,9 +276,9 @@ struct SettingsView: View {
         let today = DisplayValue.whole(store.snapshot.endOfDayPercent)
         switch store.settings.dayBoundary {
         case .windowDay:
-            return "\(base) Yours end at \(resetClock) — currently \(today)%."
+            return "\(base) Yours end at \(resetClock), currently \(today)%."
         case .calendarDay:
-            return "\(base) Yours end at 12:00 AM, \(resetClock.hasPrefix("12:00") ? "the same as the reset" : "not at the \(resetClock) reset") — currently \(today)%."
+            return "\(base) Yours end at 12:00 AM, \(resetClock.hasPrefix("12:00") ? "the same as the reset" : "not at the \(resetClock) reset"), currently \(today)%."
         }
     }
 
@@ -326,7 +326,7 @@ struct SettingsView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 10)).foregroundStyle(Theme.warning)
-                        Text("Claude Code not found — automatic refresh will do nothing")
+                        Text("Claude Code not found. Automatic refresh will do nothing.")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Theme.warning)
                     }
