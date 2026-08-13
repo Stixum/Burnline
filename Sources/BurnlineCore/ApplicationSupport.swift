@@ -51,6 +51,35 @@ public enum ApplicationSupport {
         return base.appendingPathComponent("Burnline", isDirectory: true)
     }
 
+    /// An empty directory for the poller's child process to run in.
+    ///
+    /// ⚠️ **This exists for a TCC reason, not a tidiness one.** The poller
+    /// spawns `claude`, Claude Code enumerates its working directory at
+    /// startup, and macOS attributes a child's TCC requests to the
+    /// **responsible process** — Burnline. Running it in `$HOME` therefore made
+    /// macOS ask the user for **Documents, Desktop and Downloads access on
+    /// Burnline's behalf**, which is fatal for a menu bar app a stranger just
+    /// downloaded. Observed 2026-08-12.
+    ///
+    /// `$HOME` was originally chosen because it is an already-trusted project
+    /// and an unfamiliar directory makes Claude Code open a trust dialog that
+    /// would hang the session invisibly. Measured 2026-08-12: **an empty
+    /// subdirectory of `$HOME` produces no trust dialog** — the TUI came up and
+    /// ran `/usage` with no prompt — so the trade that forced `$HOME` does not
+    /// actually apply.
+    ///
+    /// **It must stay empty.** An empty directory cannot lead Claude Code to
+    /// anything protected; that is the entire mechanism. Never write into it.
+    ///
+    /// ⚠️ Under `overrideKey` this moves outside `$HOME`, where trust may not be
+    /// inherited and the child could hit a trust dialog. Only the real app
+    /// spawns the poller, so this affects manual experiments, not tests.
+    public static func pollWorkingDirectory() -> URL {
+        let directory = directory().appendingPathComponent("poll-cwd", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
     /// `~/Library/Application Support/Burnline`, or `overrideKey` if set.
     /// Created on demand.
     ///

@@ -108,10 +108,13 @@ final class UsagePoller {
         environment[ApplicationSupport.overrideKey] = scratch.path
         environment["TERM"] = "xterm-256color"
         process.environment = environment
-        // A Finder-launched app has cwd `/`, and an unfamiliar directory makes
-        // Claude Code open a trust prompt — which would hang the session at a
-        // dialog the user never sees. Home is already a known project.
-        process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+        // ⚠️ NOT $HOME. Claude Code enumerates its working directory at
+        // startup, and macOS bills a child's TCC requests to the responsible
+        // process — us. From $HOME that made macOS ask the user for Documents,
+        // Desktop and Downloads access *on Burnline's behalf*. An empty
+        // app-owned directory has nothing protected to reach, and (measured)
+        // raises no trust dialog. See ApplicationSupport.pollWorkingDirectory.
+        process.currentDirectoryURL = ApplicationSupport.pollWorkingDirectory()
 
         do {
             try process.run()
