@@ -94,6 +94,14 @@ hdiutil create -volname "${APP_NAME}" -srcfolder "${STAGE}" \
   -ov -format UDZO "${DMG}" >/dev/null
 rm -rf "${STAGE}"
 
+# ⚠️ Sign the DMG itself. `hdiutil create` produces an UNSIGNED image, and
+# notarizing plus stapling attaches a ticket without adding a signature. Caught
+# 2026-08-12 by stamping com.apple.quarantine on the output by hand and asking
+# Gatekeeper: the app inside assessed as `Notarized Developer ID` while the disk
+# image around it came back `rejected — no usable signature`. spctl on the
+# unquarantined build says nothing about this.
+codesign --force --timestamp --sign "${IDENTITY}" "${DMG}"
+
 # --- 6. notarize the DMG too -----------------------------------------------
 # Notarizing the app does not notarize the disk image around it.
 echo "==> Notarizing the DMG"
@@ -107,6 +115,22 @@ xcrun stapler validate "${DMG}"
 # The line that matters is `source=Notarized Developer ID`. "accepted" with any
 # other source means notarization did not actually take.
 spctl -a -vv "${APP}"
+
+# Assess the DMG the way a downloaded copy is assessed. Without the quarantine
+# attribute Gatekeeper does not evaluate anything, so a plain spctl on the build
+# output is close to meaningless — it is the check that missed the unsigned DMG.
+echo "==> Verifying as a quarantined download"
+QTEST="${BUILD_DIR}/.quarantine-check.dmg"
+cp "${DMG}" "${QTEST}"
+xattr -w com.apple.quarantine "0083;$(printf %x "$(date +%s)");Safari;$(uuidgen)" "${QTEST}"
+if spctl -a -vvv -t open --context context:primary-signature "${QTEST}" 2>&1 | tee /dev/stderr \
+     | grep -q "source=Notarized Developer ID"; then
+  rm -f "${QTEST}"
+else
+  rm -f "${QTEST}"
+  echo "!!! The DMG fails Gatekeeper when quarantined. Do not publish it." >&2
+  exit 1
+fi
 
 echo
 echo "==> Done: ${DMG}"
