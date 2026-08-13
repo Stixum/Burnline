@@ -71,6 +71,14 @@ public enum ApplicationSupport {
     /// **It must stay empty.** An empty directory cannot lead Claude Code to
     /// anything protected; that is the entire mechanism. Never write into it.
     ///
+    /// ✅ **Verified end to end 2026-08-12** against a genuinely stale cache
+    /// (928s): the child spawned here raised no trust dialog, rendered
+    /// `/usage`, and moved `cachedUsageUtilization.fetchedAtMs`. The first
+    /// attempt at this test looked like a failure only because the cache had
+    /// been refreshed seconds earlier, so `/usage` served from it and had
+    /// nothing to re-fetch — **check the cache's age before concluding the
+    /// poller is broken.**
+    ///
     /// ⚠️ Under `overrideKey` this moves outside `$HOME`, where trust may not be
     /// inherited and the child could hit a trust dialog. Only the real app
     /// spawns the poller, so this affects manual experiments, not tests.
