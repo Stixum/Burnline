@@ -86,6 +86,8 @@ draw("After installing, open Burnline and choose Set up automatically",
      size: 12, weight: .regular, color: textMuted, centerX: width / 2, y: height - 328)
 draw("so Claude Code reports usage as you work.",
      size: 12, weight: .regular, color: textMuted, centerX: width / 2, y: height - 348)
+draw("Burnline asks macOS for no permissions of its own.",
+     size: 11, weight: .regular, color: textMuted, centerX: width / 2, y: height - 372)
 
 image.unlockFocus()
 

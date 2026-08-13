@@ -44,6 +44,9 @@ struct OnboardingView: View {
             Text("Burnline reads your usage from files Claude Code already keeps, "
                  + "so it works now. Adding a status line keeps it current: Claude Code "
                  + "reports after every response. Without one, the figure goes stale.")
+            Text("Nothing here asks macOS for permission.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textMuted)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

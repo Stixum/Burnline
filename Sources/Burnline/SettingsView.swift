@@ -240,10 +240,12 @@ struct SettingsView: View {
                  + "as every 10 minutes when you are close to a limit.\n\n"
                  + "This uses no message quota, but it does start real Claude Code "
                  + "sessions, which contact Anthropic.\n\n"
-                 + "macOS will ask for access to folders such as Documents, Downloads "
-                 + "and any cloud drives. That is Claude Code scanning your home "
-                 + "directory at startup, not Burnline reading your files. "
-                 + "You can decline every one of them and this still works.\n\n"
+                 + "The first time, macOS will ask for folder access and name Claude "
+                 + "Code: Documents, Downloads, any cloud drives. That is Claude Code "
+                 + "looking at your home directory when it starts, which it does "
+                 + "whenever you run it.\n\n"
+                 + "Decline all of them. It still works, and Burnline never wanted "
+                 + "them.\n\n"
                  + "You can turn this off at any time.")
         }
     }

@@ -11,23 +11,27 @@ A macOS menu bar app that shows where you *should* be in your Claude weekly usag
 64/65
 ```
 
-64% consumed, 65% of the week elapsed, so you're one point under budget.
+64% used, 65% of the week gone. One point under budget.
 
 <img src="docs/images/popover.png" alt="Burnline popover: 0 points under budget, running cool, with a usage bar showing 84% used against an 85% end-of-day target" width="300">
 
-Violet fill is what you've consumed. The solid marker is where you should be *right now*. The translucent band runs out to the end-of-day target, so if you spend into it the day finishes level.
+- **Violet fill** is what you've spent.
+- **Solid marker** is where you should be right now.
+- **Translucent band** runs out to the end-of-day target. Spend into it and the day finishes level.
 
 ## Why
 
-A weekly limit resets on a fixed weekday and time. Seven days is 100%, so each day is about 14.3%. On day 5 you're roughly 71% through the window. `/usage` tells you the actual number, but nothing tells you the pace target to judge it against, and neither is visible without stopping what you're doing.
+Your weekly limit resets on a fixed day and time. Seven days is 100%, so each day is about 14.3%, and on day 5 you're roughly 71% through.
+
+`/usage` gives you the actual number. Nothing gives you the target to judge it against, and neither is visible without stopping what you're doing.
 
 ## Install
 
 > ### ⬇️ [Download the latest release](https://github.com/Stixum/Burnline/releases/latest)
 >
-> Grab `Burnline.dmg`, open it, drag Burnline to Applications. It's signed and notarized, so it opens normally with no right-click-to-open dance.
+> Open `Burnline.dmg`, drag Burnline to Applications, launch it. Signed and notarized, so no right-click-to-open dance.
 >
-> **Universal binary**, Apple silicon and Intel. Requires macOS 14 or later.
+> **Universal binary**, Apple silicon and Intel. macOS 14 or later.
 
 Or with Homebrew:
 
@@ -35,11 +39,11 @@ Or with Homebrew:
 brew install --cask stixum/tap/burnline
 ```
 
-## Setup, worth two minutes
+## Setup
 
-Burnline reads your usage from files Claude Code already keeps on your Mac. It works immediately, but **one setting makes the number keep itself current**, and without it the figure goes stale and stays stale.
+Burnline works the moment you launch it. One step keeps the number current.
 
-The setup window opens on first launch. Click **Set up automatically** and it adds a status line to `~/.claude/settings.json`:
+The setup window opens on first launch. Click **Set up automatically** and it adds this to `~/.claude/settings.json`:
 
 ```json
 "statusLine": {
@@ -49,58 +53,70 @@ The setup window opens on first launch. Click **Set up automatically** and it ad
 }
 ```
 
-Claude Code then reports your usage to Burnline after every response.
+Claude Code then reports usage after every response. Skip it and the figure goes stale and stays stale.
 
-Dismissed it, or want it later? It's in **Settings, under Status line**, which also shows whether the status line is currently connected. When it isn't, the popover offers a **Set up** link too.
+**Already have a status line?** Burnline leaves it alone and shows you the snippet to merge yourself.
 
-**Already have a status line?** Burnline won't touch it. It shows you the snippet and lets you merge it yourself, because replacing someone's existing status line isn't a decision an app should make on their behalf.
+**Closed the window?** Settings, under Status line. It also tells you whether the connection is live.
 
 ## Where the numbers come from
 
 **The pace half is exact.** Calendar arithmetic. It cannot be wrong.
 
-**The usage half comes from one of three sources, and the popover always says which is in play.**
+**The usage half has three sources, and the popover always names the one in play.**
 
-1. **Live.** Anthropic's own percentage and the true reset instant, from either of two local sources, whichever is fresher:
-   - the [status line](https://code.claude.com/docs/en/statusline), which Claude Code pipes to a command after every response
-   - `~/.claude.json`, which holds a usage block with its own timestamp and, uniquely, the per-model weekly limit
-2. **Calibrated.** No usable reading, but you've typed `/usage` numbers in by hand. A fallback.
-3. **Pace only.** Neither. The clock target alone, which is useful on its own.
+1. **Live.** Anthropic's own percentage and the real reset time, from whichever is fresher:
+   - the [status line](https://code.claude.com/docs/en/statusline), which fires after every response
+   - `~/.claude.json`, which also carries the per-model weekly limit
+2. **Calibrated.** No reading available, but you've typed `/usage` numbers in by hand.
+3. **Pace only.** Neither. The clock target on its own, which is still useful.
 
-Between readings, Burnline extrapolates from token counts in `~/.claude/projects/**/*.jsonl`. Those see only **Claude Code on this Mac**: claude.ai in a browser, the desktop app, and your other machines are invisible to them. Every real reading is account-wide and corrects for all of it, so only the forward extrapolation is blind. Past an hour the popover says "Extrapolated" rather than "Live".
+Between readings it extrapolates from token counts in `~/.claude/projects/**/*.jsonl`. Those see **only Claude Code on this Mac**. Browser sessions, the desktop app, and your other machines are invisible to them.
 
-## What Burnline reads, and what it never does
+Every real reading is account-wide and corrects for all of it. Only the forward guess is blind, and past an hour the popover says "Extrapolated" instead of "Live".
 
-Everything comes from files already on your Mac. Burnline holds no credentials, sends no telemetry, and never transmits anything it reads.
+## What it reads
 
-It touches four things:
+Local files. No credentials, no telemetry, nothing leaves your Mac.
 
-- `~/.claude/projects/**/*.jsonl`, read, for transcript token counts between readings
-- `~/Library/Application Support/Burnline/`, read and written, its own captures, cache and settings
-- `~/.claude.json`, read, for **one field**, `cachedUsageUtilization`
-- `~/.claude/settings.json`, read to see whether the status line is configured, and **written only when you click "Set up automatically"**, with a timestamped backup made first
+| Path | Access | Why |
+|---|---|---|
+| `~/.claude/projects/**/*.jsonl` | read | Token counts between readings |
+| `~/Library/Application Support/Burnline/` | read/write | Its own cache and settings |
+| `~/.claude.json` | read | **One field**, `cachedUsageUtilization` |
+| `~/.claude/settings.json` | read, and write on your click | The status line, backed up first |
 
-`~/.claude.json` also contains a list of every project path on your machine. Burnline parses the file to reach `cachedUsageUtilization` and **keeps nothing else from it**: the rest is never stored, logged, or transmitted.
+`~/.claude.json` also lists every project path on your machine. Burnline keeps nothing from it except that one field.
 
-**Burnline is unsandboxed, deliberately.** `~/.claude` is a home dotfolder rather than a TCC-protected location like Documents or Desktop, so an unsandboxed app can read it with no permission prompt and no Full Disk Access. Sandboxing would sever the only data source. The trade is worth understanding, because it's why a clean install asks you for nothing.
+**Unsandboxed, on purpose.** `~/.claude` is a home dotfolder, not a TCC-protected location like Documents. An unsandboxed app reads it with no prompt and no Full Disk Access. Sandboxing would cut off the only data source.
 
-**One optional setting makes network activity happen, and it's off by default.** "Refresh usage automatically" starts a short-lived Claude Code session that runs `/usage`, because otherwise a stale figure has nothing to correct it. It uses no message quota, since `/usage` produces no assistant turn, but it does start real Claude Code sessions and those talk to Anthropic. Burnline asks before enabling it. With it off, Burnline makes no network requests at all.
+## One optional setting, and what it costs
 
-**If you enable it, macOS will ask for access to Documents, Downloads and any cloud drives.** That is Claude Code scanning your home directory when it starts, not Burnline reading your files. **Decline all of them and the feature still works** — verified. Burnline itself only ever reads the four paths listed above.
+**"Refresh usage automatically" is off by default.** Turn it on and Burnline runs `/usage` in a brief Claude Code session when the figure goes stale, because otherwise nothing corrects it.
+
+It uses no message quota. `/usage` produces no assistant turn.
+
+**macOS will ask for folder access the first time, naming Claude Code.** Documents, Downloads, whatever cloud drives you have. That is Claude Code looking at your home directory when it starts, which it does whenever you run it.
+
+**Decline all of them. It still works, and Burnline never wanted them.** Verified on a clean machine.
+
+Leave the setting off and Burnline makes no network requests at all.
 
 ## Build from source
 
 ```bash
 swift test
-```
-
-```bash
 ./build.sh --install
 ```
 
-`--install` is what copies to `/Applications`. Plain `./build.sh` only assembles the bundle in `build/`.
+`--install` copies to `/Applications`. Plain `./build.sh` just assembles the bundle.
 
-Built with SwiftPM, not Xcode. Four targets: `BurnlineCore` (all logic, no SwiftUI), `Burnline` (the app), `BurnlineProbe` (a CLI that prints a snapshot from your real transcripts, the fastest way to see what the app sees), and `BurnlineStatusline` (the capture helper that ships inside the bundle).
+SwiftPM, no Xcode project. Four targets:
+
+- `BurnlineCore`: all the logic, no SwiftUI
+- `Burnline`: the app
+- `BurnlineProbe`: prints a snapshot from your real transcripts, the fastest way to see what the app sees
+- `BurnlineStatusline`: the capture helper that ships inside the bundle
 
 ```bash
 swift run BurnlineProbe
@@ -108,23 +124,26 @@ swift run BurnlineProbe
 
 ### Where to start reading
 
-Everything funnels through **`SnapshotBuilder`**, which assembles the one immutable `Snapshot` that every view reads. Both the app and the probe go through it, so if you want to know how a number on screen was produced, start there and work outwards:
+Everything funnels through **`SnapshotBuilder`**, which builds the one immutable `Snapshot` every view reads. The app and the probe both go through it, so start there and work outwards.
 
-- `WindowMath` turns a reset schedule and the current time into window bounds and elapsed fraction. Pure calendar arithmetic, and the half of the app that cannot be wrong.
-- `TranscriptScanner` walks `~/.claude/projects` incrementally and produces token counts. `ConsumptionModel` weights them.
-- `RateLimitHighWater` decides which reading to trust when several sources disagree, which they routinely do.
-- `UsagePoller` is the only thing that starts a process, and the only thing that touches the network, indirectly.
+- `WindowMath`: reset schedule plus now, into window bounds and elapsed fraction. The half that cannot be wrong.
+- `TranscriptScanner`: walks `~/.claude/projects` incrementally. `ConsumptionModel` weights the result.
+- `RateLimitHighWater`: picks which reading to trust when sources disagree, which they routinely do.
+- `UsagePoller`: the only thing that starts a process, and the only route to the network.
 
-Two conventions worth knowing before you change anything. **`BurnlineCore` imports no SwiftUI**, so all the logic is testable without a view; that is enforced by the target graph rather than by discipline. And **views do no arithmetic**: if a number needs computing it belongs in a pure unit with tests, not in a `body`.
+Two rules worth knowing before you change anything:
 
-The reasoning behind the non-obvious decisions lives in comments next to the code it explains rather than in a separate document, on the grounds that a document drifts and a comment two lines above the code usually doesn't.
+- **`BurnlineCore` imports no SwiftUI.** The target graph enforces it, not discipline.
+- **Views do no arithmetic.** If a number needs computing it belongs in a pure unit with tests.
+
+The reasoning behind the non-obvious decisions lives in comments beside the code. A separate document drifts; a comment two lines up usually doesn't.
 
 ## Known limitations
 
-These are properties of the approach, not bugs:
+Properties of the approach, not bugs.
 
-- **Between readings, only Claude Code on this Mac is visible.** A real reading corrects for everything the moment it lands. The extrapolation between them is blind.
-- **Readings need Claude Code to be running.** An idle day freezes the anchor. The popover states how old the reading is.
+- **Between readings, only this Mac is visible.** A real reading corrects everything the moment it lands.
+- **Readings need Claude Code running.** An idle day freezes the anchor, and the popover says how old it is.
 - **A reading dies with its window.** Past the reset it describes a period that no longer exists, so it's discarded.
 
 ## License
