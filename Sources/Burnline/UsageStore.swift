@@ -187,6 +187,34 @@ final class UsageStore {
         claudeExecutable = ClaudeExecutable.resolve()
     }
 
+    /// True while a manual check is running, so the button can say so. A poll
+    /// takes roughly half a minute; without feedback it looks like nothing
+    /// happened.
+    private(set) var isPolling = false
+
+    /// Refresh the anchor right now, because the user asked.
+    ///
+    /// Deliberately independent of `refreshesUsageAutomatically`. That setting
+    /// governs whether Burnline may start a Claude Code session *on its own
+    /// initiative*, which is the part that warrants an up-front confirmation.
+    /// Pressing a button labelled "Check now" is the consent, and it gives
+    /// people who would rather nothing ran in the background a way to get a
+    /// current figure on demand.
+    ///
+    /// Does nothing if Claude Code cannot be found; the popover disables the
+    /// button in that case rather than letting it fail silently.
+    func pollNow() async {
+        guard !isPolling, ClaudeExecutable.resolve() != nil else { return }
+        isPolling = true
+        defer { isPolling = false }
+
+        lastPollAt = Date()
+        await poller.poll()
+        // The poll refreshes ~/.claude.json, not our own files, so a rebuild is
+        // what surfaces it.
+        rebuild()
+    }
+
     // MARK: - Statusline wiring
 
     /// The capture helper inside *this* bundle.

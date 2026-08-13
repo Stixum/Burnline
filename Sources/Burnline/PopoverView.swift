@@ -53,6 +53,7 @@ struct PopoverView: View {
         .preferredColorScheme(.dark)
         .onAppear {
             store.refreshIfStale()
+            store.refreshClaudeExecutable()
             // wiringState starts at .noSettingsFile, so without this a correctly
             // configured user would see a spurious "Set up" until something else
             // refreshed it. One small file read per popover open, not on a timer.
@@ -206,6 +207,7 @@ struct PopoverView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.accent)
                 }
+                checkNowButton
                 Button("Settings") { SettingsWindow.open(using: openWindow) }
                     .buttonStyle(.plain)
                     .font(.system(size: 11))
@@ -242,6 +244,39 @@ struct PopoverView: View {
                 .buttonStyle(.plain)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(snapshot.isCalibrationStale ? Theme.danger : Theme.accent)
+        }
+    }
+
+    /// Manual refresh, for people who want a current number without leaving
+    /// anything running in the background.
+    ///
+    /// Hidden rather than disabled when Claude Code is missing: a permanently
+    /// dead control in a 300pt panel is worse than no control, and Settings
+    /// already explains why it could not be found.
+    @ViewBuilder private var checkNowButton: some View {
+        if store.claudeExecutable != nil {
+            // A glyph, not a label. "Check now" as text cost ~70pt in a 300pt
+            // footer that already carries the source label, Settings and Quit,
+            // and it pushed both itself and "Live · 5m ago" into truncation.
+            // A refresh arrow beside a timestamp is the conventional form and
+            // costs ~16pt.
+            Button {
+                Task { await store.pollNow() }
+            } label: {
+                if store.isPolling {
+                    ProgressView().controlSize(.small).scaleEffect(0.7)
+                        .frame(width: 12, height: 12)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(store.isPolling)
+            .foregroundStyle(Theme.accent)
+            .help("Check now. Runs /usage in a brief Claude Code session to "
+                  + "refresh the figure. Uses no message quota, and takes about "
+                  + "half a minute.")
         }
     }
 
