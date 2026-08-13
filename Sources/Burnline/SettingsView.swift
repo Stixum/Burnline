@@ -45,7 +45,7 @@ struct SettingsView: View {
                 .disabled(store.snapshot.isScheduleAutomatic)
 
                 if !store.snapshot.isScheduleAutomatic {
-                    Text("Resets \(weekdayNames[store.settings.resetSchedule.weekday - 1]) at \(String(format: "%02d:%02d", store.settings.resetSchedule.hour, store.settings.resetSchedule.minute)), \(store.settings.resetSchedule.timeZone.identifier). Fallback only — used until Claude Code reports the real reset time.")
+                    Text("Resets \(weekdayNames[store.settings.resetSchedule.weekday - 1]) at \(String(format: "%02d:%02d", store.settings.resetSchedule.hour, store.settings.resetSchedule.minute)), \(store.settings.resetSchedule.timeZone.identifier). Fallback only, used until Claude Code reports the real reset time.")
                         .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
