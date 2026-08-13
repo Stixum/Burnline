@@ -83,7 +83,12 @@ public enum ApplicationSupport {
     /// inherited and the child could hit a trust dialog. Only the real app
     /// spawns the poller, so this affects manual experiments, not tests.
     public static func pollWorkingDirectory() -> URL {
-        let directory = directory().appendingPathComponent("poll-cwd", isDirectory: true)
+        pollWorkingDirectory(environment: ProcessInfo.processInfo.environment)
+    }
+
+    public static func pollWorkingDirectory(environment: [String: String]) -> URL {
+        let directory = directory(environment: environment)
+            .appendingPathComponent("poll-cwd", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }

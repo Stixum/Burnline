@@ -95,8 +95,18 @@ private func withOverride(_ path: String) -> [String: String] {
 // macOS attributes a child's TCC requests to the responsible process — us. From
 // $HOME that asked the user for Documents/Desktop/Downloads on Burnline's
 // behalf.
-@Test func pollWorkingDirectoryIsNotTheHomeDirectory() {
-    let poll = ApplicationSupport.pollWorkingDirectory()
+@Test func pollWorkingDirectoryIsNotTheHomeDirectory() throws {
+    // Against a scratch directory, not the real one. The earlier version of
+    // this test called pollWorkingDirectory() with no override, which *created*
+    // the live ~/Library/Application Support/Burnline/poll-cwd on the machine
+    // of anyone who ran the suite. Harmless in effect, and exactly the thing
+    // this project claims its tests never do.
+    let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: scratch) }
+
+    let poll = ApplicationSupport.pollWorkingDirectory(
+        environment: [ApplicationSupport.overrideKey: scratch.path])
     #expect(poll.path != FileManager.default.homeDirectoryForCurrentUser.path)
     #expect(poll.lastPathComponent == "poll-cwd")
 }

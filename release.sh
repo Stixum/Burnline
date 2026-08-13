@@ -53,7 +53,17 @@ fi
 
 # --- 2. assemble (shared with build.sh, never duplicated) ------------------
 BURNLINE_BUILD_LIB=1 source ./build.sh
-assemble_bundle
+# Releases are universal. Shipping arm64-only means an Intel user downloads a
+# perfectly signed DMG and gets an app that will not open.
+BURNLINE_UNIVERSAL=1 assemble_bundle
+
+for binary in "${APP}/Contents/MacOS/Burnline" "${APP}/Contents/MacOS/burnline-statusline"; do
+  archs=$(lipo -archs "${binary}")
+  case "${archs}" in
+    *x86_64*arm64*|*arm64*x86_64*) echo "    $(basename "${binary}"): ${archs}" ;;
+    *) echo "!!! $(basename "${binary}") is ${archs}, not universal. Refusing to release." >&2; exit 1 ;;
+  esac
+done
 
 # --- 3. sign, inside-out ---------------------------------------------------
 echo "==> Signing with ${IDENTITY}"

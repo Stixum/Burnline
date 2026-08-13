@@ -11,9 +11,25 @@ cd "$(dirname "$0")"
 # byte-identical bundle and then apply its own stricter signing, rather than
 # duplicating these steps and drifting from them.
 assemble_bundle() {
-  echo "==> Building release binaries"
-  swift build -c release --product "${APP_NAME}"
-  swift build -c release --product BurnlineStatusline
+  # Universal only when releasing. Two architectures roughly doubles build time,
+  # which is not worth paying on every local iteration — but shipping arm64-only
+  # would hand Intel Mac users a signed, notarized DMG whose app cannot launch,
+  # with nothing on screen explaining why. macOS 14 still supports 2018-2020
+  # Intel machines, so "requires macOS 14" and "Apple silicon only" are not the
+  # same statement.
+  if [ "${BURNLINE_UNIVERSAL:-}" = "1" ]; then
+    echo "==> Building universal release binaries (arm64 + x86_64)"
+    swift build -c release --arch arm64 --arch x86_64 --product "${APP_NAME}"
+    swift build -c release --arch arm64 --arch x86_64 --product BurnlineStatusline
+    # SwiftPM puts multi-arch output here, NOT in .build/release. Copying from
+    # the usual path silently ships a single-arch binary from an earlier build.
+    PRODUCTS=".build/apple/Products/Release"
+  else
+    echo "==> Building release binaries (native arch)"
+    swift build -c release --product "${APP_NAME}"
+    swift build -c release --product BurnlineStatusline
+    PRODUCTS=".build/release"
+  fi
 
   echo "==> Generating icon"
   swift Tools/make-icon.swift
@@ -22,12 +38,12 @@ assemble_bundle() {
   echo "==> Assembling bundle"
   rm -rf "${APP}"
   mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
-  cp ".build/release/${APP_NAME}" "${APP}/Contents/MacOS/${APP_NAME}"
+  cp "${PRODUCTS}/${APP_NAME}" "${APP}/Contents/MacOS/${APP_NAME}"
   # The statusline helper ships inside the bundle for two reasons: it is then
   # versioned with the app and reachable by an update, and settings.json can point
   # at a path that moves with the app. Its bash predecessor lived in ~/.claude and
   # could never be updated by anything the app did.
-  cp ".build/release/BurnlineStatusline" "${APP}/Contents/MacOS/burnline-statusline"
+  cp "${PRODUCTS}/BurnlineStatusline" "${APP}/Contents/MacOS/burnline-statusline"
   cp "Resources/Info.plist" "${APP}/Contents/Info.plist"
   cp "${BUILD_DIR}/${APP_NAME}.icns" "${APP}/Contents/Resources/${APP_NAME}.icns"
 }

@@ -62,13 +62,14 @@ Between readings, Burnline extrapolates from token counts in `~/.claude/projects
 
 Everything comes from files already on your Mac. Burnline holds no credentials, sends no telemetry, and never transmits anything it reads.
 
-It reads three things:
+It touches four things:
 
-- `~/.claude/projects/**/*.jsonl`, for transcript token counts between readings
-- `~/Library/Application Support/Burnline/`, its own captures, cache and settings
-- `~/.claude.json`, **one field**, `cachedUsageUtilization`
+- `~/.claude/projects/**/*.jsonl`, read, for transcript token counts between readings
+- `~/Library/Application Support/Burnline/`, read and written, its own captures, cache and settings
+- `~/.claude.json`, read, for **one field**, `cachedUsageUtilization`
+- `~/.claude/settings.json`, read to see whether the status line is configured, and **written only when you click "Set up automatically"**, with a timestamped backup made first
 
-That last file also contains a list of every project path on your machine. **Burnline reads one field out of it and nothing else.** It doesn't read, store, or transmit the rest.
+`~/.claude.json` also contains a list of every project path on your machine. Burnline parses the file to reach `cachedUsageUtilization` and **keeps nothing else from it**: the rest is never stored, logged, or transmitted.
 
 **Burnline is unsandboxed, deliberately.** `~/.claude` is a home dotfolder rather than a TCC-protected location like Documents or Desktop, so an unsandboxed app can read it with no permission prompt and no Full Disk Access. Sandboxing would sever the only data source. The trade is worth understanding, because it's why a clean install asks you for nothing.
 

@@ -2,10 +2,16 @@ import Foundation
 
 /// What the Burnline statusline helper captured from Claude Code.
 ///
-/// This is the only supported source of true subscription usage — there is no
-/// API, no CLI and no other local file that exposes it. Claude Code pipes
-/// session JSON to a statusline command on every assistant response, and that
-/// payload carries `rate_limits.seven_day.{used_percentage,resets_at}`.
+/// Claude Code pipes session JSON to a statusline command on every assistant
+/// response, and that payload carries
+/// `rate_limits.seven_day.{used_percentage,resets_at}`.
+///
+/// ⚠️ This comment used to claim it was "the only supported source ... no other
+/// local file that exposes it". That was false when written and is false now:
+/// `UtilizationStore` reads `cachedUsageUtilization` out of `~/.claude.json`
+/// and `UsageUtilization.asCapture()` feeds it into this same type, competing
+/// on age. What genuinely does not exist is an **API** carrying subscription
+/// usage. A negative about one interface is not a negative about the system.
 ///
 /// Timestamps stay as unix seconds because that is what the helper writes;
 /// `Date` accessors sit on top rather than needing custom decoders.
