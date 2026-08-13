@@ -92,6 +92,19 @@ Built with SwiftPM, not Xcode. Four targets: `BurnlineCore` (all logic, no Swift
 swift run BurnlineProbe
 ```
 
+### Where to start reading
+
+Everything funnels through **`SnapshotBuilder`**, which assembles the one immutable `Snapshot` that every view reads. Both the app and the probe go through it, so if you want to know how a number on screen was produced, start there and work outwards:
+
+- `WindowMath` turns a reset schedule and the current time into window bounds and elapsed fraction. Pure calendar arithmetic, and the half of the app that cannot be wrong.
+- `TranscriptScanner` walks `~/.claude/projects` incrementally and produces token counts. `ConsumptionModel` weights them.
+- `RateLimitHighWater` decides which reading to trust when several sources disagree, which they routinely do.
+- `UsagePoller` is the only thing that starts a process, and the only thing that touches the network, indirectly.
+
+Two conventions worth knowing before you change anything. **`BurnlineCore` imports no SwiftUI**, so all the logic is testable without a view; that is enforced by the target graph rather than by discipline. And **views do no arithmetic**: if a number needs computing it belongs in a pure unit with tests, not in a `body`.
+
+The reasoning behind the non-obvious decisions lives in comments next to the code it explains rather than in a separate document, on the grounds that a document drifts and a comment two lines above the code usually doesn't.
+
 ## Known limitations
 
 These are properties of the approach, not bugs:
