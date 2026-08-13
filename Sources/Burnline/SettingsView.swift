@@ -152,9 +152,9 @@ struct SettingsView: View {
                 ))
                 // Says plainly what it does, because it spawns processes. Off by
                 // default for that reason.
-                Text("Runs `/usage` in a brief background Claude Code session when the figure "
-                     + "goes stale. Uses no message quota. Without it, usage only updates while "
-                     + "you're working in a terminal session.")
+                Text("Runs /usage in a brief Claude Code session when the figure goes "
+                     + "stale. Uses no message quota. Without it, usage updates only while "
+                     + "you are working in a terminal session.")
                     .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -234,12 +234,16 @@ struct SettingsView: View {
             // real sessions, and that those sessions reach Anthropic. "Uses no
             // message quota" is measured — /usage produces no assistant turn —
             // but it is not the same as "does nothing".
-            Text("Burnline will start a short-lived Claude Code session and run /usage "
-                 + "when your figure goes stale, at most once every "
+            Text("Burnline will start a brief Claude Code session running /usage when "
+                 + "the figure goes stale, at most once every "
                  + "\(store.settings.usageRefreshInterval.title.lowercased()).\n\n"
-                 + "It uses no message quota — /usage produces no assistant turn — but it "
-                 + "does start real Claude Code sessions, and those contact Anthropic.\n\n"
-                 + "You can turn this off again at any time.")
+                 + "This uses no message quota, but it does start real Claude Code "
+                 + "sessions, which contact Anthropic.\n\n"
+                 + "macOS will ask for access to folders such as Documents, Downloads "
+                 + "and any cloud drives. That is Claude Code scanning your home "
+                 + "directory at startup, not Burnline reading your files. "
+                 + "You can decline every one of them and this still works.\n\n"
+                 + "You can turn this off at any time.")
         }
     }
 
@@ -343,10 +347,10 @@ struct SettingsView: View {
             Label("Not set up", systemImage: "circle.dashed")
                 .font(.system(size: 11.5)).foregroundStyle(Theme.textMuted)
         case .stalePath:
-            Label("Points at an old copy", systemImage: "arrow.triangle.2.circlepath")
+            Label("Configured for a different copy", systemImage: "arrow.triangle.2.circlepath")
                 .font(.system(size: 11.5)).foregroundStyle(Theme.warning)
         case .conflict:
-            Label("Another status line is set", systemImage: "exclamationmark.triangle.fill")
+            Label("Another status line configured", systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 11.5)).foregroundStyle(Theme.warning)
         }
     }

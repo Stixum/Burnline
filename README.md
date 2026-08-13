@@ -86,6 +86,8 @@ It touches four things:
 
 **One optional setting makes network activity happen, and it's off by default.** "Refresh usage automatically" starts a short-lived Claude Code session that runs `/usage`, because otherwise a stale figure has nothing to correct it. It uses no message quota, since `/usage` produces no assistant turn, but it does start real Claude Code sessions and those talk to Anthropic. Burnline asks before enabling it. With it off, Burnline makes no network requests at all.
 
+**If you enable it, macOS will ask for access to Documents, Downloads and any cloud drives.** That is Claude Code scanning your home directory when it starts, not Burnline reading your files. **Decline all of them and the feature still works** — verified. Burnline itself only ever reads the four paths listed above.
+
 ## Build from source
 
 ```bash

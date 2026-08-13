@@ -35,16 +35,15 @@ struct OnboardingView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Setup").eyebrow()
-            Text("Let Claude Code send Burnline your usage")
+            Text("Connect Claude Code")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
             // Deliberately not "the app cannot work without this" — it can.
             // ~/.claude.json supplies a figure on its own; what it will not do
             // is keep itself current.
-            Text("Burnline can already read your usage from a file Claude Code keeps. "
-                 + "That file doesn't refresh on its own, though, so the number goes stale. "
-                 + "Adding a status line fixes that: Claude Code then reports your usage "
-                 + "after every response.")
+            Text("Burnline reads your usage from files Claude Code already keeps, "
+                 + "so it works now. Adding a status line keeps it current: Claude Code "
+                 + "reports after every response. Without one, the figure goes stale.")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -59,27 +58,27 @@ struct OnboardingView: View {
             case .configured:
                 statusRow(icon: "checkmark.circle.fill", tint: Theme.success,
                           title: "Connected",
-                          detail: "Claude Code is reporting your usage to Burnline.")
+                          detail: "Claude Code is reporting usage after every response.")
                 captureAgeRow
 
             case .noSettingsFile, .notConfigured:
                 statusRow(icon: "circle.dashed", tint: Theme.textMuted,
                           title: "Not set up yet",
-                          detail: "Burnline will add a status line to your Claude Code settings.")
+                          detail: "Adds a status line to your Claude Code settings.")
                 setUpButton("Set up automatically")
 
             case .stalePath(let current):
                 statusRow(icon: "arrow.triangle.2.circlepath", tint: Theme.warning,
-                          title: "Pointing at an old location",
-                          detail: "Your settings name a copy of Burnline that isn't this one.")
+                          title: "Configured for a different copy",
+                          detail: "Your settings name a copy of Burnline other than this one.")
                 monospacedBox(current)
                 setUpButton("Update it")
 
             case .conflict(let command):
                 statusRow(icon: "exclamationmark.triangle.fill", tint: Theme.warning,
                           title: "You already have a status line",
-                          detail: "Burnline won't replace it. Add the snippet below to it by hand, "
-                                + "and your existing status line keeps working.")
+                          detail: "Burnline will not replace it. Merge the snippet below into "
+                                + "your own, and both keep working.")
                 if !command.isEmpty { monospacedBox(command) }
             }
         }
@@ -111,7 +110,7 @@ struct OnboardingView: View {
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(stale ? Theme.warning : Theme.textMuted)
         } else {
-            Text("No report yet — send a message in Claude Code")
+            Text("No report yet. Send a message in Claude Code.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.textMuted)
         }
@@ -137,7 +136,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 8) {
             DisclosureGroup(isExpanded: $showingManual) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Add this to ~/.claude/settings.json:")
+                    Text("Add to ~/.claude/settings.json:")
                         .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                     monospacedBox(StatuslineWiring.snippet(helperPath: store.helperPath))
                     Button(copied ? "Copied" : "Copy") {
@@ -150,7 +149,7 @@ struct OnboardingView: View {
                 }
                 .padding(.top, 8)
             } label: {
-                Text("Set it up by hand")
+                Text("Configure manually")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.textSecondary)
             }

@@ -97,13 +97,62 @@ rm -f "${ZIP}"
 # Order matters: a DMG built from an unstapled app ships an unstapled app,
 # however well the DMG itself is stapled afterwards.
 echo "==> Building the DMG"
+# A laid-out window rather than a bare file listing: background, positioned
+# icons, no toolbar. This is the first thing anyone sees, and a default grey
+# Finder window beside a hardcoded-dark app reads as two different products.
+#
+# It has to be built writable, decorated while mounted, then converted to a
+# compressed read-only image. hdiutil cannot set any of this directly.
+swift Tools/make-dmg-background.swift >/dev/null
+
 STAGE="${BUILD_DIR}/dmg"
-rm -rf "${STAGE}" "${DMG}"
-mkdir -p "${STAGE}"
+RW="${BUILD_DIR}/rw.dmg"
+rm -rf "${STAGE}" "${DMG}" "${RW}"
+mkdir -p "${STAGE}/.background"
 cp -R "${APP}" "${STAGE}/"
 ln -s /Applications "${STAGE}/Applications"
+cp "${BUILD_DIR}/dmg-background.png" "${STAGE}/.background/background.png"
+
 hdiutil create -volname "${APP_NAME}" -srcfolder "${STAGE}" \
-  -ov -format UDZO "${DMG}" >/dev/null
+  -ov -format UDRW "${RW}" >/dev/null
+MOUNT=$(hdiutil attach "${RW}" -nobrowse -noverify | grep -o '/Volumes/.*' | head -1)
+
+# Finder positions icons by CENTRE, from the window's top-left. These four
+# numbers must match Tools/make-dmg-background.swift or the arrow points at
+# nothing.
+osascript <<EOF >/dev/null
+tell application "Finder"
+  tell disk "${APP_NAME}"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    -- Outer window bounds, title bar included. The background is 600x400, so
+    -- the window must be 28pt taller or the bottom line is clipped.
+    set the bounds of container window to {200, 150, 800, 578}
+    set opts to the icon view options of container window
+    set arrangement of opts to not arranged
+    set icon size of opts to 128
+    set background picture of opts to file ".background:background.png"
+    set position of item "${APP_NAME}.app" of container window to {150, 190}
+    set position of item "Applications" of container window to {450, 190}
+    close
+    open
+    -- Re-assert after reopening: close/open resets these, which left the status
+    -- bar visible and eating ~25pt of the content area, clipping the bottom of
+    -- the background.
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {200, 150, 800, 578}
+    update without registering applications
+    delay 2
+  end tell
+end tell
+EOF
+
+hdiutil detach "${MOUNT}" >/dev/null
+hdiutil convert "${RW}" -format UDZO -imagekey zlib-level=9 -o "${DMG}" >/dev/null
+rm -f "${RW}"
 rm -rf "${STAGE}"
 
 # ⚠️ Sign the DMG itself. `hdiutil create` produces an UNSIGNED image, and
