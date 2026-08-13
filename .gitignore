@@ -28,3 +28,14 @@ xcuserdata/
 # that no reader of this repo can open, and at 296KB they outweighed the entire
 # source tree on the repo landing page.
 docs/superpowers/
+
+# Agent context. Kept on disk because it is how this project gets worked on, but
+# untracked for the same reason as the plans above: it references an Obsidian
+# vault and a DESIGN-STANDARDS.md that no reader of this repo can open, and it
+# carries a lot of internal "this was wrong twice" narrative that is valuable to
+# a maintainer and noise to everyone else.
+CLAUDE.md
+
+# The cask lives in Stixum/homebrew-tap. A second copy here would drift out of
+# sync with the one that actually gets installed.
+docs/homebrew/

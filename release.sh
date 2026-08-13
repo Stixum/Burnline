@@ -33,13 +33,15 @@ IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
   | grep "Developer ID Application" | head -1 | awk '{print $2}' || true)
 if [ -z "${IDENTITY}" ]; then
   echo "!!! No Developer ID Application identity in the keychain." >&2
-  echo "    See docs/superpowers/plans/2026-08-11-plan-6-release.md Task 1." >&2
+  echo "    Create one at https://developer.apple.com/account/resources/certificates" >&2
+  echo "    (type: Developer ID Application), then double-click the .cer to install." >&2
   exit 1
 fi
 
 if ! xcrun notarytool history --keychain-profile "${NOTARY_PROFILE}" >/dev/null 2>&1; then
   echo "!!! No notary credentials for profile '${NOTARY_PROFILE}'." >&2
-  echo "    See Plan 6 Task 2 (xcrun notarytool store-credentials)." >&2
+  echo "    xcrun notarytool store-credentials \"${NOTARY_PROFILE}\" \\" >&2
+  echo "      --key <AuthKey.p8> --key-id <KEY_ID> --issuer <ISSUER_UUID>" >&2
   exit 1
 fi
 
