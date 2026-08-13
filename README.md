@@ -1,5 +1,11 @@
 # Burnline
 
+[![Latest release](https://img.shields.io/github/v/release/Stixum/Burnline?label=download&color=7C5CFF)](https://github.com/Stixum/Burnline/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Stixum/Burnline/total?color=7C5CFF)](https://github.com/Stixum/Burnline/releases)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-informational)](https://github.com/Stixum/Burnline/releases/latest)
+[![Universal](https://img.shields.io/badge/binary-universal-informational)](https://github.com/Stixum/Burnline/releases/latest)
+[![MIT](https://img.shields.io/github/license/Stixum/Burnline?color=informational)](LICENSE)
+
 A macOS menu bar app that shows where you *should* be in your Claude weekly usage window, next to where you actually are.
 
 ```
@@ -18,13 +24,17 @@ A weekly limit resets on a fixed weekday and time. Seven days is 100%, so each d
 
 ## Install
 
+> ### ⬇️ [Download the latest release](https://github.com/Stixum/Burnline/releases/latest)
+>
+> Grab `Burnline.dmg`, open it, drag Burnline to Applications. It's signed and notarized, so it opens normally with no right-click-to-open dance.
+>
+> **Universal binary** — Apple silicon and Intel. Requires macOS 14 or later.
+
+Or with Homebrew:
+
 ```bash
 brew install --cask stixum/tap/burnline
 ```
-
-Or download the DMG from [Releases](https://github.com/Stixum/Burnline/releases) and drag it to Applications. It's signed and notarized, so it opens normally with no right-click-to-open dance.
-
-Requires macOS 14 or later.
 
 ## Setup, worth two minutes
 
