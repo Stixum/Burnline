@@ -30,7 +30,7 @@ Requires macOS 14 or later.
 
 Burnline reads your usage from files Claude Code already keeps on your Mac. It works immediately, but **one setting makes the number keep itself current**, and without it the figure goes stale and stays stale.
 
-Open Burnline's setup window (it appears on first launch) and click **Set up automatically**. That adds a status line to `~/.claude/settings.json`:
+The setup window opens on first launch. Click **Set up automatically** and it adds a status line to `~/.claude/settings.json`:
 
 ```json
 "statusLine": {
@@ -41,6 +41,8 @@ Open Burnline's setup window (it appears on first launch) and click **Set up aut
 ```
 
 Claude Code then reports your usage to Burnline after every response.
+
+Dismissed it, or want it later? It's in **Settings, under Status line**, which also shows whether the status line is currently connected. When it isn't, the popover offers a **Set up** link too.
 
 **Already have a status line?** Burnline won't touch it. It shows you the snippet and lets you merge it yourself, because replacing someone's existing status line isn't a decision an app should make on their behalf.
 
