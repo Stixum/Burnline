@@ -21,7 +21,7 @@ import BurnlineCore
 /// makes `/usage` available at all. Hence `openpty`.
 @MainActor
 final class UsagePoller {
-    private var running: Process?
+    private var running: pid_t?
 
     /// Diagnostics for a path that is deliberately silent in normal operation:
     /// it runs behind the user's back and must never print. Without this the
@@ -86,14 +86,6 @@ final class UsagePoller {
             return
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        // Haiku so that if a future Claude Code version ever does make a model
-        // call at startup, it is the cheapest one.
-        process.arguments = ["--model", "haiku"]
-        process.standardInput = FileHandle(fileDescriptor: replica)
-        process.standardOutput = FileHandle(fileDescriptor: replica)
-        process.standardError = FileHandle(fileDescriptor: replica)
 
         // ⚠️ Its own statusline captures go to a throwaway directory, never the
         // real one. A session start publishes a capture seeded from the cache
@@ -107,25 +99,34 @@ final class UsagePoller {
             .appendingPathComponent("burnline-poll-\(UUID().uuidString)")
         environment[ApplicationSupport.overrideKey] = scratch.path
         environment["TERM"] = "xterm-256color"
-        process.environment = environment
-        // ⚠️ NOT $HOME. Claude Code enumerates its working directory at
-        // startup, and macOS bills a child's TCC requests to the responsible
-        // process — us. From $HOME that made macOS ask the user for Documents,
-        // Desktop and Downloads access *on Burnline's behalf*. An empty
-        // app-owned directory has nothing protected to reach, and (measured)
-        // raises no trust dialog. See ApplicationSupport.pollWorkingDirectory.
-        process.currentDirectoryURL = ApplicationSupport.pollWorkingDirectory()
+        // An empty app-owned directory. Not $HOME: Claude Code enumerates its
+        // working directory at startup, and there is no reason to point it at
+        // one full of protected folders. See pollWorkingDirectory.
+        let cwd = ApplicationSupport.pollWorkingDirectory().path
 
-        do {
-            try process.run()
-            Self.log("launched pid \(process.processIdentifier): \(executable) --model haiku")
-        } catch {
-            Self.log("FAILED to launch \(executable): \(error)")
+        // ⚠️ Spawned DISCLAIMED, so macOS holds the child responsible for its
+        // own file access instead of billing it to Burnline. Without this,
+        // Claude Code validating its recorded project paths produced five
+        // permission prompts naming Burnline on a clean machine — Documents,
+        // Desktop, Downloads, OneDrive, Google Drive, Music. See
+        // DisclaimedSpawn for the full reasoning.
+        //
+        // Haiku so that if a future Claude Code version ever does make a model
+        // call at startup, it is the cheapest one.
+        let pid = DisclaimedSpawn.spawn(executable: executable,
+                                        arguments: ["--model", "haiku"],
+                                        environment: environment,
+                                        workingDirectory: cwd,
+                                        replica: replica)
+        guard pid > 0 else {
+            Self.log("FAILED to spawn \(executable)")
             close(primary)
             close(replica)
             return
         }
-        running = process
+        Self.log("launched pid \(pid): \(executable) --model haiku"
+                 + " (disclaimed: \(DisclaimedSpawn.isAvailable))")
+        running = pid
         defer {
             running = nil
             try? FileManager.default.removeItem(at: scratch)
@@ -160,15 +161,16 @@ final class UsagePoller {
         _ = "/usage\r".withCString { write(primary, $0, strlen($0)) }
         Self.log("sent /usage")
         try? await Task.sleep(for: .seconds(Self.settleDelay))
-        Self.log("child still running: \(process.isRunning)")
+        Self.log("child still running: \(kill(pid, 0) == 0)")
 
         // Terminate, then make sure. Sessions accumulated to eight unnoticed
         // during the 2026-08-11 investigation; this one must never join them.
-        process.terminate()
+        kill(pid, SIGTERM)
         try? await Task.sleep(for: .seconds(1))
-        if process.isRunning {
-            kill(process.processIdentifier, SIGKILL)
-        }
+        if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+        // Reap it, or the child lingers as a zombie for the life of the app.
+        var status: Int32 = 0
+        waitpid(pid, &status, WNOHANG)
 
         if ProcessInfo.processInfo.environment["BURNLINE_POLL_LOG"] != nil {
             drain.cancel()
