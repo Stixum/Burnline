@@ -483,7 +483,7 @@ its premise is stated in absolute terms that will no longer be true.
 
 ## 7. Public repo preparation
 
-- **Scrub `/Users/seanmccauley`** from `docs/superpowers/specs/2026-08-11-burnline-design.md`
+- **Scrub absolute home paths** (`/Users/<you>`) from `docs/superpowers/specs/2026-08-11-burnline-design.md`
   — the only hardcoded personal path in the repo, already flagged in the backlog.
   This spec deliberately uses no absolute personal paths.
 - **LICENSE.** MIT unless there is a reason otherwise.

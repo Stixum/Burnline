@@ -18,7 +18,7 @@
 
 A macOS menu bar app that answers one question at a glance: **am I ahead of or behind the pace I should be at, this far into my Claude weekly usage window?**
 
-- **Repo:** `/Users/seanmccauley/Projects/Burnline/`
+- **Repo:** the repository root (paths in this document are repo-relative)
 - **Obsidian:** `Project Notes/Burnline/`
 - **Platform:** macOS 14+, SwiftUI, Swift 6, Xcode 26.6
 

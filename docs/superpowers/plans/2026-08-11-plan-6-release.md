@@ -292,7 +292,7 @@ git commit -m "build: release.sh — Developer ID signing, notarization, stapled
 - [ ] **Step 1: Scrub the hardcoded home path**
 
 ```bash
-grep -rn "seanmccauley" --exclude-dir=.git --exclude-dir=.build --exclude-dir=build .
+grep -rn "$USER" --exclude-dir=.git --exclude-dir=.build --exclude-dir=build .
 ```
 
 Expected: one file, `docs/superpowers/specs/2026-08-11-burnline-design.md`. Replace the absolute paths with repo-relative ones. Re-run until the grep is empty.
@@ -309,7 +309,7 @@ Expected: no output.
 
 ```bash
 git rev-list --all | while read -r c; do
-  git grep -l "seanmccauley" "$c" 2>/dev/null
+  git grep -l "$USER" "$c" 2>/dev/null
 done | sort -u
 ```
 
@@ -507,6 +507,6 @@ ship as a feature that quietly never runs on anyone's machine but yours.
 - [ ] The DMG downloads through a browser and launches with no dialog, on a Mac that never held the signing identity
 - [ ] It launches with the network off
 - [ ] `brew install --cask stixum/tap/burnline` works end to end
-- [ ] `grep -rn seanmccauley` across the working tree and full history is clean
+- [ ] `grep -rn "$USER"` across the working tree and full history is clean
 - [ ] The poller spawns successfully from the notarized bundle, and `fetchedAtMs` moves
 - [ ] The README's first screen tells a stranger about the statusline requirement
