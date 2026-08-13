@@ -90,7 +90,7 @@ Local files. No credentials, no telemetry, nothing leaves your Mac.
 
 **Unsandboxed, on purpose.** `~/.claude` is a home dotfolder, not a TCC-protected location like Documents. An unsandboxed app reads it with no prompt and no Full Disk Access. Sandboxing would cut off the only data source.
 
-## One optional setting, and what it costs
+## Automatic refresh
 
 **"Refresh usage automatically" is off by default.** Turn it on and Burnline runs `/usage` in a brief Claude Code session when the figure goes stale, because otherwise nothing corrects it.
 
