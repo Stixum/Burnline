@@ -165,3 +165,88 @@ menu bar, every format (against \(settings.targetMode.title.lowercased()))
         + MenuBarFormatter.text(for: snapshot, target: settings.targetMode, display: mode)
 }.joined(separator: "\n"))
 """)
+
+// MARK: - Usage archive
+
+// 🔴 The probe DRIVES the archive rather than describing it: it runs exactly
+// the launch sequence `UsageStore.startHistoryFill()` runs — uncovered ranges,
+// fill, commit — against the resolved data directory. A print-only version
+// could not produce the figure this section exists for, which is what the fill
+// actually costs in wall-clock seconds on a real corpus.
+//
+// Writes land wherever the first line said they would. Under
+// `BURNLINE_DATA_DIR` that is a scratch archive; without it, the same files the
+// app itself maintains.
+let historyStore = HistoryStore(directory: ApplicationSupport.historyDirectory())
+let writer = HistoryWriter(store: historyStore, schedule: settings.resetSchedule)
+let fill = HistoryFill(rootURL: TranscriptScanner.defaultRoot)
+
+let fillStarted = Date()
+// One day past Claude Code's 30-day `cleanupPeriodDays` default, matching the app.
+let horizon = Int(now.addingTimeInterval(-31 * 86_400).timeIntervalSince1970)
+let uncovered = await writer.currentCoverage()
+    .uncovered(from: horizon, through: Int(now.timeIntervalSince1970))
+
+var filesOpened = 0
+var truncatedRanges = 0
+for range in uncovered {
+    let result = try fill.cells(from: Date(timeIntervalSince1970: Double(range.lowerBound)),
+                                to: Date(timeIntervalSince1970: Double(range.upperBound)))
+    // No clamping here: the span reaches into the still-filling bucket on
+    // purpose, and `HistoryWriter.commit` is the one place that trims it.
+    await writer.commit(payload: .init(rows: result.rows, span: range,
+                                       truncated: result.truncated),
+                        filledBy: "fill", observation: nil)
+    filesOpened += result.filesOpened
+    if result.truncated { truncatedRanges += 1 }
+}
+let fillElapsed = Date().timeIntervalSince(fillStarted)
+
+// Read back through the same store the app uses, so what is reported is what a
+// reader gets — deduplicated, and with the unreadable lines counted rather than
+// silently dropped.
+let coverage = (try? historyStore.loadCoverage()) ?? Coverage(records: [])
+let coveredRanges = coverage.ranges
+let archiveStart = coveredRanges.first
+    .map { Date(timeIntervalSince1970: Double($0.lowerBound)) }
+let archived = (try? historyStore.rows(in: (archiveStart ?? now)...now)) ?? (rows: [], skipped: 0)
+// Interior holes only. `gaps(in:)` clamps to the covered extent, so "not
+// reached yet" at either end is excluded — these are the permanent ones.
+let gaps = coverage.gaps(in: horizon...Int(now.timeIntervalSince1970))
+let windowRows = ((try? historyStore.loadWindows()) ?? []).sorted { $0.start > $1.start }
+let lastObservedReset = (try? historyStore.loadManifest())?.lastObservedReset
+
+let stamp = DateFormatter()
+stamp.dateFormat = "yyyy-MM-dd HH:mm"
+func moment(_ seconds: Int) -> String {
+    stamp.string(from: Date(timeIntervalSince1970: Double(seconds)))
+}
+func extent(_ range: ClosedRange<Int>) -> String {
+    let days = Double(range.upperBound - range.lowerBound) / 86_400
+    return "\(moment(range.lowerBound)) → \(moment(range.upperBound))"
+        + String(format: "  (%.1fd)", days)
+}
+func indented(_ lines: [String], empty: String) -> String {
+    lines.isEmpty ? empty : "\n" + lines.map { "                     \($0)" }.joined(separator: "\n")
+}
+
+print("""
+
+usage archive
+  archive dir      \(historyStore.directory.path)
+  fill             \(String(format: "%.2f", fillElapsed))s   \
+(\(uncovered.count) uncovered range(s), \(filesOpened) transcript file(s) opened\
+\(truncatedRanges > 0 ? ", \(truncatedRanges) truncated" : ""))
+  cell rows        \(archived.rows.count)
+  skipped lines    \(archived.skipped)   (unreadable — never fatal, never silent)
+  coverage begins  \(archiveStart.map(stamp.string(from:)) ?? "—   (nothing archived)")
+  coverage         \(indented(coveredRanges.map(extent), empty: "none"))
+  gaps             \(indented(gaps.map(extent), empty: "none"))
+  last reset seen  \(lastObservedReset.map(stamp.string(from:)) ?? "—   (no capture has ever landed)")
+  windows          \(windowRows.count) row(s)\
+\(indented(windowRows.prefix(3).map { row in
+    "\(stamp.string(from: row.start)) → \(stamp.string(from: row.end))"
+        + "  \(row.boundsSource.rawValue)"
+        + "  final \(row.finalPercent.map { String(format: "%.1f%%", $0) } ?? "—")"
+}, empty: "   (none complete yet)"))
+""")
