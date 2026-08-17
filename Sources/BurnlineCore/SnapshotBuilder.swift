@@ -30,6 +30,13 @@ public enum SnapshotBuilder {
         let units = cache.units(from: window.start, to: window.end, weights: settings.weights)
 
         let estimated: Double?
+        // Anthropic's own figure, without the extrapolation `estimated` carries.
+        // It rides the *same* guard deliberately: `windowFromReset` rolls a
+        // window forward from a capture whose reset has already passed, so
+        // `rateLimit` is non-nil precisely when the capture is dead. A second,
+        // looser condition would hand a dead window's percentage to the archive
+        // keyed to the current window — permanently wrong, and silently.
+        let capturedPercent: Double?
         let source: UsageSource
 
         // The capture's percentage is only meaningful inside the window it was
@@ -40,13 +47,16 @@ public enum SnapshotBuilder {
            capture.capturedDate < window.end {
             estimated = extrapolate(capture: capture, cache: cache, window: window,
                                     weights: settings.weights)
+            capturedPercent = capture.sevenDay.usedPercent
             source = .live(capturedAt: capture.capturedDate)
         } else if let calibrated = Calibration.estimatedPercent(
             unitsInWindow: units, anchors: settings.calibrationAnchors, now: now) {
             estimated = calibrated
+            capturedPercent = nil
             source = .calibrated
         } else {
             estimated = nil
+            capturedPercent = nil
             source = .paceOnly
         }
 
@@ -64,6 +74,7 @@ public enum SnapshotBuilder {
             window: window,
             targetPercent: window.targetPercent,
             estimatedPercent: estimated,
+            capturedPercent: capturedPercent,
             projectedPercent: Projection.projectedPercent(
                 estimatedPercent: estimated, elapsedFraction: window.elapsedFraction),
             unitsInWindow: units,
