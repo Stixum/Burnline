@@ -86,9 +86,16 @@ private func state(at date: Date, counts: TokenCounts) -> FileState {
     let dear = cache.units(from: anchorDate, to: anchorDate.addingTimeInterval(86_400),
                            weights: doubled)
 
+    // Re-rendered under the new weights, from the same untouched raw cells.
     #expect(dear > cheap)
-    #expect(cache.files["a.jsonl"]?.cells == state(at: anchorDate.addingTimeInterval(3600),
-                                                   counts: counts).cells)
+    // ...and the original weights still render the original figure, so the two
+    // readings are two interpretations of one set of facts rather than a
+    // mutation. Asserting `cells` unchanged here would be vacuous — `units` is
+    // non-mutating on a value type, so it cannot fail. The survival guarantee
+    // that can actually fail is `aWeightChangeNoLongerTriggersARescan`, at the
+    // scanner level, where a rescan would be observable.
+    #expect(cache.units(from: anchorDate, to: anchorDate.addingTimeInterval(86_400),
+                        weights: .default) == cheap)
 }
 
 @Test func cacheV2SumsAcrossModelsWithinABucket() {
