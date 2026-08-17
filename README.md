@@ -23,6 +23,8 @@ A macOS menu bar app that shows where you *should* be in your Claude weekly usag
 
 Click the chart icon in the popover for past weeks: totals week over week, this week's burn curve laid over the last two, and where the usage actually went by project and by model.
 
+<img src="docs/images/history.png" alt="Burnline History window: three completed weeks with unit totals, burn curves for this week against the previous two on a shared window-elapsed axis, and a sorted breakdown of usage by project" width="620">
+
 Burnline builds this from the transcripts Claude Code still has, once, on first launch — about twenty seconds. **It keeps them, which matters, because Claude Code deletes its own transcripts after 30 days.** From then on it records each week as it closes.
 
 Two honest limits worth knowing:
