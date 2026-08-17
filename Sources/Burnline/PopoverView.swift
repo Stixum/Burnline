@@ -208,6 +208,7 @@ struct PopoverView: View {
                         .foregroundStyle(Theme.accent)
                 }
                 checkNowButton
+                historyButton
                 Button("Settings") { SettingsWindow.open(using: openWindow) }
                     .buttonStyle(.plain)
                     .font(.system(size: 11))
@@ -278,6 +279,25 @@ struct PopoverView: View {
                   + "refresh the figure. Uses no message quota, and takes about "
                   + "half a minute.")
         }
+    }
+
+    /// The way into the History window.
+    ///
+    /// A glyph rather than the word, for the reason `checkNowButton` already
+    /// records: this footer is 272pt wide and already carries the source label,
+    /// a refresh control, Settings and Quit. "History" as text costs ~40pt and
+    /// pushes "Extrapolated · 2h ago" into truncation, which is the one string
+    /// here that must stay readable. The tooltip and the accessibility label
+    /// carry the word.
+    private var historyButton: some View {
+        Button { HistoryWindow.open(using: openWindow) } label: {
+            Image(systemName: "chart.bar.xaxis")
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Theme.textMuted)
+        .accessibilityLabel("Usage history")
+        .help("Usage history. Past weeks, burn curves, and where the usage went.")
     }
 
     private var calibrationLabel: String {

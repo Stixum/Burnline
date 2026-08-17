@@ -41,6 +41,9 @@ struct MenuBarLabel: View {
                 if ProcessInfo.processInfo.environment["BURNLINE_OPEN_ONBOARDING"] == "1" {
                     OnboardingWindow.open(using: openWindow)
                 }
+                if ProcessInfo.processInfo.environment["BURNLINE_OPEN_HISTORY"] == "1" {
+                    HistoryWindow.open(using: openWindow)
+                }
                 openOnboardingIfFirstRun()
             }
     }

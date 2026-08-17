@@ -48,11 +48,29 @@ private let labelWindowEnd = labelWindowStart.addingTimeInterval(7 * 86_400)
     // ×100 lives in one place because a stray one in a single call site is how
     // a chart ends up disagreeing with the label printed under it.
     #expect(HistoryLabels.share(0.826) == "83%")
+    #expect(HistoryLabels.share(0.07) == "7%")
     #expect(HistoryLabels.share(1) == "100%")
     #expect(HistoryLabels.share(0) == "0%")
-    // Saturating rather than trapping, same as every other Double→Int display
-    // conversion in this app.
-    #expect(HistoryLabels.share(.nan) == "0%")
+    #expect(HistoryLabels.share(.nan) == "—")
+}
+
+@Test func aShareNeverRoundsAwayTheDifferenceBetweenAllOfItAndNearlyAll() {
+    // 🔴 Found on real data. The model breakdown over one archived week rounded
+    // to `claude-opus-5 100%` above three rows reading `0%` — four labels that
+    // between them claim all of the units and none of them, printed beside
+    // three bars that visibly exist. Whole-number rounding is right in the
+    // middle of the range and wrong at both extremes, where the thing it rounds
+    // away IS the distinction being drawn.
+    #expect(HistoryLabels.share(0.996) == ">99%")
+    #expect(HistoryLabels.share(0.9999) == ">99%")
+    #expect(HistoryLabels.share(0.0004) == "<1%")
+    #expect(HistoryLabels.share(0.009) == "<1%")
+
+    // The exact values are not hedged: 100% really is everything, and 99% and
+    // 1% are ordinary readings that must not be dressed up as approximations.
+    #expect(HistoryLabels.share(1) == "100%")
+    #expect(HistoryLabels.share(0.99) == "99%")
+    #expect(HistoryLabels.share(0.01) == "1%")
 }
 
 // MARK: - Window range

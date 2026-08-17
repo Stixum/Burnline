@@ -23,6 +23,16 @@ struct BurnlineApp: App {
         .windowResizability(.contentSize)
         .defaultPosition(.center)
 
+        // Resizable, unlike the others: it carries two charts and a table, and
+        // the useful width depends on how long the user's project names are.
+        Window("Burnline History", id: HistoryWindow.id) {
+            HistoryView(store: store)
+                .preferredColorScheme(.dark)
+                .windowBackground()
+        }
+        .defaultSize(width: 780, height: 720)
+        .defaultPosition(.center)
+
         Window("Welcome to Burnline", id: OnboardingWindow.id) {
             OnboardingView(store: store)
                 .preferredColorScheme(.dark)

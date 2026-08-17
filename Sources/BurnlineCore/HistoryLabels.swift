@@ -53,16 +53,30 @@ public enum HistoryLabels {
         (1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K"),
     ]
 
-    /// A 0…1 share as a whole percentage.
+    /// A 0…1 share as a percentage.
     ///
     /// The ×100 lives here rather than in a view: `BreakdownRow.share` is a
     /// fraction, every reader of it wants percent, and a stray ×100 in one call
     /// site out of three is the classic way a chart ends up disagreeing with the
     /// label under it.
+    ///
+    /// 🔴 **Both ends are guarded, and both were found on real data.** The model
+    /// breakdown over one real week rounded to `claude-opus-5 100%` above three
+    /// rows reading `0%` — four labels that between them claim 100% of the
+    /// units and none of them, printed beside three bars that visibly exist.
+    /// Whole-number rounding is right in the middle of the range and wrong at
+    /// the extremes, where the thing it rounds away is the entire difference
+    /// between "all of it" and "nearly all of it".
     public static func share(_ fraction: Double) -> String {
+        let percent = fraction * 100
+        guard percent.isFinite else { return "—" }
+        // A row that exists consumed something, so it is never 0%.
+        if percent > 0, percent < 1 { return "<1%" }
+        // And it is only 100% if nothing else consumed anything at all.
+        if percent > 99, percent < 100 { return ">99%" }
         // Through `DisplayValue`, which saturates. `Int(Double)` traps on NaN
         // and on anything outside Int's range.
-        "\(DisplayValue.whole(fraction * 100))%"
+        return "\(DisplayValue.whole(percent))%"
     }
 
     // MARK: - Window range
