@@ -81,7 +81,8 @@ public enum HistoryQuery {
         }
     }
 
-    public enum Dimension: Equatable, CaseIterable, Sendable {
+    /// `Hashable` because a SwiftUI `Picker` tag has to be.
+    public enum Dimension: Hashable, CaseIterable, Sendable {
         case project, model
 
         public var title: String {

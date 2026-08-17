@@ -43,6 +43,18 @@ private let labelWindowEnd = labelWindowStart.addingTimeInterval(7 * 86_400)
     #expect(HistoryLabels.units(.nan) == "—")
 }
 
+@Test func aShareIsAFractionRenderedAsPercent() {
+    // `BreakdownRow.share` is 0…1 and every reader of it wants percent. The
+    // ×100 lives in one place because a stray one in a single call site is how
+    // a chart ends up disagreeing with the label printed under it.
+    #expect(HistoryLabels.share(0.826) == "83%")
+    #expect(HistoryLabels.share(1) == "100%")
+    #expect(HistoryLabels.share(0) == "0%")
+    // Saturating rather than trapping, same as every other Double→Int display
+    // conversion in this app.
+    #expect(HistoryLabels.share(.nan) == "0%")
+}
+
 // MARK: - Window range
 
 @Test func aWindowRangePrintsItsOwnEndDate() {

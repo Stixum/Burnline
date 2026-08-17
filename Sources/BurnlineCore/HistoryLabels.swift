@@ -53,6 +53,18 @@ public enum HistoryLabels {
         (1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K"),
     ]
 
+    /// A 0…1 share as a whole percentage.
+    ///
+    /// The ×100 lives here rather than in a view: `BreakdownRow.share` is a
+    /// fraction, every reader of it wants percent, and a stray ×100 in one call
+    /// site out of three is the classic way a chart ends up disagreeing with the
+    /// label under it.
+    public static func share(_ fraction: Double) -> String {
+        // Through `DisplayValue`, which saturates. `Int(Double)` traps on NaN
+        // and on anything outside Int's range.
+        "\(DisplayValue.whole(fraction * 100))%"
+    }
+
     // MARK: - Window range
 
     /// `Jul 30 – Aug 6`.
