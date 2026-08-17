@@ -253,3 +253,29 @@ private func rowThatObservedTheReset() -> WindowRow {
     #expect(records.first?.truncated == true)
     #expect(records.first?.filledBy == "fill")
 }
+
+@Test func republishingAnIdenticalObservationDoesNotGrowTheFile() async throws {
+    // A session republishes an unchanged `rate_limits` blob every 30 seconds,
+    // and tracking.json is loaded and rewritten on every commit — so an
+    // append-always `observe` grows without bound between window prunes.
+    //
+    // Added because the guard was implemented beyond spec and shipped
+    // uncovered. It is exact-equality on the whole entry, which is right: a
+    // republished cached reading carries the same percent, the same capture
+    // instant, and the same reset.
+    let dir = writerDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let store = HistoryStore(directory: dir)
+    let writer = HistoryWriter(store: store, schedule: writerSchedule)
+
+    let entry = TrackingEntry(percent: 61, at: plusDays(-1, observedReset),
+                              resetsAt: observedReset)
+    for _ in 0..<5 { await writer.observe(entry) }
+    #expect(try store.loadTracking().entries.count == 1)
+
+    // A genuinely new reading still lands — the guard must not swallow those.
+    let newer = TrackingEntry(percent: 74, at: observedReset.addingTimeInterval(-3_600),
+                              resetsAt: observedReset)
+    await writer.observe(newer)
+    #expect(try store.loadTracking().entries.count == 2)
+}
