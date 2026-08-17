@@ -33,15 +33,19 @@ private func tempDirectory() -> URL {
 @Test func cacheRoundTrip() throws {
     let store = CacheStore(directory: tempDirectory())
     var cache = ScanCache()
-    cache.files["a.jsonl"] = FileState(modifiedAt: Date(timeIntervalSince1970: 5),
-                                       size: 10, offset: 10, buckets: ["42": 3.5])
+    cache.files["a.jsonl"] = FileState(
+        modifiedAt: Date(timeIntervalSince1970: 5), size: 10, offset: 10,
+        cells: ["42": ["claude-sonnet-5": TokenCounts(input: 7, output: 3,
+                                                      cacheWrite: 1, cacheRead: 900)]])
     try store.save(cache)
     #expect(store.load() == cache)
 }
 
 @Test func cacheFromAnOlderVersionIsDiscarded() throws {
     let directory = tempDirectory()
-    try Data(#"{"version":0,"files":{"a":{"modifiedAt":0,"size":1,"offset":1,"buckets":{}}}}"#.utf8)
+    // Decodable as a v2 body, so the version gate is what discards it rather
+    // than a decode failure that would mask a missing gate.
+    try Data(#"{"version":1,"files":{"a":{"modifiedAt":0,"size":1,"offset":1,"cells":{}}}}"#.utf8)
         .write(to: directory.appendingPathComponent("scan-cache.json"))
     #expect(CacheStore(directory: directory).load().files.isEmpty)
 }

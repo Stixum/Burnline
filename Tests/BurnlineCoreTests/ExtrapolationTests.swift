@@ -13,14 +13,28 @@ private func settings() -> BurnlineSettings {
     return settings
 }
 
-private func cache(_ entries: [(Date, Double)]) -> ScanCache {
-    var buckets: [String: Double] = [:]
-    for (date, units) in entries {
-        buckets[String(Bucket.key(for: date)), default: 0] += units
+/// The model every fixture below is attributed to. `Weights.default` gives
+/// sonnet a multiplier of exactly `1.0`.
+private let fixtureModel = "claude-sonnet-5"
+
+/// Cells hold raw tokens now, so a fixture is a token count and the weighted
+/// total is derived rather than stated.
+///
+/// Every fixture is input tokens on a sonnet model, which under `Weights.default`
+/// is the identity mapping — `input: 1.0` × sonnet `1.0` — so `n` input tokens
+/// render to exactly `n` units. That keeps the unit figures each test's
+/// arithmetic reasons about ("9,000 units bought 64%") the same numbers they
+/// were, and `extrapolationFixtureTokensRenderOneForOneToUnits` below proves the
+/// mapping rather than leaving it assumed.
+private func cache(_ entries: [(Date, Int)]) -> ScanCache {
+    var cells: [String: [String: TokenCounts]] = [:]
+    for (date, tokens) in entries {
+        cells[String(Bucket.key(for: date)), default: [:]][fixtureModel, default: .zero]
+            += TokenCounts(input: tokens)
     }
     var cache = ScanCache()
     cache.files["a.jsonl"] = FileState(modifiedAt: .distantFuture, size: 1, offset: 1,
-                                       buckets: buckets)
+                                       cells: cells)
     return cache
 }
 
@@ -36,6 +50,15 @@ private func capture(percent: Double, at captured: Date, now: Date) -> RateLimit
 private func estimate(cache: ScanCache, capture: RateLimitCapture, now: Date) -> Double? {
     SnapshotBuilder.build(cache: cache, settings: settings(), rateLimit: capture,
                           now: now, isScanning: false).estimatedPercent
+}
+
+/// Guards the identity mapping every fixture below leans on. If a default weight
+/// or the sonnet multiplier ever moves, this fails here rather than silently
+/// shifting every expected percentage in this file.
+@Test func extrapolationFixtureTokensRenderOneForOneToUnits() {
+    let scan = cache([(bucketStart, 9_000)])
+    #expect(abs(scan.units(from: bucketStart, to: bucketStart.addingTimeInterval(900),
+                           weights: .default) - 9_000) < 1e-9)
 }
 
 /// The capture's own 15-minute bucket straddles the capture instant, and the

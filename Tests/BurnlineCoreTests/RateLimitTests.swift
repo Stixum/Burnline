@@ -21,12 +21,16 @@ private func capture(usedPercent: Double, resetsIn days: Double, capturedAgo: Ti
         fiveHour: nil)
 }
 
-private func cache(_ entries: [(Date, Double)]) -> ScanCache {
+/// Cells hold raw tokens now. An input token on a sonnet model is the identity
+/// mapping under `Weights.default` — `input: 1.0` × sonnet `1.0` — so the unit
+/// figures the extrapolation arithmetic below reasons about are unchanged.
+private func cache(_ entries: [(Date, Int)]) -> ScanCache {
     var cache = ScanCache()
     for (index, entry) in entries.enumerated() {
         cache.files["f\(index).jsonl"] = FileState(
             modifiedAt: entry.0, size: 1, offset: 1,
-            buckets: [String(Bucket.key(for: entry.0)): entry.1])
+            cells: [String(Bucket.key(for: entry.0)): ["claude-sonnet-5":
+                                                        TokenCounts(input: entry.1)]])
     }
     return cache
 }

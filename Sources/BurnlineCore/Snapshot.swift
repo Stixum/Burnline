@@ -37,6 +37,15 @@ public struct Snapshot: Equatable, Sendable {
     public let targetPercent: Double
     /// `nil` until the user has supplied at least one calibration anchor.
     public let estimatedPercent: Double?
+    /// Anthropic's own figure, unmodified — no extrapolation carried on top.
+    ///
+    /// Present only under `.live`, and only while the capture's own window is
+    /// still the current one. `estimatedPercent` is this number carried forward
+    /// by local token counts, which is the right thing to *display* and the
+    /// wrong thing to *archive*: a week's final percentage can never be
+    /// recomputed once Claude Code deletes the transcripts, so an estimate
+    /// written there is permanently wrong.
+    public let capturedPercent: Double?
     public let projectedPercent: Double?
     public let unitsInWindow: Double
     public let calibrationAge: TimeInterval?
@@ -62,6 +71,7 @@ public struct Snapshot: Equatable, Sendable {
     public let scopedWeekly: UsageUtilization.ScopedLimit?
 
     public init(window: Window, targetPercent: Double, estimatedPercent: Double?,
+                capturedPercent: Double? = nil,
                 projectedPercent: Double?, unitsInWindow: Double,
                 calibrationAge: TimeInterval?, source: UsageSource = .paceOnly,
                 isScheduleAutomatic: Bool = false, isScanning: Bool,
@@ -73,6 +83,7 @@ public struct Snapshot: Equatable, Sendable {
         self.window = window
         self.targetPercent = targetPercent
         self.estimatedPercent = estimatedPercent
+        self.capturedPercent = capturedPercent
         self.projectedPercent = projectedPercent
         self.unitsInWindow = unitsInWindow
         self.calibrationAge = calibrationAge

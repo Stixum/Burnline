@@ -61,3 +61,26 @@ private func record(model: String, input: Int = 0, output: Int = 0,
                    record(model: "claude-sonnet-5", output: 20)]
     #expect(abs(ConsumptionModel.totalUnits(for: records, weights: .default) - 150) < 1e-9)
 }
+
+@Test func resolvedMultipliersAgreeWithSubstringMatching() {
+    let models = ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001", "mystery-model"]
+    let resolved = ConsumptionModel.ResolvedMultipliers(models: models, weights: .default)
+    for model in models {
+        #expect(resolved[model] == ConsumptionModel.multiplier(for: model, weights: .default))
+    }
+}
+
+@Test func resolvedMultipliersFallBackForUnseenModel() {
+    let resolved = ConsumptionModel.ResolvedMultipliers(models: ["claude-opus-5"], weights: .default)
+    #expect(resolved["never-seen"] == Weights.default.defaultMultiplier)
+}
+
+@Test func weightsRawCountsMatchesRecordPath() {
+    let counts = TokenCounts(input: 100, output: 10, cacheWrite: 20, cacheRead: 5_000)
+    let record = UsageRecord(timestamp: Date(), model: "claude-opus-5",
+                             inputTokens: 100, outputTokens: 10,
+                             cacheWriteTokens: 20, cacheReadTokens: 5_000)
+    let viaCounts = ConsumptionModel.units(for: counts, model: "claude-opus-5", weights: .default)
+    let viaRecord = ConsumptionModel.units(for: record, weights: .default)
+    #expect(abs(viaCounts - viaRecord) < 1e-9)
+}

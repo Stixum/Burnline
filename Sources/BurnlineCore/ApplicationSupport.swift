@@ -114,4 +114,15 @@ public enum ApplicationSupport {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }
+
+    /// Where the append-only usage archive lives. Not created here — every
+    /// write in `HistoryStore` creates it on demand, and a read of an archive
+    /// that does not exist yet is empty rather than an error.
+    ///
+    /// An overload rather than a defaulted parameter, for the same reason
+    /// `directory()` is. It inherits `overrideKey`, so a sandboxed run redirects
+    /// the archive along with everything else.
+    public static func historyDirectory() -> URL {
+        directory().appendingPathComponent("history", isDirectory: true)
+    }
 }

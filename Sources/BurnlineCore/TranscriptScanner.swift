@@ -2,15 +2,13 @@ import Foundation
 
 /// Walks Claude Code's transcripts and folds new bytes into a `ScanCache`.
 ///
-/// A cold scan of ~2,900 files takes about 1.5 seconds; steady state re-reads
+/// A cold scan of ~2,900 files takes about 6.4 seconds; steady state re-reads
 /// only appended bytes, which is why every refresh can afford to run.
 public struct TranscriptScanner: Sendable {
     public let rootURL: URL
-    public let weights: Weights
 
-    public init(rootURL: URL = TranscriptScanner.defaultRoot, weights: Weights = .default) {
+    public init(rootURL: URL = TranscriptScanner.defaultRoot) {
         self.rootURL = rootURL
-        self.weights = weights
     }
 
     public static var defaultRoot: URL {
@@ -19,12 +17,10 @@ public struct TranscriptScanner: Sendable {
     }
 
     public func scan(cache incoming: ScanCache, now: Date) throws -> ScanCache {
-        // Buckets hold weighted units, so a cache scored under different weights
-        // is not partially reusable — the old buckets can't be rescaled and the
-        // incremental path would leave a permanent mix of two weightings. Start
-        // over instead. Only pays the cold-scan cost when the weights change.
-        let reusable = incoming.isCompatible && incoming.weights == weights
-        var cache = reusable ? incoming : ScanCache(weights: weights)
+        // Cells hold raw tokens, so nothing here depends on the weights. A
+        // weight change re-renders at read time and the cache survives it — the
+        // version is the only thing that can make one unusable now.
+        var cache = incoming.isCompatible ? incoming : ScanCache()
         let parser = TranscriptParser()
         var seen = Set<String>()
 
@@ -56,7 +52,7 @@ public struct TranscriptScanner: Sendable {
 
             var state = cache.files[path] ?? FileState()
 
-            // A shrunken file was rewritten or truncated; its old buckets are
+            // A shrunken file was rewritten or truncated; its old cells are
             // no longer trustworthy, so start it over.
             if size < state.offset {
                 state = FileState()
@@ -71,7 +67,11 @@ public struct TranscriptScanner: Sendable {
             let (records, newOffset) = readAppended(at: url, from: state.offset, parser: parser)
             for record in records {
                 let key = String(Bucket.key(for: record.timestamp))
-                state.buckets[key, default: 0] += ConsumptionModel.units(for: record, weights: weights)
+                let counts = TokenCounts(input: record.inputTokens,
+                                         output: record.outputTokens,
+                                         cacheWrite: record.cacheWriteTokens,
+                                         cacheRead: record.cacheReadTokens)
+                state.cells[key, default: [:]][record.model, default: .zero] += counts
             }
             state.offset = newOffset
             state.size = size

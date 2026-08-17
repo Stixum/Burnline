@@ -27,9 +27,16 @@ public enum SnapshotBuilder {
             scheduleIsAutomatic = false
         }
 
-        let units = cache.units(from: window.start, to: window.end)
+        let units = cache.units(from: window.start, to: window.end, weights: settings.weights)
 
         let estimated: Double?
+        // Anthropic's own figure, without the extrapolation `estimated` carries.
+        // It rides the *same* guard deliberately: `windowFromReset` rolls a
+        // window forward from a capture whose reset has already passed, so
+        // `rateLimit` is non-nil precisely when the capture is dead. A second,
+        // looser condition would hand a dead window's percentage to the archive
+        // keyed to the current window — permanently wrong, and silently.
+        let capturedPercent: Double?
         let source: UsageSource
 
         // The capture's percentage is only meaningful inside the window it was
@@ -38,14 +45,18 @@ public enum SnapshotBuilder {
         if let capture = rateLimit,
            capture.capturedDate >= window.start,
            capture.capturedDate < window.end {
-            estimated = extrapolate(capture: capture, cache: cache, window: window)
+            estimated = extrapolate(capture: capture, cache: cache, window: window,
+                                    weights: settings.weights)
+            capturedPercent = capture.sevenDay.usedPercent
             source = .live(capturedAt: capture.capturedDate)
         } else if let calibrated = Calibration.estimatedPercent(
             unitsInWindow: units, anchors: settings.calibrationAnchors, now: now) {
             estimated = calibrated
+            capturedPercent = nil
             source = .calibrated
         } else {
             estimated = nil
+            capturedPercent = nil
             source = .paceOnly
         }
 
@@ -63,6 +74,7 @@ public enum SnapshotBuilder {
             window: window,
             targetPercent: window.targetPercent,
             estimatedPercent: estimated,
+            capturedPercent: capturedPercent,
             projectedPercent: Projection.projectedPercent(
                 estimatedPercent: estimated, elapsedFraction: window.elapsedFraction),
             unitsInWindow: units,
@@ -103,7 +115,8 @@ public enum SnapshotBuilder {
     /// user input.
     private static func extrapolate(capture: RateLimitCapture,
                                     cache: ScanCache,
-                                    window: Window) -> Double {
+                                    window: Window,
+                                    weights: Weights) -> Double {
         let observed = capture.sevenDay.usedPercent
 
         // The capture's own 15-minute bucket straddles the capture instant, and
@@ -119,8 +132,9 @@ public enum SnapshotBuilder {
         // way costs at most one bucket of genuine drift, and captures land every
         // 30s, so it is corrected almost immediately.
         let captureBucketEnd = Bucket.start(ofKey: Bucket.key(for: capture.capturedDate) + 1)
-        let unitsAtCapture = cache.units(from: window.start, to: captureBucketEnd)
-        let unitsNow = cache.units(from: window.start, to: window.end)
+        let unitsAtCapture = cache.units(from: window.start, to: captureBucketEnd,
+                                         weights: weights)
+        let unitsNow = cache.units(from: window.start, to: window.end, weights: weights)
 
         guard observed >= minimumExtrapolationPercent, unitsAtCapture > 0 else {
             // Nothing trustworthy to scale by — report what Claude Code said.
