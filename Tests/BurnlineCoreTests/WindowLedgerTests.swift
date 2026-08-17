@@ -225,3 +225,33 @@ private func rowsAfterAFortnight(tracking: [TrackingEntry] = [],
     #expect(rows.count == 1)
     #expect(rows.first?.start == plus(days: 7, from: anchorDate))
 }
+
+@Test func anObservationBeyondToleranceMovesTheGridAndTheNextWindowWithIt() {
+    // The beyond-tolerance branch: a reset someone actually SAW, far enough
+    // from the inferred grid that it is a correction rather than precision
+    // noise. The observation wins — the grid is an inference — and writing it
+    // back must carry the NEXT window's start with it, or the two windows
+    // overlap and a bucket is counted twice.
+    //
+    // Added because this branch was implemented beyond spec and shipped
+    // uncovered, and it silently changes window boundaries.
+    let gridEnd = plus(days: 7, from: anchorDate)
+    let realReset = gridEnd.addingTimeInterval(6 * 3_600)      // 6h off, far beyond 60s
+    let entry = TrackingEntry(percent: 55,
+                              at: gridEnd.addingTimeInterval(-3_600),
+                              resetsAt: realReset)
+
+    let rows = anchored.writableRows(coverage: threeWeeks, lastWritten: nil, cells: [],
+                                     tracking: [entry],
+                                     now: plus(days: 20, from: anchorDate))
+
+    let first = rows.first { $0.start == anchorDate }
+    #expect(first?.end == realReset)
+    #expect(first?.boundsSource == .observed)
+    #expect(first?.observedResetsAt == realReset)
+
+    // The correction propagates: the next window starts where this one ended,
+    // so the grid stays contiguous and non-overlapping.
+    #expect(rows.contains { $0.start == realReset })
+    #expect(!rows.contains { $0.start == gridEnd })
+}
