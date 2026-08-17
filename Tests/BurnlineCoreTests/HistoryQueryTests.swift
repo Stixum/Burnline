@@ -42,6 +42,7 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
 
     let rows = HistoryQuery.scoreboard(
         windows: [weekRow(start: oldest), weekRow(start: newest), weekRow(start: middle)],
+        cells: [],
         coverage: Coverage(records: []),
         weights: .default
     )
@@ -61,9 +62,11 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
                          counts: TokenCounts(input: 5_000, output: 2_000,
                                              cacheWrite: 1_000, cacheRead: 900_000),
                          finalPercent: nil)
+    let cells = [cell(bucket: queryBase, output: 2_000, input: 5_000,
+                      cacheWrite: 1_000, cacheRead: 900_000)]
 
-    let rows = HistoryQuery.scoreboard(windows: [window], coverage: Coverage(records: []),
-                                       weights: .default)
+    let rows = HistoryQuery.scoreboard(windows: [window], cells: cells,
+                                       coverage: Coverage(records: []), weights: .default)
 
     #expect(rows.count == 1)
     #expect(rows[0].usedPercent == nil)
@@ -75,7 +78,8 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
     // meaningful if a real reading is not also being dropped or rescaled.
     let start = Date(timeIntervalSince1970: Double(queryBase))
     let rows = HistoryQuery.scoreboard(windows: [weekRow(start: start, finalPercent: 64.5)],
-                                       coverage: Coverage(records: []), weights: .default)
+                                       cells: [], coverage: Coverage(records: []),
+                                       weights: .default)
 
     #expect(rows[0].usedPercent == 64.5)
 }
@@ -96,15 +100,87 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
         CoverageRecord(from: holeEnd + 900, through: lastBucket, filledBy: "test"),
     ])
 
-    let gapped = HistoryQuery.scoreboard(windows: [weekRow(start: start)],
+    let gapped = HistoryQuery.scoreboard(windows: [weekRow(start: start)], cells: [],
                                          coverage: holed, weights: .default)
     #expect(gapped[0].hasGap)
 
     // Positive control: the same window, fully covered, must NOT be flagged.
-    let whole = HistoryQuery.scoreboard(windows: [weekRow(start: start)],
+    let whole = HistoryQuery.scoreboard(windows: [weekRow(start: start)], cells: [],
                                         coverage: covering(firstBucket, lastBucket),
                                         weights: .default)
     #expect(!whole[0].hasGap)
+}
+
+@Test func scoreboardUnitsEqualTheSumOfThatWindowsBreakdown() {
+    // 🔴 The headline and the bars beneath it must be the same quantity. They
+    // are only equal if both weight from CELLS: a `WindowRow`'s counts are
+    // summed across models, so weighting those loses every per-model
+    // multiplier and an all-Opus week reads 1× above and 5× below — silently,
+    // and plausibly enough that nobody checks.
+    //
+    // ⚠️ The fixture MUST use a model whose multiplier is NOT 1.0 (opus is
+    // 5.0), or the bug is invisible and this test proves nothing. The last
+    // expectation is what holds that: it fails the moment the fixture goes
+    // back to a 1× model.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let nextStart = start.addingTimeInterval(sevenDays)
+
+    let mine = [
+        cell(bucket: queryBase, project: "burnline", model: "claude-opus-5",
+             output: 2_000, input: 5_000, cacheWrite: 1_000, cacheRead: 900_000),
+        cell(bucket: queryBase + 900, project: "other", model: "claude-opus-5",
+             output: 400, input: 100, cacheRead: 45_000),
+        cell(bucket: queryBase + 3 * 86_400, project: "burnline", model: "claude-opus-5",
+             output: 55, cacheRead: 5_000),
+    ]
+    // A neighbouring window's cells, present in the archive the scoreboard is
+    // handed. They must not leak into this row.
+    let theirs = [cell(bucket: queryBase + Int(sevenDays) + 900, model: "claude-sonnet-5",
+                       output: 9_999)]
+
+    let counts = mine.reduce(TokenCounts()) {
+        TokenCounts(input: $0.input + $1.input, output: $0.output + $1.output,
+                    cacheWrite: $0.cacheWrite + $1.cacheWrite,
+                    cacheRead: $0.cacheRead + $1.cacheRead)
+    }
+    let rows = HistoryQuery.scoreboard(
+        windows: [weekRow(start: start, counts: counts), weekRow(start: nextStart)],
+        cells: mine + theirs, coverage: Coverage(records: []), weights: .default)
+    let breakdown = HistoryQuery.breakdown(cells: mine, by: .project, weights: .default,
+                                           limit: 10)
+
+    let row = rows.first { $0.window.start == start }!
+    #expect(abs(row.units - breakdown.reduce(0) { $0 + $1.units }) < 1e-9)
+
+    // The fixture's teeth: weighting the WindowRow's own counts — the same
+    // tokens, with the model dimension summed away — is five times smaller.
+    let fromWindowCounts = ConsumptionModel.units(for: counts,
+                                                  multiplier: Weights.default.defaultMultiplier,
+                                                  weights: .default)
+    #expect(isClose(row.units, fromWindowCounts * 5))
+}
+
+@Test func scoreboardCountsOnlyTheCellsInsideItsOwnWindow() {
+    // Units now come from the archive, not from the row, so each window has to
+    // take its own slice of it — by the SAME bucket-ownership rule the gap
+    // check and the burn curve use ([start, end) on the bucket START). Get
+    // this wrong and every week reports the whole archive.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let nextStart = start.addingTimeInterval(sevenDays)
+    let cells = [
+        cell(bucket: queryBase - 900, output: 999),                       // before both
+        cell(bucket: queryBase, output: 10),                              // first window
+        cell(bucket: queryBase + Int(sevenDays) - 900, output: 20),       // its last bucket
+        cell(bucket: queryBase + Int(sevenDays), output: 7),               // second window
+    ]
+
+    let rows = HistoryQuery.scoreboard(
+        windows: [weekRow(start: start), weekRow(start: nextStart)],
+        cells: cells, coverage: Coverage(records: []), weights: .default)
+
+    #expect(rows.map(\.window.start) == [nextStart, start])
+    #expect(isClose(rows[1].units, 30 * Weights.default.output))   // 10 + 20, not 999
+    #expect(isClose(rows[0].units, 7 * Weights.default.output))
 }
 
 // MARK: - Burn curve

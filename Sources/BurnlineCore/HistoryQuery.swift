@@ -19,15 +19,17 @@ public enum HistoryQuery {
 
         /// Weighted units for the whole window.
         ///
-        /// ⚠️ Token-class weights only, with `weights.defaultMultiplier` — a
+        /// **Guaranteed: this equals the sum of that window's `breakdown`
+        /// rows.** Both are computed from the same cells, over the same
+        /// bucket-ownership rule, through the same `ResolvedMultipliers` — so
+        /// the headline and the bars beneath it are one quantity and a reader
+        /// can add the bars up.
+        ///
+        /// ⚠️ That is why this takes cells and not `WindowRow.counts`: a
         /// `WindowRow` sums its four token counts across every model, so the
         /// model dimension is gone and no per-model multiplier can be
-        /// recovered from it. `breakdown` still has the cells and so still
-        /// applies real multipliers; the two therefore live on different
-        /// scales whenever the multipliers are not all equal. Do not print a
-        /// breakdown total next to this figure and call them the same
-        /// quantity — use `breakdown`'s own rows, which reconcile among
-        /// themselves.
+        /// recovered from it. Weighting those counts read 1× for an all-Opus
+        /// week where the breakdown read 5×.
         public let units: Double
 
         /// 🔴 **nil means NOT RECORDED — never render it as zero.**
@@ -87,21 +89,68 @@ public enum HistoryQuery {
     ///
     /// Archive order is oldest-first, because rows are appended as windows
     /// close; a list fed that order renders the history upside down.
-    public static func scoreboard(windows: [WindowRow], coverage: Coverage,
-                                  weights: Weights) -> [ScoreboardRow] {
-        windows
+    ///
+    /// 🔴 **Units come from `cells`, never from `WindowRow.counts`.** The row's
+    /// stored counts are correct *as tokens* and are what the archive persists,
+    /// but they are summed across every model — so weighting them loses every
+    /// per-model multiplier and the headline disagrees with the `breakdown`
+    /// bars printed under it. See `ScoreboardRow.units`.
+    public static func scoreboard(windows: [WindowRow], cells: [HistoryRow],
+                                  coverage: Coverage, weights: Weights) -> [ScoreboardRow] {
+        // ⚠️ ONCE per query, before the walk — the rule spelled out on
+        // `breakdown`, and the reason `burnCurve` resolves up front too.
+        let resolved = ConsumptionModel.ResolvedMultipliers(models: cells.lazy.map(\.model),
+                                                            weights: weights)
+        // Weight each cell once, then index by bucket so a window can take its
+        // own slice. A ten-year archive is ~500 windows over hundreds of
+        // thousands of cells; re-scanning the whole archive per window is the
+        // same O(windows × cells) trap `multipliersAreResolvedOncePerQueryNotPerCell`
+        // pins on the other side. Tuples, not rows: sorting `HistoryRow` moves
+        // three strings per element for no gain here.
+        var weighted = cells.map { (bucket: $0.bucket,
+                                    units: ConsumptionModel.units(for: $0.counts,
+                                                                  multiplier: resolved[$0.model],
+                                                                  weights: weights)) }
+        weighted.sort { $0.bucket < $1.bucket }
+
+        return windows
             .sorted { $0.start > $1.start }
             .map { window in
                 ScoreboardRow(
                     window: window,
-                    units: ConsumptionModel.units(for: window.counts,
-                                                  multiplier: weights.defaultMultiplier,
-                                                  weights: weights),
+                    units: units(in: window, weighted: weighted),
                     // 🔴 Passed through unchanged. nil stays nil.
                     usedPercent: window.finalPercent,
                     hasGap: hasGap(in: window, coverage: coverage)
                 )
             }
+    }
+
+    private static func units(in window: WindowRow,
+                              weighted: [(bucket: Int, units: Double)]) -> Double {
+        // The same bucket-ownership rule as `hasGap` and `burnCurve`: a window
+        // owns the buckets whose START falls in [start, end). A second rule
+        // here would double-count or drop the buckets around every reset.
+        let first = WindowLedger.firstBucketStart(atOrAfter: window.start)
+        let last = WindowLedger.lastBucketStart(before: window.end)
+        guard first <= last else { return 0 }
+
+        let lower = lowerBound(weighted, bucket: first)
+        let upper = lowerBound(weighted, bucket: last + 1)
+        guard lower < upper else { return 0 }
+        return weighted[lower..<upper].reduce(0) { $0 + $1.units }
+    }
+
+    /// First index in a bucket-sorted array at or after `bucket`.
+    private static func lowerBound(_ weighted: [(bucket: Int, units: Double)],
+                                   bucket: Int) -> Int {
+        var low = 0
+        var high = weighted.count
+        while low < high {
+            let mid = low + (high - low) / 2
+            if weighted[mid].bucket < bucket { low = mid + 1 } else { high = mid }
+        }
+        return low
     }
 
     private static func hasGap(in window: WindowRow, coverage: Coverage) -> Bool {
