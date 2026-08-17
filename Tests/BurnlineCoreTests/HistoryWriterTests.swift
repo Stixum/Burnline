@@ -283,9 +283,10 @@ private func nothingNew() -> HistoryArchive.Payload {
     //
     // `HistoryStore` pins `.iso8601`, which encodes WHOLE seconds. The grid is
     // built from the in-memory anchor, which keeps its fraction, so the row goes
-    // out with `start` = `…14:15:00.181` and comes back `…14:15:00`. The
-    // ledger's `start <= lastWritten` then compares `.181` against `.000` and
-    // never fires, so the same window is appended again, forever.
+    // out with `start` = `…14:15:00.181` and comes back `…14:15:00`. Match a
+    // written row exactly and `.181` never equals `.000`, so the same window is
+    // appended again, forever — which is why the ledger matches by overlap, and
+    // by an overlap that has to EXCEED a minute.
     let dir = writerDirectory()
     defer { try? FileManager.default.removeItem(at: dir) }
     let store = HistoryStore(directory: dir)
@@ -411,11 +412,11 @@ private func twoWeeksBeforeTheReset() -> HistoryArchive.Payload {
     // The archive found on disk: three `schedule` weeks with one `extrapolated`
     // row written after them, starting a day INTO the last of them.
     //
-    // `lastWritten` is a high-water mark, so dropping only the schedule rows
-    // would leave that later row barring the ledger from ever refilling the
-    // hole — the superseded weeks would simply vanish. It goes too, because a
-    // row with no percentage is a pure function of the grid and the cells, and
-    // the archive still holds both.
+    // That row shares days with an anchored week without aligning to it, so
+    // dropping only the schedule rows would leave it blocking the week it
+    // overlaps and the archive would keep a hole where three weeks were. It
+    // goes too, because a row with no percentage is a pure function of the grid
+    // and the cells, and the archive still holds both.
     let dir = writerDirectory()
     defer { try? FileManager.default.removeItem(at: dir) }
     let store = HistoryStore(directory: dir)
@@ -441,9 +442,15 @@ private func twoWeeksBeforeTheReset() -> HistoryArchive.Payload {
 @Test func supersedingNeverDropsARowCarryingAnthropicsOwnFigure() async throws {
     // 🔴 The stop on the rule above. A percentage is Anthropic's own figure and
     // its tracking entry has long since been pruned — nothing can reconstruct
-    // it, so an overlapping row that carries one survives even though that
-    // leaves the week behind it unwritten. Absent is recoverable; invented is
-    // not, and this archive may never estimate a final percentage.
+    // it, so an overlapping row that carries one survives even though its days
+    // are then told on the grid the app has stopped believing. Absent is
+    // recoverable; invented is not, and this archive may never estimate a final
+    // percentage.
+    //
+    // The cost of keeping it is one week, not everything behind it: the ledger
+    // skips a candidate window that OVERLAPS a written row, so only the week
+    // this row shares days with goes unstated. The one before it is restated
+    // normally.
     let dir = writerDirectory()
     defer { try? FileManager.default.removeItem(at: dir) }
     let store = HistoryStore(directory: dir)
@@ -455,10 +462,75 @@ private func twoWeeksBeforeTheReset() -> HistoryArchive.Payload {
     await writer.commit(payload: twoWeeksBeforeTheReset(), filledBy: "fill",
                         observation: observation)
 
-    let written = try store.loadWindows()
-    #expect(written.count == 1)
-    #expect(written.first?.finalPercent == 77)
-    #expect(written.first?.start == plusDays(-7, observedReset))
+    let written = try store.loadWindows().sorted { $0.start < $1.start }
+    #expect(written.count == 2)
+    // Anthropic's own figure is still here, on the row that carried it.
+    #expect(written.last?.finalPercent == 77)
+    #expect(written.last?.start == plusDays(-7, observedReset))
+    // The week before it is restated from cells the archive still holds.
+    #expect(written.first?.start == plusDays(-14, observedReset))
+    #expect(written.first?.counts.output == 3)
+    #expect(written.first?.finalPercent == nil)
     // The placeholder grid still goes, whatever else survives.
     #expect(!written.contains { $0.boundsSource == .schedule })
+    // Whatever remains must partition time, not overlap it.
+    for (earlier, later) in zip(written, written.dropFirst()) {
+        #expect(earlier.end <= later.start)
+    }
+}
+
+// MARK: - Day one
+
+@Test func aBackfillWritesTheWeeksOlderThanTheRowAlreadyOnDisk() async throws {
+    // 🔴 Found by running the app on a fresh archive: 31 days of gapless
+    // coverage, ONE window row. Three qualified.
+    //
+    // Coverage grows BACKWARDS on the first launch. `UsageStore.start()` kicks
+    // the 60s flush immediately and it commits within a second, claiming only
+    // what `ScanCache` retains — one closed week — and a row goes out for it.
+    // The launch fill lands ~20 seconds later with the four weeks behind it.
+    // By then the archive's newest row is younger than everything the fill just
+    // covered, so a high-water `lastWritten` rules all of it out and the two
+    // whole weeks inside the backfill are dropped in silence. That is the
+    // day-one view: one week where there should be three.
+    let dir = writerDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let store = HistoryStore(directory: dir)
+    let writer = HistoryWriter(store: store, schedule: writerSchedule)
+
+    // The flush, with the capture that anchors the grid.
+    let observation = TrackingEntry(percent: 41, at: plusDays(-2, observedReset),
+                                    resetsAt: observedReset)
+    await writer.commit(
+        payload: HistoryArchive.Payload(
+            rows: [writerCell(epoch(plusDays(-5, observedReset)), output: 17)],
+            span: epoch(plusDays(-7, observedReset))...epoch(observedReset)),
+        filledBy: "scan", observation: observation)
+    #expect(try store.loadWindows().count == 1)
+
+    // The fill, reaching back 31 days. It starts two hours INTO the oldest
+    // window on the grid, so that one is genuinely short of coverage.
+    let start = epoch(plusDays(-28, observedReset)) + 2 * 3_600
+    await writer.commit(
+        payload: HistoryArchive.Payload(
+            rows: [writerCell(epoch(plusDays(-25, observedReset)), output: 7),
+                   writerCell(epoch(plusDays(-18, observedReset)), output: 11),
+                   writerCell(epoch(plusDays(-11, observedReset)), output: 13)],
+            span: start...(epoch(plusDays(-7, observedReset)) - writerStep)),
+        filledBy: "fill", observation: nil)
+
+    // One merged range, no gaps — the coverage the app actually reported.
+    #expect(try store.loadCoverage().ranges.count == 1)
+
+    let written = try store.loadWindows().sorted { $0.start < $1.start }
+    #expect(written.count == 3)
+    #expect(written.map(\.start) == [plusDays(-21, observedReset),
+                                     plusDays(-14, observedReset),
+                                     plusDays(-7, observedReset)])
+    // ⚠️ The stop on a fix that just writes everything: the oldest window is
+    // only covered from two hours in, and a window total is written once.
+    #expect(!written.contains { $0.start == plusDays(-28, observedReset) })
+    // And the restated weeks carry their cells, not zeros — the ledger is only
+    // handed the cells the writer reads back, and that read is bounded too.
+    #expect(written.map(\.counts.output) == [11, 13, 17])
 }

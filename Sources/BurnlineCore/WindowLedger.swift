@@ -60,11 +60,19 @@ public struct WindowLedger: Sendable {
     /// Completed windows whose cells are fully archived and which have not been
     /// written yet, oldest first.
     ///
-    /// A window qualifies when it is closed (`end <= now`), starts after
-    /// `lastWritten`, and every bucket it owns is covered. An uncovered window
-    /// is skipped rather than stopping the walk — a hole in one week does not
-    /// make the next week unknowable.
-    public func writableRows(coverage: Coverage, lastWritten: Date?,
+    /// A window qualifies when it is closed (`end <= now`), no row in `written`
+    /// already describes it, and every bucket it owns is covered. An uncovered
+    /// window is skipped rather than stopping the walk — a hole in one week does
+    /// not make the next week unknowable.
+    ///
+    /// 🔴 `written` is every row the archive holds, NOT a high-water mark.
+    /// Coverage grows BACKWARDS on a first launch: the 60s flush commits within
+    /// a second of start-up with only what `ScanCache` retains and a row goes
+    /// out for it, then the launch fill lands ~20 seconds later with the weeks
+    /// behind it. Compare against the newest start alone and every one of those
+    /// older weeks is ruled out for being older — 31 days of gapless coverage
+    /// produced ONE row, which is the day-one view of this whole feature.
+    public func writableRows(coverage: Coverage, written: [WindowRow],
                              cells: [HistoryRow], tracking: [TrackingEntry],
                              now: Date) -> [WindowRow] {
         // Rule 1. Deferring a row costs nothing; a row written with placeholder
@@ -123,16 +131,7 @@ public struct WindowLedger: Sendable {
             // Rule 2. Closed, unwritten, and every bucket in hand.
             guard end <= now else { continue }
 
-            // 🔴 Within tolerance, not exact. `lastWritten` came back through
-            // `.iso8601`, which encodes whole seconds, while `start` came off
-            // the in-memory grid with the anchor's fraction still on it — so
-            // exact `<=` compares `…00.181` against `…00.000`, never fires, and
-            // the same window is appended on every 60s flush forever. That
-            // shipped, and the archive it produced held five identical rows.
-            // Window starts are seven days apart, so a minute cannot reach the
-            // neighbouring one.
-            if let lastWritten,
-               start.timeIntervalSince(lastWritten) <= Self.sameResetTolerance { continue }
+            if Self.isAlreadyWritten(start: start, end: end, in: written) { continue }
 
             let firstBucket = Self.firstBucketStart(atOrAfter: start)
             let lastBucket = Self.lastBucketStart(before: end)
@@ -155,6 +154,31 @@ public struct WindowLedger: Sendable {
         }
 
         return rows
+    }
+
+    /// True when a row already tells this window's days.
+    ///
+    /// By OVERLAP, not by matching starts: the archive is append-only, so any
+    /// row sharing days with a candidate means those days would be counted
+    /// twice and shown as two weeks. Overlap also survives a grid that
+    /// re-phases — a later anchor a few hours off the old one shifts every
+    /// boundary, and equal starts would then match nothing.
+    ///
+    /// 🔴 Overlap must EXCEED the tolerance, and that is the whole subtlety.
+    /// `windows.jsonl` round-trips through `.iso8601`, which encodes WHOLE
+    /// seconds, while the grid is built from an in-memory anchor that keeps its
+    /// fraction (`resetsAt: 1787295600.181`, measured on this machine). So a
+    /// candidate ending at `…00.181` laps the stored start of the row after it
+    /// by 0.181s, and any-overlap-at-all would read two ADJACENT windows as the
+    /// same one and drop the earlier week. In the other direction, treating a
+    /// sub-second difference as a new window is what appended the same row on
+    /// every 60s flush forever — the archive that shipped held five identical
+    /// rows. Real windows are seven days apart, so a minute cannot confuse them.
+    static func isAlreadyWritten(start: Date, end: Date, in written: [WindowRow]) -> Bool {
+        written.contains { row in
+            let shared = min(end, row.end).timeIntervalSince(max(start, row.start))
+            return shared > sameResetTolerance
+        }
     }
 
     /// Newest `observedResetsAt` across written rows — the anchor's recovery

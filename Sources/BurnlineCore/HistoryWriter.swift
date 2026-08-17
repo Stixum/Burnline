@@ -159,13 +159,12 @@ public actor HistoryWriter {
 
     private func writeCompletedWindows(now: Date) {
         guard let windows = supersedeScheduleRows((try? store.loadWindows()) ?? []) else { return }
-        let lastWritten = windows.map(\.start).max()
         var tracking = (try? store.loadTracking()) ?? TrackingFile()
 
         let ledger = WindowLedger(anchor: anchor, schedule: schedule,
                                   hasEverObservedAReset: hasEverObservedAReset)
-        let rows = ledger.writableRows(coverage: coverage, lastWritten: lastWritten,
-                                       cells: cells(since: lastWritten, now: now),
+        let rows = ledger.writableRows(coverage: coverage, written: windows,
+                                       cells: cells(notCoveredBy: windows, now: now),
                                        tracking: tracking.entries, now: now)
         guard !rows.isEmpty else { return }
         do {
@@ -198,19 +197,19 @@ public actor HistoryWriter {
     /// showed both as separate weeks.
     ///
     /// Dropping is not data loss. The cells and the coverage that produced
-    /// these rows are still in the archive — nothing prunes either — so
-    /// clearing `lastWritten` back lets the ledger restate the same weeks on
-    /// the anchored grid, which is strictly better data. Nor can a percentage
-    /// go with them: a `.schedule` row is only ever written when no reset has
-    /// EVER been observed here, and every tracking entry carries one, so a
-    /// schedule row's `finalPercent` is always nil.
+    /// these rows are still in the archive — nothing prunes either — so once
+    /// they are gone the ledger restates the same weeks on the anchored grid,
+    /// which is strictly better data. Nor can a percentage go with them: a
+    /// `.schedule` row is only ever written when no reset has EVER been
+    /// observed here, and every tracking entry carries one, so a schedule row's
+    /// `finalPercent` is always nil.
     ///
     /// ⚠️ Rows that OVERLAP a superseded one go with it, but only when they
-    /// carry no `finalPercent`. `lastWritten` is a high-water mark, so a row
-    /// left standing past the hole would bar the ledger from ever refilling it
-    /// — which is exactly the archive the bug produced: three schedule weeks
-    /// with one anchored row written *after* them. Dropping only the schedule
-    /// rows there would lose those weeks for good.
+    /// carry no `finalPercent`. Two grids' rows overlap by days rather than
+    /// aligning, so an anchored row left standing across the hole blocks the
+    /// anchored week it shares those days with — which is exactly the archive
+    /// the bug produced: three schedule weeks with one anchored row written
+    /// *after* them, a day into the last of them.
     ///
     /// A percentless row is safe to drop because it is a pure function of the
     /// grid and the cells, both still in hand. One with a percentage is not:
@@ -241,14 +240,29 @@ public actor HistoryWriter {
 
     /// Cells for every window that could still be written.
     ///
-    /// Bounded on purpose: `writableRows` skips any window starting at or
-    /// before `lastWritten`, so no earlier bucket can appear in a row, and this
-    /// runs on every 60s flush. Reading the whole archive each time would grow
-    /// without limit in an append-only file that is never healed.
-    private func cells(since lastWritten: Date?, now: Date) -> [HistoryRow] {
-        let earliest = coverage.ranges.first
-            .map { Date(timeIntervalSince1970: Double($0.lowerBound)) }
-        guard let from = lastWritten ?? earliest, from <= now else { return [] }
+    /// Starts at the oldest covered bucket and then steps forward over the rows
+    /// that already own it, so the read reaches back exactly as far as the
+    /// oldest window still missing and no further. In the steady state that is
+    /// the newest row's end, which is what keeps this off the whole archive on
+    /// every 60s flush — an append-only file that is never healed.
+    ///
+    /// 🔴 It may NOT be bounded by the newest row alone. A first launch fills
+    /// backwards, so the windows still missing are OLDER than everything
+    /// written; handed cells from the newest row onward they would each be
+    /// totalled from nothing and the archive would record real weeks as zero —
+    /// permanently, since a window row is written once. This is the same defect
+    /// as the ledger's high-water skip and hides directly behind it.
+    private func cells(notCoveredBy written: [WindowRow], now: Date) -> [HistoryRow] {
+        guard var from = coverage.ranges.first
+            .map({ Date(timeIntervalSince1970: Double($0.lowerBound)) }) else { return [] }
+
+        // `end > from` is what makes this terminate: every step moves `from`
+        // strictly forward, and there are finitely many rows.
+        while let row = written.first(where: { $0.start <= from && $0.end > from }) {
+            from = row.end
+        }
+
+        guard from <= now else { return [] }
         return (try? store.rows(in: from...now).rows) ?? []
     }
 }
