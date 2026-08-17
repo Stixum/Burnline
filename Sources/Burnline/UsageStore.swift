@@ -2,26 +2,9 @@ import Foundation
 import Observation
 import BurnlineCore
 
-/// What the launch fill is doing, for a UI that has to sit through it.
-///
-/// 🔴 `.idle` is not a cosmetic case. Without it, "first launch, the archive is
-/// still filling" and "the archive is genuinely empty" render identically while
-/// meaning opposite things — and the fill is a measured 20.4 seconds over a real
-/// corpus, which is long enough for someone to reach the wrong conclusion and
-/// act on it.
-///
-/// Internal rather than `public`: nothing else in this executable target is
-/// public, and the only readers are the SwiftUI views compiled alongside it.
-enum HistoryFillState: Equatable, Sendable {
-    /// No fill has run this launch.
-    case idle
-    /// In flight — the 20.4-second case, and the whole reason for the callback.
-    case filling(HistoryFill.Progress)
-    case complete
-    /// At least one range could not be read. It claimed no coverage, so the
-    /// next launch retries it; this only says the launch was incomplete.
-    case failed(String)
-}
+// `HistoryFillState` is in `BurnlineCore`, next to the two rules it carries:
+// which transitions force the History window to re-read the archive, and what
+// that window draws for each state. Both are tested there.
 
 /// Decides which of a fill's progress reports are worth a hop to the main actor.
 ///

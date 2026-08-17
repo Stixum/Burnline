@@ -22,6 +22,12 @@ enum HistoryWindow {
 /// the launch fill is a measured 20 seconds over a real corpus, which is long
 /// enough for someone to reach the wrong conclusion and act on it, so the fill's
 /// own progress is shown while it runs.
+///
+/// 🔴 **The model is a snapshot of a file the window does not own.** The launch
+/// fill and the 60-second flush both write the archive from outside this view,
+/// so every reload trigger has to be declared in `LoadKey`. Miss one and the
+/// window is not slow, it is wrong: it keeps drawing an archive that stopped
+/// existing, and looks settled while it does it.
 struct HistoryView: View {
     @Bindable var store: UsageStore
 
@@ -41,28 +47,41 @@ struct HistoryView: View {
     /// recent complete window, and `model.range` is what the picker displays.
     @State private var range: HistoryRange = .newestWindow
 
+    /// The fill phase the model on screen was read under, so a reload knows
+    /// whether the archive can have changed under it.
+    @State private var loadedPhase: HistoryFillState.ReloadPhase?
+
     /// What a reload depends on. `.task(id:)` runs once when the window opens
     /// and again when one of these changes — not on every redraw, which is the
     /// whole reason the read is not in a view body.
+    ///
+    /// 🔴 **The fill phase is a load input, not decoration.** Without it the
+    /// window read the archive once, on open, and never again: on a first run
+    /// that read lands before the fill has written anything, so the window sat
+    /// on "Nothing archived yet" while six weeks were committed behind it, and
+    /// only a close-and-reopen showed them. The archive is written by something
+    /// this view does not drive, so the view has to be told when it moved.
     private struct LoadKey: Equatable {
         let dimension: HistoryQuery.Dimension
         let range: HistoryRange
+        let fill: HistoryFillState.ReloadPhase
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
-                fillStatus
+                fillFailure
 
-                if let model {
-                    if model.isEmpty {
-                        emptyArchive
-                    } else {
-                        sections(model)
-                    }
-                } else {
+                switch store.historyFillState.display(archiveIsEmpty: model?.isEmpty) {
+                case .filling(let progress):
+                    filling(progress)
+                case .loading:
                     loading
+                case .empty:
+                    emptyArchive
+                case .content:
+                    if let model { sections(model) }
                 }
             }
             .padding(20)
@@ -71,7 +90,8 @@ struct HistoryView: View {
         .frame(minWidth: 700, minHeight: 480)
         .background(Theme.background)
         .preferredColorScheme(.dark)
-        .task(id: LoadKey(dimension: dimension, range: range)) {
+        .task(id: LoadKey(dimension: dimension, range: range,
+                          fill: store.historyFillState.reloadPhase)) {
             await load()
         }
     }
@@ -80,10 +100,24 @@ struct HistoryView: View {
         // Read on the main actor, then hand plain values across. The snapshot's
         // window is what puts the live week on the chart, and it has no
         // `WindowRow` — one is only written once a window closes.
+        let phase = store.historyFillState.reloadPhase
         let window = store.snapshot.window
         let weights = store.settings.weights
-        model = await loader.viewModel(dimension: dimension, range: range,
-                                       currentWindow: window, weights: weights)
+
+        // The loader holds its read for 15 seconds so the pickers never hit
+        // disk. A fill that has just changed phase is the one case where that
+        // cache is guaranteed to be the stale answer, so it is dropped here and
+        // nowhere else: a picker change still re-aggregates from memory.
+        if phase != loadedPhase { await loader.invalidate() }
+        let loaded = await loader.viewModel(dimension: dimension, range: range,
+                                            currentWindow: window, weights: weights)
+
+        // A superseded read must never land on top of a newer one. `.task(id:)`
+        // cancels the outgoing task, but a cancelled task still resumes and
+        // would otherwise assign — which is this defect again, in miniature.
+        guard !Task.isCancelled else { return }
+        loadedPhase = phase
+        model = loaded
     }
 
     // MARK: - Sections
@@ -146,10 +180,12 @@ struct HistoryView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("Usage history").eyebrow()
-            Text(coverageDescription)
-                .font(.system(size: 11.5))
-                .foregroundStyle(Theme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if let coverageDescription {
+                Text(coverageDescription)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             // ⚠️ Named plainly, because "units" is Burnline's own scale and
             // means nothing on its own. The absolute value is arbitrary by
@@ -175,44 +211,60 @@ struct HistoryView: View {
         }
     }
 
-    private var coverageDescription: String {
-        guard let begins = model?.coverageBegins else {
-            return "Nothing archived yet."
+    /// Nil while there is nothing honest to say, which is not the same as
+    /// nothing to show: "Nothing archived yet" is a claim of finality, and only
+    /// a finished fill settles it. Asserting it over a running progress bar is
+    /// how the first run contradicted itself.
+    private var coverageDescription: String? {
+        if let begins = model?.coverageBegins {
+            // Claude Code deletes transcripts after 30 days, so this is a real
+            // horizon rather than a starting point that will keep receding.
+            return "Archived from \(HistoryLabels.day(begins)). Earlier weeks cannot be "
+                + "recovered — Claude Code deletes its transcripts after 30 days."
         }
-        // Claude Code deletes transcripts after 30 days, so this is a real
-        // horizon rather than a starting point that will keep receding.
-        return "Archived from \(HistoryLabels.day(begins)). Earlier weeks cannot be "
-            + "recovered — Claude Code deletes its transcripts after 30 days."
+        guard store.historyFillState.reloadPhase == .finished else { return nil }
+        return "Nothing archived yet."
     }
 
     // MARK: - States
 
-    /// The launch fill, which is ~20 seconds over a full corpus. A spinner with
-    /// no denominator reads as a hang at that length.
-    @ViewBuilder private var fillStatus: some View {
-        switch store.historyFillState {
-        case .idle, .complete:
-            EmptyView()
-        case .filling(let progress):
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Archiving transcripts — \(progress.filesOpened) of \(progress.filesTotal) files")
-                    .font(.system(size: 11)).monospacedDigit()
-                    .foregroundStyle(Theme.textSecondary)
-                ProgressView(value: fillFraction(progress))
-                    .tint(Theme.accent)
-            }
-            .padding(12)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard))
-        case .failed(let message):
+    /// The launch fill, which is ~20 seconds over a full corpus.
+    ///
+    /// 🔴 **Determinate, and it says the work is one-off.** A bare spinner at
+    /// that length reads as a hang, and this runs on someone's first launch,
+    /// before they have any reason to extend the app credit. The count is the
+    /// denominator the fill goes to the trouble of settling before it opens a
+    /// single file.
+    private func filling(_ progress: HistoryFill.Progress) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Building your history archive")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+            Text("Burnline is reading the transcripts Claude Code still has, so past weeks can "
+                 + "be charted. This happens once and takes about 20 seconds. You can close "
+                 + "this window; it carries on either way.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            ProgressView(value: progress.fraction)
+                .tint(Theme.accent)
+                .padding(.top, 1)
+            Text("\(progress.filesOpened) of \(progress.filesTotal) transcripts")
+                .font(.system(size: 11)).monospacedDigit()
+                .foregroundStyle(Theme.textSecondary)
+        }
+        .padding(14)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radiusCard))
+    }
+
+    /// Tolerated, never silent: the archive is short by however much that range
+    /// held, and nothing else on screen would say so.
+    @ViewBuilder private var fillFailure: some View {
+        if case .failed(let message) = store.historyFillState {
             warning("Some transcripts could not be read this launch, so parts of the archive "
                     + "may be missing. It retries next launch. (\(message))",
                     symbol: "exclamationmark.triangle.fill")
         }
-    }
-
-    private func fillFraction(_ progress: HistoryFill.Progress) -> Double {
-        guard progress.filesTotal > 0 else { return 0 }
-        return Double(progress.filesOpened) / Double(progress.filesTotal)
     }
 
     private var loading: some View {
@@ -225,13 +277,13 @@ struct HistoryView: View {
         .padding(.vertical, 30)
     }
 
-    /// 🔴 Distinct from the loading state above it. "Still filling" and
-    /// "genuinely empty" mean opposite things and must never render alike.
+    /// 🔴 Only reachable once the fill has finished — `HistoryFillState.display`
+    /// is what guarantees that. "Still filling" and "genuinely empty" mean
+    /// opposite things, and this copy makes a claim about the future that is
+    /// simply false while transcripts are still being read.
     private var emptyArchive: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(store.historyFillState.isFilling
-                 ? "Still reading transcripts. Weeks appear as the archive fills."
-                 : "No completed weeks yet.")
+            Text("No completed weeks yet.")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
             Text("Burnline writes a row when a weekly window closes, so the first one appears "
@@ -251,12 +303,5 @@ struct HistoryView: View {
         }
         .font(.system(size: 11))
         .foregroundStyle(Theme.warning)
-    }
-}
-
-extension HistoryFillState {
-    var isFilling: Bool {
-        if case .filling = self { return true }
-        return false
     }
 }

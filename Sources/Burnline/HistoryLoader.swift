@@ -114,6 +114,18 @@ actor HistoryLoader {
         let loadedAt: Date
     }
 
+    /// Drops the cached read, so the next call goes to disk.
+    ///
+    /// The age check above is for a window nobody is writing to. The launch fill
+    /// is the opposite case: it commits ~20 seconds of work in one go, and the
+    /// view is told the moment it lands — so waiting out the remainder of a
+    /// 15-second lifetime there would redraw from the read taken back when the
+    /// archive was still empty. That is not a slow refresh; it is the same wrong
+    /// answer twice.
+    func invalidate() {
+        cached = nil
+    }
+
     func viewModel(dimension: HistoryQuery.Dimension, range: HistoryRange,
                    currentWindow: Window, weights: Weights) -> HistoryViewModel {
         let archive = load(through: currentWindow.end, now: currentWindow.now)

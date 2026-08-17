@@ -54,6 +54,17 @@ public struct HistoryFill: Sendable {
             self.filesOpened = filesOpened
             self.filesTotal = filesTotal
         }
+
+        /// Where a determinate bar sits, 0...1.
+        ///
+        /// Here rather than in a view body: a range with nothing to read still
+        /// reports (see `cells(from:to:onProgress:)`), so the zero denominator
+        /// is a real case and not a defensive guard. Clamped because the two
+        /// counts are advanced by different rules — see the note above.
+        public var fraction: Double {
+            guard filesTotal > 0 else { return 0 }
+            return min(1, Double(filesOpened) / Double(filesTotal))
+        }
     }
 
     /// Records in `[from, to]`, folded into rows. Both bounds inclusive.
