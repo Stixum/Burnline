@@ -141,8 +141,10 @@ struct HistoryBurnCurves: View {
         .chartXScale(domain: 0...1)
         .chartForegroundStyleScale(domain: curves.map(\.label),
                                    range: Array(Theme.curveRamp.prefix(curves.count)))
-        .chartLegend(curves.count >= 2 ? .visible : .hidden)
+        // Position first, visibility outermost. A single series is already
+        // named by its direct label, and a one-entry legend is furniture.
         .chartLegend(position: .bottom, alignment: .leading, spacing: 10)
+        .chartLegend(curves.count >= 2 ? .visible : .hidden)
         .chartXAxis {
             AxisMarks(values: Self.dayTicks) { value in
                 AxisGridLine().foregroundStyle(Theme.hairline)

@@ -99,7 +99,7 @@ struct HistoryView: View {
                 .foregroundStyle(Theme.textMuted)
         } else {
             HistoryScoreboard(rows: model.scoreboard,
-                              selected: model.range,
+                              selected: selection(model),
                               explainsMissingPercentages: model.noPercentagesRecorded,
                               select: { range = $0 })
         }
@@ -125,12 +125,20 @@ struct HistoryView: View {
                          range: rangeBinding(model))
     }
 
-    /// Reads the selection back from the loaded model, so "the most recent
-    /// complete window" can be the default without this view knowing which
-    /// window that is — and without a resolution write-back that would trigger a
-    /// second load on every open.
+    /// The selection to display, which is not always the one that is loaded.
+    ///
+    /// Only the *unresolved* default defers to the model — that is how "the most
+    /// recent complete window" can be the initial selection without this view
+    /// knowing which window that is, and without a resolution write-back that
+    /// would cost a second load on every open. Once the user has picked
+    /// something, their choice shows immediately rather than snapping back to
+    /// the old value for as long as the reload takes.
+    private func selection(_ model: HistoryViewModel) -> HistoryRange {
+        range == .newestWindow ? model.range : range
+    }
+
     private func rangeBinding(_ model: HistoryViewModel) -> Binding<HistoryRange> {
-        Binding(get: { model.range }, set: { range = $0 })
+        Binding(get: { selection(model) }, set: { range = $0 })
     }
 
     // MARK: - Header
