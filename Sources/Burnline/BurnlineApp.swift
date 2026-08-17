@@ -30,7 +30,15 @@ struct BurnlineApp: App {
                 .preferredColorScheme(.dark)
                 .windowBackground()
         }
-        .defaultSize(width: 780, height: 720)
+        // The page runs past 850pt at this width, so *something* is below the
+        // fold at any height that still fits a laptop. 820 puts the fold partway
+        // down "Where it went": the scoreboard and the burn curves including
+        // their legend are whole, and enough bars show to read the shape and to
+        // make it obvious there are more. It also clears the ~875pt of usable
+        // height on a 1440×900 display, the smallest still in common use — a
+        // taller default would just be clamped there and lose the centring.
+        // Only the first open reads this; macOS persists the frame afterwards.
+        .defaultSize(width: 780, height: 820)
         .defaultPosition(.center)
 
         Window("Welcome to Burnline", id: OnboardingWindow.id) {

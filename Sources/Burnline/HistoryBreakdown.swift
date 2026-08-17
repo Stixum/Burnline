@@ -4,7 +4,7 @@ import BurnlineCore
 
 /// Where the units went, by project or by model, for one period.
 ///
-/// **A single violet hue, and identity comes from the axis label.** This is a
+/// **A single violet hue, and identity comes from the label gutter.** This is a
 /// magnitude question — which of these is biggest — and a categorical palette
 /// here is the classic anti-pattern: it spends the reader's attention on
 /// distinguishing colours that carry nothing, and it makes the chart illegible
@@ -26,6 +26,23 @@ struct HistoryBreakdown: View {
     /// division of a fixed frame happens to leave.
     private static let rowHeight: CGFloat = 16
     private static let barHeight: CGFloat = 14
+
+    /// The label gutter, and the gap between it and the plot's leading edge.
+    ///
+    /// 🔴 **Fixed, not fitted.** Swift Charts' own leading `AxisValueLabel` drew
+    /// the names *inside* the plot area, straight across the bars, and long ones
+    /// (`TokenEstimator`, `seanmccauley`, `ConcertTracker/iOS` — collision
+    /// disambiguation puts a slash in real project names) were unreadable while
+    /// short ones hid behind their own bar. The gutter is the fix, and it has to
+    /// be a constant: sized to the widest label it would jump every time the
+    /// dimension toggle moved between project and model names, and the bars —
+    /// whose whole job is comparison by length — would change length with it.
+    ///
+    /// 118 fits ~18 characters at 11pt SF Pro. Past that the name truncates and
+    /// the tooltip carries it in full; a wider gutter would buy a few more
+    /// characters at the cost of the plot, which is what the reader is here for.
+    private static let labelWidth: CGFloat = 118
+    private static let labelGap: CGFloat = 10
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -73,7 +90,42 @@ struct HistoryBreakdown: View {
         }
     }
 
+    /// A label gutter beside the plot, rather than an axis inside it.
+    ///
+    /// The two columns stay in register because neither one is laid out against
+    /// the other: every label occupies exactly `rowHeight`, and the plot's frame
+    /// is `rowHeight` times the row count over a categorical scale, so band *n*
+    /// and label *n* both centre on the same line. Both axes are hidden, so the
+    /// plot area is the frame and Charts contributes no inset of its own.
     private var chart: some View {
+        HStack(alignment: .top, spacing: Self.labelGap) {
+            labels
+            plot
+        }
+    }
+
+    /// The identity channel. Colour carries none of it — one violet is the
+    /// entire series — so these names are the only thing telling the reader
+    /// which bar is which, and they cannot be allowed to land on a bar.
+    private var labels: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            ForEach(rows, id: \.label) { row in
+                // ⚠️ Text tokens, never the series colour: same rule as the
+                // value labels, and for the same reason.
+                Text(row.label)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: Self.labelWidth, height: Self.rowHeight, alignment: .trailing)
+                    // Truncation loses information, so the full name stays
+                    // reachable. Two projects can differ only past the ellipsis.
+                    .help(row.label)
+            }
+        }
+    }
+
+    private var plot: some View {
         Chart(rows, id: \.label) { row in
             BarMark(x: .value("Units", row.units),
                     y: .value(dimension.title, row.label),
@@ -110,17 +162,10 @@ struct HistoryBreakdown: View {
         // invites reading the small bars off the ticks, which is exactly the
         // precision they do not have.
         .chartXAxis(.hidden)
-        .chartYAxis {
-            AxisMarks(position: .leading) { value in
-                // The identity channel. Colour carries none of it.
-                AxisValueLabel {
-                    Text(value.as(String.self) ?? "")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
-                }
-            }
-        }
+        // 🔴 The names live in `labels`, in their own gutter. Do not put them
+        // back on the axis: a leading `AxisMarks` here reserves no space, so
+        // Charts draws the labels over the bars.
+        .chartYAxis(.hidden)
         .frame(height: CGFloat(rows.count) * Self.rowHeight)
     }
 
