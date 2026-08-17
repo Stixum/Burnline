@@ -19,6 +19,17 @@ A macOS menu bar app that shows where you *should* be in your Claude weekly usag
 - **Solid marker** is where you should be right now.
 - **Translucent band** runs out to the end-of-day target. Spend into it and the day finishes level.
 
+## History
+
+Click the chart icon in the popover for past weeks: totals week over week, this week's burn curve laid over the last two, and where the usage actually went by project and by model.
+
+Burnline builds this from the transcripts Claude Code still has, once, on first launch — about twenty seconds. **It keeps them, which matters, because Claude Code deletes its own transcripts after 30 days.** From then on it records each week as it closes.
+
+Two honest limits worth knowing:
+
+- **Anthropic's own percentage is recorded from the day you install this, not before.** Earlier weeks show Burnline's own unit total instead, marked "not recorded" — the real figure for a week that has already closed exists nowhere on your Mac and cannot be reconstructed.
+- **Weeks when Burnline wasn't running are drawn as gaps, not as zero usage.** Those are different things and the chart says which.
+
 ## Why
 
 Your weekly limit resets on a fixed day and time. Seven days is 100%, so each day is about 14.3%, and on day 5 you're roughly 71% through.
