@@ -114,6 +114,26 @@ private let hb0 = 1_786_924_800
     #expect(try store.loadManifest().lastObservedReset == later)
 }
 
+@Test func anIncompatibleManifestIsDiscardedNotMigrated() throws {
+    // The twin of the tracking-version gate, which shipped untested and was
+    // then shown to fail silently: with an empty-entries fixture, "discarded"
+    // and "loaded" were indistinguishable. So this fixture carries a REAL
+    // anchor — delete the version gate in `loadManifest` and it fails,
+    // because the bad anchor would survive and drive historical window bounds.
+    let (store, dir) = temporaryStore()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    try Data(#"{"version":99,"lastObservedReset":"2026-08-20T00:00:00Z"}"#.utf8)
+        .write(to: dir.appendingPathComponent("manifest.json"))
+    #expect(try store.loadManifest().lastObservedReset == nil)
+
+    // Positive control: the same body at the current version DOES load, so the
+    // assertion above is the gate firing and not a decode failure.
+    try Data(#"{"version":1,"lastObservedReset":"2026-08-20T00:00:00Z"}"#.utf8)
+        .write(to: dir.appendingPathComponent("manifest.json"))
+    #expect(try store.loadManifest().lastObservedReset != nil)
+}
+
 @Test func readingAnAbsentArchiveIsEmptyNotAnError() throws {
     let (store, dir) = temporaryStore()
     defer { try? FileManager.default.removeItem(at: dir) }
