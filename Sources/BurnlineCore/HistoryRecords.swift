@@ -118,11 +118,16 @@ public struct CoverageRecord: Equatable, Sendable, Codable {
 
     // Absent `truncated`/`verified`/`filledBy` decode to sensible defaults
     // rather than throwing — old or hand-edited rows must still load.
+    //
+    // ⚠️ Absent `filledBy` is "unknown", never "scan". A record whose
+    // provenance was not recorded did not thereby come from the forward flush,
+    // and this design labels what it knows rather than assuming the common
+    // case — the same rule as `boundsSource`, `verified` and `truncated`.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         from = try container.decode(Int.self, forKey: .from)
         through = try container.decode(Int.self, forKey: .through)
-        filledBy = try container.decodeIfPresent(String.self, forKey: .filledBy) ?? "scan"
+        filledBy = try container.decodeIfPresent(String.self, forKey: .filledBy) ?? "unknown"
         truncated = try container.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
         verified = try container.decodeIfPresent(Bool.self, forKey: .verified) ?? true
     }
