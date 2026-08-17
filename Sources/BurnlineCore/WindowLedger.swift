@@ -17,12 +17,25 @@ import Foundation
 /// the wrong seven-day slice. Rows are written once, so that is wrong forever.
 /// The schedule applies only when no reset has *ever* been observed here.
 public struct WindowLedger: Sendable {
-    /// ⚠️ A tolerance is correct *here* — and only here — because it compares
-    /// an observation against the grid rather than two derived boundaries. The
-    /// two capture sources report the same reset instant to different
-    /// precision: statusline `1786690800`, utilization `…06:59:59.424563Z`, a
-    /// measured 0.58s apart. Under exact equality `.observed` would be dead
-    /// code no real data could reach.
+    /// ⚠️ The tolerance that decides whether two instants are the SAME reset.
+    ///
+    /// Sub-second disagreement about one reset is the norm here, from two
+    /// independent directions:
+    ///
+    /// - The two capture sources report it to different precision — statusline
+    ///   `1786690800`, utilization `…06:59:59.424563Z`, a measured 0.58s apart.
+    ///   Under exact equality `.observed` would be dead code no real data could
+    ///   reach.
+    /// - `HistoryStore` pins `.iso8601`, which encodes WHOLE seconds, so any
+    ///   instant that has been through the archive comes back up to a second
+    ///   *earlier* than the in-memory one it was written from. Real resets carry
+    ///   a fraction: the high-water mark measured on this machine held
+    ///   `resetsAt: 1787295600.181`.
+    ///
+    /// 60s, matching `RateLimitHighWater.sameResetTolerance`, and it can never
+    /// merge two windows that are genuinely distinct: **weekly windows are seven
+    /// days apart**, so anything within a minute is the same boundary described
+    /// twice.
     public static let sameResetTolerance: TimeInterval = 60
 
     /// A reset actually observed on this machine. Every window bound is a whole
@@ -109,7 +122,17 @@ public struct WindowLedger: Sendable {
 
             // Rule 2. Closed, unwritten, and every bucket in hand.
             guard end <= now else { continue }
-            if let lastWritten, start <= lastWritten { continue }
+
+            // 🔴 Within tolerance, not exact. `lastWritten` came back through
+            // `.iso8601`, which encodes whole seconds, while `start` came off
+            // the in-memory grid with the anchor's fraction still on it — so
+            // exact `<=` compares `…00.181` against `…00.000`, never fires, and
+            // the same window is appended on every 60s flush forever. That
+            // shipped, and the archive it produced held five identical rows.
+            // Window starts are seven days apart, so a minute cannot reach the
+            // neighbouring one.
+            if let lastWritten,
+               start.timeIntervalSince(lastWritten) <= Self.sameResetTolerance { continue }
 
             let firstBucket = Self.firstBucketStart(atOrAfter: start)
             let lastBucket = Self.lastBucketStart(before: end)

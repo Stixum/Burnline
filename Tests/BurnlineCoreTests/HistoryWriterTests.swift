@@ -77,6 +77,29 @@ private func rowThatObservedTheReset() -> WindowRow {
               boundsSource: .observed, observedResetsAt: observedReset)
 }
 
+/// ⚠️ A real reset instant carries a FRACTION. Measured on this machine:
+/// `rate-limit-highwater.json` held `sevenDay.resetsAt: 1787295600.181`, and
+/// the two capture sources disagree sub-second by design. Nothing rounds it
+/// off before it becomes the anchor.
+private let fractionalReset = observedReset.addingTimeInterval(0.181)
+
+/// `[fractionalReset, fractionalReset + 7d)`, covered bucket for bucket.
+///
+/// A window owns the buckets whose START falls inside it, so a start a fraction
+/// past a bucket boundary pushes the first owned bucket to the next one — hence
+/// the `+ writerStep` rather than reusing `windowAfterTheReset()`.
+private func windowAfterAFractionalReset() -> HistoryArchive.Payload {
+    let from = epoch(observedReset) + writerStep
+    let through = epoch(plusDays(7, observedReset))
+    return HistoryArchive.Payload(rows: [writerCell(from, output: 9)], span: from...through)
+}
+
+/// A flush that found nothing new — the ordinary 60s case once the archive has
+/// caught up.
+private func nothingNew() -> HistoryArchive.Payload {
+    HistoryArchive.Payload(rows: [], span: nil)
+}
+
 // MARK: - The clamp
 
 @Test func theStillFillingBucketIsNeverClaimedAsCovered() async throws {
@@ -252,6 +275,46 @@ private func rowThatObservedTheReset() -> WindowRow {
     #expect(records.first?.through == through)
     #expect(records.first?.truncated == true)
     #expect(records.first?.filledBy == "fill")
+}
+
+@Test func aWrittenWindowIsNotWrittenAgainOnEveryFlush() async throws {
+    // 🔴 Found by running the app, not by the suite: `windows.jsonl` held FIVE
+    // identical `extrapolated` rows, one per 60s flush.
+    //
+    // `HistoryStore` pins `.iso8601`, which encodes WHOLE seconds. The grid is
+    // built from the in-memory anchor, which keeps its fraction, so the row goes
+    // out with `start` = `…14:15:00.181` and comes back `…14:15:00`. The
+    // ledger's `start <= lastWritten` then compares `.181` against `.000` and
+    // never fires, so the same window is appended again, forever.
+    let dir = writerDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let store = HistoryStore(directory: dir)
+    let writer = HistoryWriter(store: store, schedule: writerSchedule)
+
+    // Only `advanceAnchor` carries the fraction into memory — the manifest
+    // cannot, which IS the defect — so the anchor has to arrive the way the
+    // app's does, from an observation.
+    let observation = TrackingEntry(percent: 41, at: plusDays(9, observedReset),
+                                    resetsAt: plusDays(7, fractionalReset))
+    await writer.commit(payload: windowAfterAFractionalReset(), filledBy: "fill",
+                        observation: observation)
+    #expect(try store.loadWindows().count == 1)
+
+    // Four more flushes with nothing left to archive: no new cells, no new
+    // coverage, no new window. Nothing may be appended.
+    for _ in 0..<4 {
+        await writer.commit(payload: nothingNew(), filledBy: "scan", observation: observation)
+    }
+
+    let written = try store.loadWindows()
+    #expect(written.count == 1)
+    // ⚠️ The stored start is the TRUNCATED form and stays that way — `.iso8601`
+    // is what makes the archive human- and spreadsheet-readable, which is half
+    // the point of it. The fix is not to preserve the fraction; it is that the
+    // ledger must not read a sub-second difference as a different window.
+    let start = try #require(written.first?.start)
+    #expect(start != fractionalReset)
+    #expect(abs(start.timeIntervalSince(fractionalReset)) < 1)
 }
 
 @Test func republishingAnIdenticalObservationDoesNotGrowTheFile() async throws {

@@ -226,6 +226,28 @@ private func rowsAfterAFortnight(tracking: [TrackingEntry] = [],
     #expect(rows.first?.start == plus(days: 7, from: anchorDate))
 }
 
+@Test func aStartASubSecondPastLastWrittenIsStillTheSameWindow() {
+    // 🔴 `windows.jsonl` round-trips through `.iso8601`, which encodes WHOLE
+    // seconds — so `lastWritten` comes back up to a second EARLIER than the
+    // grid start it was written from, because a real anchor carries a fraction
+    // (`resetsAt: 1787295600.181`, measured on this machine). Exact `<=` reads
+    // that as a window it has never seen and appends it again every 60s.
+    //
+    // Weekly starts are seven days apart, so a 60s tolerance cannot reach the
+    // neighbouring window — which this asserts by still expecting the next one.
+    let fractional = WindowLedger(anchor: anchorDate.addingTimeInterval(0.181),
+                                  schedule: placeholder)
+    let rows = fractional.writableRows(coverage: threeWeeks, lastWritten: anchorDate,
+                                       cells: [], tracking: [],
+                                       now: plus(days: 15, from: anchorDate))
+    #expect(rows.count == 1)
+    // The one row is the NEXT window, carrying the anchor's fraction. Compared
+    // loosely on purpose: seven days of separation is what identifies it, and
+    // `0.181` does not survive a `Double` round trip exactly.
+    let offset = rows.first?.start.timeIntervalSince(plus(days: 7, from: anchorDate))
+    #expect(abs(offset ?? .infinity) < 1)
+}
+
 @Test func anObservationBeyondToleranceMovesTheGridAndTheNextWindowWithIt() {
     // The beyond-tolerance branch: a reset someone actually SAW, far enough
     // from the inferred grid that it is a correction rather than precision
