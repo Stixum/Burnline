@@ -66,6 +66,16 @@ struct HistoryBreakdown: View {
                 }
             }
             .pickerStyle(.segmented)
+            // ⚠️ Without this the selected segment inherits the *system* accent
+            // and renders macOS blue in an app whose accent is violet — a defect
+            // that is invisible in the source and only shows in a screenshot.
+            //
+            // `.tint` genuinely lands here, unlike on `.borderedProminent`,
+            // which ignores it and comes out a grey system pill (see
+            // `AccentButtonStyle`). The two are not interchangeable evidence:
+            // verified by screenshot that the selected segment matches the bar
+            // fill below it.
+            .tint(Theme.accent)
             .labelsHidden()
             .frame(width: 168)
 
