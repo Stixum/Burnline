@@ -54,9 +54,19 @@ private func cell(daysIn: Int, output: Int) -> HistoryRow {
 
 private func rowsAfterAFortnight(tracking: [TrackingEntry] = [],
                                  cells: [HistoryRow] = [],
-                                 lastWritten: Date? = nil) -> [WindowRow] {
-    anchored.writableRows(coverage: threeWeeks, lastWritten: lastWritten, cells: cells,
+                                 written: [WindowRow] = []) -> [WindowRow] {
+    anchored.writableRows(coverage: threeWeeks, written: written, cells: cells,
                           tracking: tracking, now: plus(days: 15, from: anchorDate))
+}
+
+/// A row already on disk for `[start, start + 7d)`, as `windows.jsonl` gives it
+/// back: `.iso8601` encodes WHOLE seconds, so any fraction the grid carried is
+/// gone by the time it is read.
+private func writtenWindow(startingAt start: Date) -> WindowRow {
+    let truncated = Date(timeIntervalSince1970: start.timeIntervalSince1970.rounded(.down))
+    return WindowRow(start: truncated, end: plus(days: 7, from: truncated), counts: .zero,
+                     finalPercent: nil, finalPercentAt: nil, finalPercentSource: nil,
+                     boundsSource: .extrapolated, observedResetsAt: nil)
 }
 
 @Test func windowsEndingAFTERTheAnchorAreStillWritten() {
@@ -73,11 +83,36 @@ private func rowsAfterAFortnight(tracking: [TrackingEntry] = [],
     #expect(rows.last?.start == plus(days: 7, from: anchorDate))
 }
 
+@Test func thirtyOneDaysOfCoverageQualifiesEveryWholeWindowInsideIt() {
+    // Day one over a real corpus: 31 days of gapless coverage that starts two
+    // hours INTO the oldest window on the grid. Three whole windows sit inside
+    // it and all three must be written; the partial one must not, and an
+    // implementation that stops walking at the first window it cannot cover
+    // returns nothing at all.
+    let start = plus(days: -28, from: anchorDate).addingTimeInterval(2 * 3_600)
+    let thirtyOneDays = coverage(from: start, through: anchorDate)
+    let cells = [cell(daysIn: -25, output: 7), cell(daysIn: -18, output: 11),
+                 cell(daysIn: -11, output: 13), cell(daysIn: -4, output: 17)]
+
+    let rows = anchored.writableRows(coverage: thirtyOneDays, written: [],
+                                     cells: cells, tracking: [],
+                                     now: plus(days: 2, from: anchorDate))
+
+    #expect(rows.count == 3)
+    #expect(rows.map(\.start) == [plus(days: -21, from: anchorDate),
+                                  plus(days: -14, from: anchorDate),
+                                  plus(days: -7, from: anchorDate)])
+    // The oldest window is genuinely short of coverage and stays absent — the
+    // stop on a fix that simply writes everything.
+    #expect(!rows.contains { $0.start == plus(days: -28, from: anchorDate) })
+    #expect(rows.map(\.output) == [11, 13, 17])
+}
+
 @Test func aWindowRowIsNeverWrittenBeforeItsCellsAreCovered() {
     // Guards writing a window total from a partly-filled archive — the row is
     // written once, so an undercount is permanent.
     let partial = coverage(from: anchorDate, through: plus(days: 3, from: anchorDate))
-    let rows = anchored.writableRows(coverage: partial, lastWritten: nil, cells: [],
+    let rows = anchored.writableRows(coverage: partial, written: [], cells: [],
                                      tracking: [], now: plus(days: 10, from: anchorDate))
     #expect(rows.isEmpty)
 }
@@ -151,7 +186,7 @@ private func rowsAfterAFortnight(tracking: [TrackingEntry] = [],
     // 09:00 and attribute every total to the wrong seven-day slice — and rows
     // are written once. Deferring costs nothing.
     let rows = WindowLedger(anchor: nil, schedule: placeholder, hasEverObservedAReset: true)
-        .writableRows(coverage: threeWeeks, lastWritten: nil, cells: [], tracking: [],
+        .writableRows(coverage: threeWeeks, written: [], cells: [], tracking: [],
                       now: plus(days: 15, from: anchorDate))
     #expect(rows.isEmpty)
 }
@@ -165,7 +200,7 @@ private func rowsAfterAFortnight(tracking: [TrackingEntry] = [],
     let reset = at(2026, 5, 14, 9)
     let rows = WindowLedger(anchor: nil, schedule: placeholder)
         .writableRows(coverage: coverage(from: previousReset, through: reset),
-                      lastWritten: nil, cells: [], tracking: [], now: at(2026, 5, 16, 12))
+                      written: [], cells: [], tracking: [], now: at(2026, 5, 16, 12))
     #expect(rows.count == 1)
     #expect(rows.first?.start == previousReset)
     #expect(rows.first?.end == reset)
@@ -181,7 +216,7 @@ private func rowsAfterAFortnight(tracking: [TrackingEntry] = [],
     let previous = at(2026, 10, 28, 14, 23)
     let rows = WindowLedger(anchor: dstAnchor, schedule: placeholder)
         .writableRows(coverage: coverage(from: previous, through: dstAnchor),
-                      lastWritten: nil, cells: [], tracking: [], now: at(2026, 11, 10, 12))
+                      written: [], cells: [], tracking: [], now: at(2026, 11, 10, 12))
     #expect(rows.count == 1)
     #expect(rows.first?.start == previous)
     #expect(rows.first?.end == dstAnchor)
@@ -221,9 +256,34 @@ private func rowsAfterAFortnight(tracking: [TrackingEntry] = [],
 @Test func aWindowAlreadyWrittenIsNotWrittenAgain() {
     // The archive is append-only, so a second pass over the same window would
     // double it rather than replace it.
-    let rows = rowsAfterAFortnight(lastWritten: anchorDate)
+    let rows = rowsAfterAFortnight(written: [writtenWindow(startingAt: anchorDate)])
     #expect(rows.count == 1)
     #expect(rows.first?.start == plus(days: 7, from: anchorDate))
+}
+
+@Test func aStartASubSecondPastAWrittenRowIsStillTheSameWindow() {
+    // 🔴 `windows.jsonl` round-trips through `.iso8601`, which encodes WHOLE
+    // seconds — so a written row comes back up to a second EARLIER than the
+    // grid start it went out as, because a real anchor carries a fraction
+    // (`resetsAt: 1787295600.181`, measured on this machine). Read exactly,
+    // that is a window the ledger has never seen and it appends it again every
+    // 60s. It shipped: the archive held five identical rows.
+    //
+    // Weekly windows are seven days long, so a minute of tolerance cannot reach
+    // the neighbouring one — which this asserts by still expecting the next
+    // window, whose start the written row's end overhangs by that same 0.181s.
+    let fractional = WindowLedger(anchor: anchorDate.addingTimeInterval(0.181),
+                                  schedule: placeholder)
+    let rows = fractional.writableRows(coverage: threeWeeks,
+                                       written: [writtenWindow(startingAt: anchorDate)],
+                                       cells: [], tracking: [],
+                                       now: plus(days: 15, from: anchorDate))
+    #expect(rows.count == 1)
+    // The one row is the NEXT window, carrying the anchor's fraction. Compared
+    // loosely on purpose: seven days of separation is what identifies it, and
+    // `0.181` does not survive a `Double` round trip exactly.
+    let offset = rows.first?.start.timeIntervalSince(plus(days: 7, from: anchorDate))
+    #expect(abs(offset ?? .infinity) < 1)
 }
 
 @Test func anObservationBeyondToleranceMovesTheGridAndTheNextWindowWithIt() {
@@ -241,7 +301,7 @@ private func rowsAfterAFortnight(tracking: [TrackingEntry] = [],
                               at: gridEnd.addingTimeInterval(-3_600),
                               resetsAt: realReset)
 
-    let rows = anchored.writableRows(coverage: threeWeeks, lastWritten: nil, cells: [],
+    let rows = anchored.writableRows(coverage: threeWeeks, written: [], cells: [],
                                      tracking: [entry],
                                      now: plus(days: 20, from: anchorDate))
 

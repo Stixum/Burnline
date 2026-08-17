@@ -158,14 +158,13 @@ public actor HistoryWriter {
     // MARK: - Windows
 
     private func writeCompletedWindows(now: Date) {
-        let windows = (try? store.loadWindows()) ?? []
-        let lastWritten = windows.map(\.start).max()
+        guard let windows = supersedeScheduleRows((try? store.loadWindows()) ?? []) else { return }
         var tracking = (try? store.loadTracking()) ?? TrackingFile()
 
         let ledger = WindowLedger(anchor: anchor, schedule: schedule,
                                   hasEverObservedAReset: hasEverObservedAReset)
-        let rows = ledger.writableRows(coverage: coverage, lastWritten: lastWritten,
-                                       cells: cells(since: lastWritten, now: now),
+        let rows = ledger.writableRows(coverage: coverage, written: windows,
+                                       cells: cells(notCoveredBy: windows, now: now),
                                        tracking: tracking.entries, now: now)
         guard !rows.isEmpty else { return }
         do {
@@ -184,16 +183,86 @@ public actor HistoryWriter {
         try? store.saveTracking(tracking)
     }
 
+    /// Drops rows whose bounds came from the schedule, once a real reset is
+    /// known. Returns nil when the rewrite failed, which means "do not write
+    /// windows this pass" — appending onto a file that still holds the rows we
+    /// meant to remove is how the overlap gets worse rather than better.
+    ///
+    /// 🔴 **Two grids may never coexist in one archive.** `.schedule` bounds are
+    /// the placeholder Thursday 09:00, written only on a machine that has never
+    /// seen a capture. The moment one lands, those rows describe a seven-day
+    /// slicing the app no longer believes, and they OVERLAP the anchored rows
+    /// written beside them — `Aug 6 → Aug 13` next to `Aug 7 → Aug 14`, with
+    /// the same days counted in both. Observed for real; the History window
+    /// showed both as separate weeks.
+    ///
+    /// Dropping is not data loss. The cells and the coverage that produced
+    /// these rows are still in the archive — nothing prunes either — so once
+    /// they are gone the ledger restates the same weeks on the anchored grid,
+    /// which is strictly better data. Nor can a percentage go with them: a
+    /// `.schedule` row is only ever written when no reset has EVER been
+    /// observed here, and every tracking entry carries one, so a schedule row's
+    /// `finalPercent` is always nil.
+    ///
+    /// ⚠️ Rows that OVERLAP a superseded one go with it, but only when they
+    /// carry no `finalPercent`. Two grids' rows overlap by days rather than
+    /// aligning, so an anchored row left standing across the hole blocks the
+    /// anchored week it shares those days with — which is exactly the archive
+    /// the bug produced: three schedule weeks with one anchored row written
+    /// *after* them, a day into the last of them.
+    ///
+    /// A percentless row is safe to drop because it is a pure function of the
+    /// grid and the cells, both still in hand. One with a percentage is not:
+    /// that is Anthropic's own figure, its tracking entry has since been
+    /// pruned, and nothing can reconstruct it — so it stays, even at the cost
+    /// of leaving the weeks behind it unwritten. (An `.observed` row always
+    /// carries one, so this never drops ground truth.)
+    ///
+    /// Idempotent, and after the first pass it costs one `filter`.
+    private func supersedeScheduleRows(_ windows: [WindowRow]) -> [WindowRow]? {
+        guard anchor != nil else { return windows }
+        let superseded = windows.filter { $0.boundsSource == .schedule }
+        guard let from = superseded.map(\.start).min(),
+              let through = superseded.map(\.end).max() else { return windows }
+
+        let kept = windows.filter { row in
+            guard row.boundsSource != .schedule else { return false }
+            guard row.start < through, row.end > from else { return true }
+            return row.finalPercent != nil
+        }
+        do {
+            try store.replaceWindows(kept)
+        } catch {
+            return nil
+        }
+        return kept
+    }
+
     /// Cells for every window that could still be written.
     ///
-    /// Bounded on purpose: `writableRows` skips any window starting at or
-    /// before `lastWritten`, so no earlier bucket can appear in a row, and this
-    /// runs on every 60s flush. Reading the whole archive each time would grow
-    /// without limit in an append-only file that is never healed.
-    private func cells(since lastWritten: Date?, now: Date) -> [HistoryRow] {
-        let earliest = coverage.ranges.first
-            .map { Date(timeIntervalSince1970: Double($0.lowerBound)) }
-        guard let from = lastWritten ?? earliest, from <= now else { return [] }
+    /// Starts at the oldest covered bucket and then steps forward over the rows
+    /// that already own it, so the read reaches back exactly as far as the
+    /// oldest window still missing and no further. In the steady state that is
+    /// the newest row's end, which is what keeps this off the whole archive on
+    /// every 60s flush — an append-only file that is never healed.
+    ///
+    /// 🔴 It may NOT be bounded by the newest row alone. A first launch fills
+    /// backwards, so the windows still missing are OLDER than everything
+    /// written; handed cells from the newest row onward they would each be
+    /// totalled from nothing and the archive would record real weeks as zero —
+    /// permanently, since a window row is written once. This is the same defect
+    /// as the ledger's high-water skip and hides directly behind it.
+    private func cells(notCoveredBy written: [WindowRow], now: Date) -> [HistoryRow] {
+        guard var from = coverage.ranges.first
+            .map({ Date(timeIntervalSince1970: Double($0.lowerBound)) }) else { return [] }
+
+        // `end > from` is what makes this terminate: every step moves `from`
+        // strictly forward, and there are finitely many rows.
+        while let row = written.first(where: { $0.start <= from && $0.end > from }) {
+            from = row.end
+        }
+
+        guard from <= now else { return [] }
         return (try? store.rows(in: from...now).rows) ?? []
     }
 }

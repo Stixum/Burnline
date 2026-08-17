@@ -143,6 +143,27 @@ public struct HistoryStore: Sendable {
         try appendData(buffer, to: url("windows.jsonl"))
     }
 
+    /// Rewrites `windows.jsonl` whole, atomically.
+    ///
+    /// ⚠️ The only non-append write to a `.jsonl` in this directory, and it
+    /// exists for exactly one job: dropping rows whose GRID the app has stopped
+    /// believing in, which append cannot express. Safe because `HistoryWriter`
+    /// is the sole writer and calls this from inside the actor — but a caller
+    /// reaching for this to "clean up" or "dedupe" is a caller about to lose a
+    /// row that cannot be recomputed. Windows carry `finalPercent`, Anthropic's
+    /// own figure, which nothing can reconstruct once the tracking entry behind
+    /// it has been pruned.
+    public func replaceWindows(_ rows: [WindowRow]) throws {
+        createDirectory()
+        let encoder = JSON.encoder
+        var buffer = Data()
+        for row in rows {
+            buffer.append(try encoder.encode(row))
+            buffer.append(newline)
+        }
+        try buffer.write(to: url("windows.jsonl"), options: .atomic)
+    }
+
     public func loadWindows() throws -> [WindowRow] {
         let read: (values: [WindowRow], skipped: Int) = decodeLines(at: url("windows.jsonl"))
         return read.values

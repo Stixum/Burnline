@@ -211,3 +211,76 @@ private struct FillTree: ~Copyable {
     #expect(filled.filesOpened == 0)
     #expect(filled.truncated)
 }
+
+/// A `@Sendable` callback cannot capture a mutable local under the v6 language
+/// mode, so the collector is a reference type. The lock is not ceremony: the
+/// signature permits the fill to report from any thread even though today it
+/// reports from one, and a test that only compiles because of an assumption the
+/// signature does not make is a test that breaks later for no visible reason.
+private final class ProgressLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [HistoryFill.Progress] = []
+
+    func record(_ progress: HistoryFill.Progress) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage.append(progress)
+    }
+
+    var reports: [HistoryFill.Progress] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+}
+
+/// 🔴 The launch fill is a measured 20.4 seconds over a real corpus and used to
+/// publish nothing at all, which made two opposite situations render
+/// identically: "first launch, still filling" and "the archive is genuinely
+/// empty". Twenty seconds behind an unlabelled spinner reads as a hang.
+///
+/// Three files, so `>= 2` reports is an assertion rather than a coincidence.
+@Test func fillReportsProgressAsFilesAreOpened() throws {
+    let tree = FillTree()
+    let stamp = clock.addingTimeInterval(-3 * day)
+    for name in ["a", "b", "c"] {
+        tree.session(assistantLine(output: 10, at: stamp),
+                     at: "projects/-Users-me-Projects-Burnline/\(name).jsonl", modified: stamp)
+    }
+
+    let log = ProgressLog()
+    let filled = try HistoryFill(rootURL: tree.root)
+        .cells(from: clock.addingTimeInterval(-7 * day), to: clock) { log.record($0) }
+    let seen = log.reports
+
+    #expect(filled.filesOpened == 3)
+    #expect(seen.count >= 2)
+    #expect(seen.map(\.filesOpened) == seen.map(\.filesOpened).sorted())   // monotonic
+    // The denominator is fixed before the first file is opened, so a bar can be
+    // determinate from the start rather than growing its own total.
+    #expect(seen.allSatisfy { $0.filesTotal == 3 })
+    #expect(seen.last?.filesOpened == seen.last?.filesTotal)
+}
+
+/// Every file predates the range, so the mtime bound skips all of them and
+/// nothing is opened. One report is still made, and it is `0 of 0`.
+///
+/// The alternative — staying silent when there is nothing to read — recreates
+/// the exact ambiguity this callback exists to remove: no callback at all
+/// cannot be told apart from a fill that never started, and those two render
+/// the same while meaning opposite things. `filesTotal == 0` says the second
+/// out loud, and it satisfies the terminal invariant every other fill obeys
+/// (`filesOpened == filesTotal`) without a special case at the call site.
+@Test func aFillWithNothingToReadStillReportsZeroOfZero() throws {
+    let tree = FillTree()
+    let stamp = clock.addingTimeInterval(-40 * day)
+    tree.session(assistantLine(output: 100, at: stamp),
+                 at: "projects/-Users-me-Projects-Burnline/old.jsonl", modified: stamp)
+
+    let log = ProgressLog()
+    let filled = try HistoryFill(rootURL: tree.root)
+        .cells(from: clock.addingTimeInterval(-5 * day), to: clock) { log.record($0) }
+
+    #expect(filled.filesOpened == 0)
+    #expect(log.reports == [HistoryFill.Progress(filesOpened: 0, filesTotal: 0)])
+}
