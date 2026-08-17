@@ -81,7 +81,16 @@ public enum HistoryQuery {
         }
     }
 
-    public enum Dimension: Equatable, CaseIterable, Sendable { case project, model }
+    public enum Dimension: Equatable, CaseIterable, Sendable {
+        case project, model
+
+        public var title: String {
+            switch self {
+            case .project: return "Project"
+            case .model: return "Model"
+            }
+        }
+    }
 
     // MARK: - Scoreboard
 
@@ -219,6 +228,67 @@ public enum HistoryQuery {
         return points
     }
 
+    /// One window's cells, by the **same bucket-ownership rule** `scoreboard`
+    /// weighs its units with.
+    ///
+    /// 🔴 This exists so the breakdown can be pointed at one window and still
+    /// sum to that window's scoreboard row. Filtering on `start...end` in
+    /// seconds instead would take a different set around every reset, and the
+    /// headline and the bars under it would disagree by a bucket — small,
+    /// plausible, and permanent.
+    public static func cells(_ cells: [HistoryRow], in window: WindowRow) -> [HistoryRow] {
+        let first = WindowLedger.firstBucketStart(atOrAfter: window.start)
+        let last = WindowLedger.lastBucketStart(before: window.end)
+        guard first <= last else { return [] }
+        return cells.filter { $0.bucket >= first && $0.bucket <= last }
+    }
+
+    /// One point per hour of the window, for display only.
+    ///
+    /// ⚠️ A week at 15-minute resolution is ~670 points per series, three series
+    /// deep. That is a line chart drawing 2,000 marks to render something the
+    /// eye reads at a tenth of the resolution. The query keeps every bucket —
+    /// the totals must stay exact — and only the drawn series is thinned.
+    ///
+    /// **The LAST point in each hour wins**, because the series is cumulative:
+    /// the running total at the end of the hour is the true total at that hour.
+    /// Taking the first, or a mean, would draw a curve that lags or undershoots
+    /// its own endpoint.
+    ///
+    /// The origin and the final point are always kept. The origin is what makes
+    /// overlaid curves start from one place; the final point is the window's
+    /// real total, and a chart whose last drawn value is an hour short of it
+    /// disagrees with the scoreboard printed above it.
+    public static func hourly(_ points: [CurvePoint], windowDuration: TimeInterval) -> [CurvePoint] {
+        guard points.count > 2, windowDuration > 0 else { return points }
+        let hours = max(1, Int((windowDuration / 3600).rounded()))
+
+        func hour(of point: CurvePoint) -> Int {
+            let scaled = point.elapsedFraction * Double(hours)
+            // `Int(Double)` traps on NaN and on anything outside Int's range.
+            // `burnCurve` clamps its fractions, but this is public and the trap
+            // is a crash rather than an error.
+            guard scaled.isFinite else { return 0 }
+            // `hours - 1`, not `hours`: a fraction of exactly 1.0 is the
+            // window's final instant, which belongs to the LAST hour rather
+            // than to a 169th one containing a single point.
+            return Int(min(max(scaled, 0), Double(hours - 1)))
+        }
+
+        var result = [points[0]]
+        var current = -1                    // no real hour, so the first point appends
+        for point in points.dropFirst() {
+            let bucket = hour(of: point)
+            if bucket == current {
+                result[result.count - 1] = point
+            } else {
+                result.append(point)
+                current = bucket
+            }
+        }
+        return result
+    }
+
     // MARK: - Breakdown
 
     /// Weighted units by project or model, descending, with the tail past
@@ -256,7 +326,20 @@ public enum HistoryQuery {
 
         // Ties break on the label so the table does not reshuffle between
         // refreshes; dictionary order is unspecified.
-        let ranked = totals.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+        //
+        // ⚠️ **A label that consumed nothing is dropped, not ranked.** The real
+        // archive carries a `<synthetic>` model — Claude Code's placeholder for
+        // an assistant message it produced without an API call — on nine cells
+        // whose four token counts are all zero. In a magnitude chart that is a
+        // bar with no length and a cryptic name, which reads as a defect. The
+        // rule is stated as "zero units" rather than as that literal string on
+        // purpose: a `<synthetic>` cell that ever *did* carry tokens is real
+        // usage and must appear, and any other label that burned nothing has
+        // equally nothing to show. Dropping zero changes no total and no share,
+        // so the rows still reconcile exactly.
+        let ranked = totals
+            .filter { $0.value > 0 }
+            .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
 
         func share(_ units: Double) -> Double { total > 0 ? units / total : 0 }
         func row(_ label: String, _ units: Double, isOther: Bool) -> BreakdownRow {
@@ -268,8 +351,11 @@ public enum HistoryQuery {
             return ranked.map { row($0.key, $0.value, isOther: false) }
         }
         var rows = ranked.prefix(keep).map { row($0.key, $0.value, isOther: false) }
-        rows.append(row(otherLabel, ranked.dropFirst(keep).reduce(0) { $0 + $1.value },
-                        isOther: true))
+        let tail = ranked.dropFirst(keep).reduce(0) { $0 + $1.value }
+        // Same rule as above: an Other row worth nothing is a bar with no
+        // length. It cannot happen while every ranked row is positive, and it
+        // is written down rather than reasoned about.
+        if tail > 0 { rows.append(row(otherLabel, tail, isOther: true)) }
         return rows
     }
 }

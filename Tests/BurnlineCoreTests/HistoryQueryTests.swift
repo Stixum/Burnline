@@ -259,7 +259,108 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
     #expect(isClose(points.last!.units, 10 * Weights.default.output))
 }
 
+@Test func hourlyKeepsTheOriginTheTotalAndOnePointPerHour() {
+    // ⚠️ A week at 15-minute resolution is ~670 points per series, and three
+    // series overlay. The query keeps every bucket — the totals must stay exact
+    // — and only the drawn series is thinned.
+    //
+    // Three properties, and all three are load-bearing. The origin is what
+    // makes overlaid curves start from one place. The final point is the
+    // window's real total, and a chart whose last drawn value is an hour short
+    // of it disagrees with the scoreboard printed above it. And the count is
+    // the whole reason the function exists.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let cells = (0..<(7 * 96)).map { cell(bucket: queryBase + $0 * 900, output: 10) }
+
+    let full = HistoryQuery.burnCurve(cells: cells, start: start,
+                                      end: start.addingTimeInterval(sevenDays),
+                                      weights: .default)
+    let drawn = HistoryQuery.hourly(full, windowDuration: sevenDays)
+
+    #expect(full.count == 7 * 96 + 1)              // the premise: this is worth thinning
+    #expect(drawn.count <= 7 * 24 + 1)
+    #expect(drawn.first == full.first)             // the (0, 0) anchor
+    #expect(drawn.last == full.last)               // the true window total
+    for (previous, next) in zip(drawn, drawn.dropFirst()) {
+        #expect(next.elapsedFraction > previous.elapsedFraction)
+        #expect(next.units >= previous.units)
+    }
+}
+
+@Test func hourlyTakesTheLastPointInEachHourNotTheFirst() {
+    // The series is CUMULATIVE, so the running total at the end of the hour is
+    // the true total at that hour. Taking the first point would draw a curve
+    // that lags its own data by an hour and undershoots every reading — a
+    // plausible-looking chart that is quietly wrong.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    // Three buckets, ending 15, 30 and 45 minutes in — all inside the window's
+    // first hour. A fourth would end exactly on the hour mark and open the next
+    // one, which is correct and would hide what this test is checking.
+    let cells = (0..<3).map { cell(bucket: queryBase + $0 * 900, output: 10) }
+
+    let full = HistoryQuery.burnCurve(cells: cells, start: start,
+                                      end: start.addingTimeInterval(sevenDays),
+                                      weights: .default)
+    let drawn = HistoryQuery.hourly(full, windowDuration: sevenDays)
+
+    // They collapse to one point, carrying the total of all three rather than
+    // of the first.
+    #expect(drawn.count == 2)
+    #expect(isClose(drawn.last!.units, 30 * Weights.default.output))
+}
+
 // MARK: - Breakdown
+
+@Test func breakdownDropsALabelThatConsumedNothing() {
+    // The real archive carries a `<synthetic>` model on nine cells whose four
+    // token counts are ALL ZERO — Claude Code's placeholder for an assistant
+    // message it produced without an API call. In a magnitude chart that is a
+    // bar with no length under a cryptic name, which reads as a defect.
+    //
+    // ⚠️ The rule is "zero units", not that literal string: a `<synthetic>`
+    // cell that ever did carry tokens is real usage and must appear. The second
+    // half of this test is what holds that distinction.
+    let cells = [
+        cell(bucket: queryBase, model: "claude-sonnet-5", output: 100),
+        cell(bucket: queryBase + 900, model: "<synthetic>"),               // all zero
+    ]
+
+    let rows = HistoryQuery.breakdown(cells: cells, by: .model, weights: .default, limit: 10)
+    #expect(rows.map(\.label) == ["claude-sonnet-5"])
+
+    // Same label, real tokens: it is usage, and it appears.
+    let earned = HistoryQuery.breakdown(
+        cells: cells + [cell(bucket: queryBase + 1_800, model: "<synthetic>", output: 5)],
+        by: .model, weights: .default, limit: 10)
+    #expect(earned.map(\.label) == ["claude-sonnet-5", "<synthetic>"])
+}
+
+@Test func breakdownOfOneWindowReconcilesWithItsScoreboardRow() {
+    // 🔴 The path the History window actually takes: the range control points
+    // the breakdown at one window, and the bars must add up to the units that
+    // window's scoreboard row prints. They only do if BOTH sides slice the
+    // archive by the same bucket-ownership rule — hence `cells(_:in:)` rather
+    // than a `start...end` filter in the view, which would differ by a bucket
+    // around every reset.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let nextStart = start.addingTimeInterval(sevenDays)
+    let cells = [
+        cell(bucket: queryBase - 900, project: "before", output: 999),
+        cell(bucket: queryBase, project: "burnline", model: "claude-opus-5", output: 10),
+        cell(bucket: queryBase + Int(sevenDays) - 900, project: "other", output: 20),
+        cell(bucket: queryBase + Int(sevenDays), project: "after", output: 777),
+    ]
+    let window = weekRow(start: start)
+
+    let scoreboard = HistoryQuery.scoreboard(
+        windows: [window, weekRow(start: nextStart)], cells: cells,
+        coverage: Coverage(records: []), weights: .default)
+    let bars = HistoryQuery.breakdown(cells: HistoryQuery.cells(cells, in: window),
+                                      by: .project, weights: .default, limit: 10)
+
+    #expect(bars.map(\.label).sorted() == ["burnline", "other"])   // neither neighbour leaked
+    #expect(isClose(scoreboard[1].units, bars.reduce(0) { $0 + $1.units }))
+}
 
 @Test func breakdownIsSortedDescendingByUnits() {
     // The breakdown exists to answer "where did it go", so the biggest
