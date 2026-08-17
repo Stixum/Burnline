@@ -34,8 +34,43 @@ public struct HistoryFill: Sendable {
         }
     }
 
+    /// How far a fill has got, for a caller that has to sit through ~20 seconds
+    /// of it and say something meaningful the whole time.
+    ///
+    /// ⚠️ `filesOpened` here counts candidates the fill has *finished with*, so
+    /// it runs one ahead of `Result.filesOpened` for any file that could not be
+    /// read. The divergence is deliberate and the two fields keep their own
+    /// meanings: `Result.filesOpened` stays the narrow "files genuinely read",
+    /// because a test uses it to pin the mtime bound, while progress must always
+    /// reach its total — a bar that stops at 2,399 of 2,400 because one
+    /// transcript was deleted mid-fill reads as exactly the hang this removes.
+    /// The gap between enumerating and opening is now ~20 seconds wide, which is
+    /// long enough for Claude Code's own cleanup to make that happen.
+    public struct Progress: Equatable, Sendable {
+        public let filesOpened: Int
+        public let filesTotal: Int
+
+        public init(filesOpened: Int, filesTotal: Int) {
+            self.filesOpened = filesOpened
+            self.filesTotal = filesTotal
+        }
+    }
+
     /// Records in `[from, to]`, folded into rows. Both bounds inclusive.
+    ///
+    /// ⚠️ An overload rather than a defaulted `onProgress`, for the same reason
+    /// `ApplicationSupport.directory()` is one: a default argument generator is
+    /// emitted into each *caller's* object file, so adding one renames the
+    /// symbol every existing caller references and breaks incremental builds
+    /// until an unrelated file is touched. It delegates, so there is one
+    /// implementation rather than two that can drift.
     public func cells(from: Date, to: Date) throws -> Result {
+        try cells(from: from, to: to, onProgress: { _ in })
+    }
+
+    /// As above, reporting after each candidate file is consumed.
+    public func cells(from: Date, to: Date,
+                      onProgress: @Sendable (Progress) -> Void) throws -> Result {
         let parser = TranscriptParser()
         let step = Int(Bucket.seconds)
         var totals: [Cell: TokenCounts] = [:]
@@ -43,26 +78,19 @@ public struct HistoryFill: Sendable {
         var filesOpened = 0
         var oldest: Date?
 
-        let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
-        let enumerator = FileManager.default.enumerator(
-            at: rootURL,
-            includingPropertiesForKeys: keys,
-            options: [.skipsHiddenFiles]
-        )
+        let files = candidateFiles(from: from)
 
-        while let url = enumerator?.nextObject() as? URL {
-            guard url.pathExtension == "jsonl" else { continue }
-            guard let values = try? url.resourceValues(forKeys: Set(keys)),
-                  values.isRegularFile == true else { continue }
+        // Reported before anything is opened, so a caller gets a real
+        // denominator up front instead of an indeterminate spinner — and so a
+        // range with nothing to read reports at all. Silence there would
+        // recreate the ambiguity this parameter exists to remove: no callback
+        // cannot be told apart from a fill that never started.
+        onProgress(Progress(filesOpened: 0, filesTotal: files.count))
 
-            // The one mtime bound that belongs here. mtime is the last append,
-            // so every record in the file precedes it: a file untouched since
-            // before the range began cannot hold one inside it. This keeps a
-            // gap fill off most of ~2,470 files instead of opening all of them.
-            //
-            // ⚠️ Deliberately NOT the scanner's retention cutoff, which bounds
-            // the other end — escaping that is the point of this type.
-            guard (values.contentModificationDate ?? .distantPast) >= from else { continue }
+        for (index, url) in files.enumerated() {
+            // In a `defer` so a file that could not be read still advances the
+            // count; see `Progress`.
+            defer { onProgress(Progress(filesOpened: index + 1, filesTotal: files.count)) }
 
             guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { continue }
             filesOpened += 1
@@ -105,6 +133,47 @@ public struct HistoryFill: Sendable {
         return Result(rows: rows,
                       truncated: (oldest ?? .distantFuture) > from,
                       filesOpened: filesOpened)
+    }
+
+    /// Every file this range could possibly draw from, in enumeration order.
+    ///
+    /// Split out from the read loop so `filesTotal` is settled before the first
+    /// file is opened: progress that discovers its own denominator as it goes
+    /// can only drive an indeterminate bar, which is what the 20.4-second fill
+    /// needed to stop doing. The extra pass costs a directory walk and one
+    /// `stat` per file — nothing next to reading ~2,470 of them, and the `stat`
+    /// was already being paid here.
+    private func candidateFiles(from: Date) -> [URL] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
+        let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        )
+
+        var found: [URL] = []
+        while let url = enumerator?.nextObject() as? URL {
+            guard url.pathExtension == "jsonl" else { continue }
+            guard let values = try? url.resourceValues(forKeys: Set(keys)),
+                  values.isRegularFile == true else { continue }
+
+            // The one mtime bound that belongs here. mtime is the last append,
+            // so every record in the file precedes it: a file untouched since
+            // before the range began cannot hold one inside it. This keeps a
+            // gap fill off most of ~2,470 files instead of opening all of them.
+            //
+            // ⚠️ Deliberately NOT the scanner's retention cutoff, which bounds
+            // the other end — escaping that is the point of this type.
+            //
+            // It lives here rather than in the read loop so the progress total
+            // counts files that will actually be read, not everything under the
+            // root. A bar against the wrong denominator would crawl to 8% and
+            // then finish, which is worse than no bar.
+            guard (values.contentModificationDate ?? .distantPast) >= from else { continue }
+
+            found.append(url)
+        }
+        return found
     }
 
     /// 🔴 The aggregation identity, and it carries no file. Several transcripts

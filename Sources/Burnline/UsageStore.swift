@@ -2,11 +2,70 @@ import Foundation
 import Observation
 import BurnlineCore
 
+/// What the launch fill is doing, for a UI that has to sit through it.
+///
+/// 🔴 `.idle` is not a cosmetic case. Without it, "first launch, the archive is
+/// still filling" and "the archive is genuinely empty" render identically while
+/// meaning opposite things — and the fill is a measured 20.4 seconds over a real
+/// corpus, which is long enough for someone to reach the wrong conclusion and
+/// act on it.
+///
+/// Internal rather than `public`: nothing else in this executable target is
+/// public, and the only readers are the SwiftUI views compiled alongside it.
+enum HistoryFillState: Equatable, Sendable {
+    /// No fill has run this launch.
+    case idle
+    /// In flight — the 20.4-second case, and the whole reason for the callback.
+    case filling(HistoryFill.Progress)
+    case complete
+    /// At least one range could not be read. It claimed no coverage, so the
+    /// next launch retries it; this only says the launch was incomplete.
+    case failed(String)
+}
+
+/// Decides which of a fill's progress reports are worth a hop to the main actor.
+///
+/// A full corpus is ~2,470 files. Publishing every one would be ~2,470 hops to
+/// move a bar by 0.04% each — and the fill runs off the main actor precisely so
+/// the menu bar comes up while it works, so flooding the actor with updates
+/// hands back the thing being bought. **The stride is 25 files**: ~100 updates
+/// across the measured 20.4 seconds, smooth to the eye and nothing to the actor.
+///
+/// Files rather than milliseconds, because this fires thousands of times and a
+/// file count is already in hand where a clock read would not be.
+///
+/// The first and last reports pass whatever the stride says. The first is what
+/// turns an indeterminate spinner into a real denominator; the last is what
+/// proves the range finished, and a bar frozen at 2,450 of 2,470 is exactly the
+/// hang this was built to stop showing.
+private final class ProgressGate: @unchecked Sendable {
+    private static let filesBetweenUpdates = 25
+
+    private let lock = NSLock()
+    private var lastPublished = -1
+
+    func admits(_ progress: HistoryFill.Progress) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard progress.filesOpened != lastPublished else { return false }
+        guard progress.filesOpened == 0
+                || progress.filesOpened == progress.filesTotal
+                || progress.filesOpened - lastPublished >= Self.filesBetweenUpdates
+        else { return false }
+        lastPublished = progress.filesOpened
+        return true
+    }
+}
+
 @MainActor
 @Observable
 final class UsageStore {
     private(set) var snapshot: Snapshot
     private(set) var isScanning = false
+
+    /// How the launch fill is going. Observed, so a History window can show real
+    /// progress for the 20.4 seconds rather than a spinner that reads as a hang.
+    private(set) var historyFillState: HistoryFillState = .idle
 
     /// Written through to disk on every mutation, so SwiftUI bindings in the
     /// settings window persist without any explicit save step.
@@ -153,7 +212,7 @@ final class UsageStore {
     private func startHistoryFill() {
         let writer = historyWriter
         let fill = historyFill
-        fillTask = Task.detached(priority: .utility) {
+        fillTask = Task.detached(priority: .utility) { [weak self] in
             let now = Date()
             let horizon = Int(now.addingTimeInterval(-31 * 86_400).timeIntervalSince1970)
             // A read hint only — it narrows which transcripts get opened. The
@@ -162,24 +221,73 @@ final class UsageStore {
             let uncovered = await writer.currentCoverage()
                 .uncovered(from: horizon, through: Int(now.timeIntervalSince1970))
 
-            for range in uncovered {
-                guard !Task.isCancelled else { return }
-                // A range that could not be read claims no coverage: skipping
-                // the commit leaves it uncovered for the next launch to retry,
-                // where claiming a range never written is unrecoverable.
-                guard let result = try? fill.cells(
-                    from: Date(timeIntervalSince1970: Double(range.lowerBound)),
-                    to: Date(timeIntervalSince1970: Double(range.upperBound))
-                ) else { continue }
+            var failure: String?
 
-                // The span reaches `now`, which is inside the still-filling
-                // bucket. `HistoryWriter.commit` clamps it — clamping here as
-                // well would drop a bucket the flush is entitled to restate.
-                await writer.commit(payload: .init(rows: result.rows, span: range,
-                                                   truncated: result.truncated),
-                                    filledBy: "fill", observation: nil)
+            for range in uncovered {
+                // Nothing is published on cancellation. `stop()` is the app
+                // going away, so the last state anyone could see is moot.
+                guard !Task.isCancelled else { return }
+
+                // Per range, because each range counts its own files. A second
+                // range restarts the bar, which is honest — the total genuinely
+                // changed — and on the launch this matters for there is one.
+                let gate = ProgressGate()
+                do {
+                    let result = try fill.cells(
+                        from: Date(timeIntervalSince1970: Double(range.lowerBound)),
+                        to: Date(timeIntervalSince1970: Double(range.upperBound))
+                    ) { progress in
+                        // Synchronous, called from the fill's own thread: it
+                        // cannot await the main actor without giving back the
+                        // 20 seconds of responsiveness this whole path buys.
+                        // So the hop is fire-and-forget, and `publish` is what
+                        // copes with the reports arriving out of order.
+                        guard gate.admits(progress) else { return }
+                        Task { @MainActor in self?.publishFillProgress(progress) }
+                    }
+
+                    // The span reaches `now`, which is inside the still-filling
+                    // bucket. `HistoryWriter.commit` clamps it — clamping here as
+                    // well would drop a bucket the flush is entitled to restate.
+                    await writer.commit(payload: .init(rows: result.rows, span: range,
+                                                       truncated: result.truncated),
+                                        filledBy: "fill", observation: nil)
+                } catch {
+                    // A range that could not be read claims no coverage: skipping
+                    // the commit leaves it uncovered for the next launch to retry,
+                    // where claiming a range never written is unrecoverable.
+                    // Recorded rather than thrown, so one bad range does not cost
+                    // the others — but it must still reach the UI, because a fill
+                    // that quietly did less than it said is how a gap goes unseen.
+                    failure = error.localizedDescription
+                }
             }
+
+            await self?.finishHistoryFill(failure: failure)
         }
+    }
+
+    /// Publishes a progress report, ignoring any that would walk the bar
+    /// backwards or reopen a finished fill.
+    ///
+    /// The reports leave the fill in order and arrive here as unordered
+    /// fire-and-forget hops, so the ordering guarantee has to be re-established
+    /// on this side. `filesTotal` is part of the comparison because it is fixed
+    /// within a range: without it, this would suppress the next range's opening
+    /// report for looking like a regression.
+    private func publishFillProgress(_ progress: HistoryFill.Progress) {
+        if case .complete = historyFillState { return }
+        if case .failed = historyFillState { return }
+        if case .filling(let current) = historyFillState,
+           current.filesTotal == progress.filesTotal,
+           current.filesOpened > progress.filesOpened { return }
+        historyFillState = .filling(progress)
+    }
+
+    /// The terminal state, and the one a UI actually branches on: past this
+    /// point an empty archive means empty, not "not yet".
+    private func finishHistoryFill(failure: String?) {
+        historyFillState = failure.map { .failed($0) } ?? .complete
     }
 
     /// The archive's forward path, run after every successful scan.
