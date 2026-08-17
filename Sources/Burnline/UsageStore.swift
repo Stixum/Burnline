@@ -49,6 +49,27 @@ final class UsageStore {
     @ObservationIgnored private var lastPollAt: Date?
     @ObservationIgnored private let highWaterStore = HighWaterStore()
     @ObservationIgnored private var highWater = HighWaterStore().load()
+
+    /// The archive's sole writer, built once and never replaced. Two paths feed
+    /// it — the launch fill and the 60s flush — and the serialization that makes
+    /// them safe is a property of this one instance.
+    ///
+    /// The schedule is a snapshot of the settings at launch. It is only the
+    /// fallback for window bounds on a machine that has never seen a capture, so
+    /// a mid-session change taking effect at the next launch is a fair trade for
+    /// keeping a single writer.
+    @ObservationIgnored private let historyWriter: HistoryWriter
+    @ObservationIgnored private let historyFill = HistoryFill(rootURL: TranscriptScanner.defaultRoot)
+    @ObservationIgnored private var fillTask: Task<Void, Never>?
+    /// The live capture as the archive wants it, refreshed on every rebuild.
+    /// Nil whenever the capture is not Anthropic's own figure for the window now
+    /// on screen.
+    @ObservationIgnored private var currentObservation: TrackingEntry?
+    /// The last entry handed to the writer. Saves an actor hop and a file read
+    /// every 10 seconds forever; `HistoryWriter.observe` stays the authority on
+    /// what the archive already holds.
+    @ObservationIgnored private var lastObservationSent: TrackingEntry?
+
     @ObservationIgnored private var scanTask: Task<Void, Never>?
     @ObservationIgnored private var captureTask: Task<Void, Never>?
     @ObservationIgnored private var lastRefresh = Date.distantPast
@@ -68,6 +89,10 @@ final class UsageStore {
         let loadedCache = cacheStore.load()
         storedSettings = loadedSettings
         cache = loadedCache
+        historyWriter = HistoryWriter(
+            store: HistoryStore(directory: ApplicationSupport.historyDirectory()),
+            schedule: loadedSettings.resetSchedule
+        )
         // A cold cache means the first scan is a few seconds; say so in the label.
         snapshot = SnapshotBuilder.build(cache: loadedCache, settings: loadedSettings,
                                          now: Date(), isScanning: loadedCache.files.isEmpty)
@@ -75,6 +100,8 @@ final class UsageStore {
 
     func start() {
         guard scanTask == nil else { return }
+
+        startHistoryFill()
 
         scanTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -104,6 +131,72 @@ final class UsageStore {
         scanTask = nil
         captureTask?.cancel()
         captureTask = nil
+        fillTask?.cancel()
+        fillTask = nil
+    }
+
+    // MARK: - History archive
+
+    /// Archives every bucket range the archive does not already hold, back to
+    /// one day past Claude Code's 30-day `cleanupPeriodDays` default — far
+    /// enough to reach everything that can still exist, without walking further
+    /// back on every launch forever.
+    ///
+    /// ⚠️ **Detached and deliberately never awaited.** Over a full corpus this
+    /// is 15–25 seconds of file I/O, and the menu bar has to be live long before
+    /// that; nothing in the UI may wait on it.
+    ///
+    /// It collides with the first flush on the very first launch, because
+    /// `start()` kicks `refresh()` immediately. That is expected: `HistoryWriter`
+    /// is what serializes the two, and a second guard here would only hide the
+    /// case it already handles.
+    private func startHistoryFill() {
+        let writer = historyWriter
+        let fill = historyFill
+        fillTask = Task.detached(priority: .utility) {
+            let now = Date()
+            let horizon = Int(now.addingTimeInterval(-31 * 86_400).timeIntervalSince1970)
+            // A read hint only — it narrows which transcripts get opened. The
+            // writer re-decides what is genuinely uncovered at commit, inside
+            // the actor, so a range that went stale in between is harmless.
+            let uncovered = await writer.currentCoverage()
+                .uncovered(from: horizon, through: Int(now.timeIntervalSince1970))
+
+            for range in uncovered {
+                guard !Task.isCancelled else { return }
+                // A range that could not be read claims no coverage: skipping
+                // the commit leaves it uncovered for the next launch to retry,
+                // where claiming a range never written is unrecoverable.
+                guard let result = try? fill.cells(
+                    from: Date(timeIntervalSince1970: Double(range.lowerBound)),
+                    to: Date(timeIntervalSince1970: Double(range.upperBound))
+                ) else { continue }
+
+                // The span reaches `now`, which is inside the still-filling
+                // bucket. `HistoryWriter.commit` clamps it — clamping here as
+                // well would drop a bucket the flush is entitled to restate.
+                await writer.commit(payload: .init(rows: result.rows, span: range,
+                                                   truncated: result.truncated),
+                                    filledBy: "fill", observation: nil)
+            }
+        }
+    }
+
+    /// The archive's forward path, run after every successful scan.
+    ///
+    /// Off the main actor throughout: `payload` walks every cell in the cache
+    /// and the commit is file I/O. Awaiting it does not block the UI — the main
+    /// actor is free while it runs — and it keeps the flush ordered behind the
+    /// scan that produced it.
+    private func flushHistory(cache: ScanCache, observation: TrackingEntry?, now: Date) async {
+        let writer = historyWriter
+        await Task.detached(priority: .utility) {
+            // Again a read hint, narrowing what the payload has to compute.
+            let payload = HistoryArchive.payload(from: cache,
+                                                 coverage: await writer.currentCoverage(),
+                                                 through: Int(now.timeIntervalSince1970))
+            await writer.commit(payload: payload, filledBy: "scan", observation: observation)
+        }.value
     }
 
     /// Called when the popover opens. Debounced so repeated clicks don't rescan.
@@ -145,6 +238,12 @@ final class UsageStore {
         lastRefresh = Date()
         isScanning = false
         rebuild()
+
+        // After the rebuild, so the observation handed to the writer is the one
+        // that matches the snapshot now on screen. `now` is the scan's clock,
+        // not a fresh one: the cache was built against it, so anything later
+        // would claim coverage for buckets this scan never read.
+        await flushHistory(cache: updated, observation: currentObservation, now: now)
 
         // On the 60s scan path, not the 10s rebuild: this is directory I/O plus
         // deletes. Placed after `rebuild()` so `snapshot.window` is the current
@@ -345,5 +444,30 @@ final class UsageStore {
                                          now: Date(), isScanning: isScanning,
                                          rejected: rejected,
                                          scopedWeekly: utilization?.scopedWeekly)
+
+        // The archive's observation feed. Gated on `capturedPercent` rather than
+        // on the capture existing: that is non-nil only when the reading is
+        // Anthropic's own figure for the window now on screen, so an
+        // extrapolated percentage — or one belonging to a window that has
+        // already reset — can never reach a file that cannot be recomputed.
+        //
+        // `capture` is the high-water-reconciled reading the snapshot was built
+        // from, so both halves of the entry come from the same capture.
+        guard snapshot.capturedPercent != nil, let capture else {
+            currentObservation = nil
+            return
+        }
+        let entry = TrackingEntry(percent: capture.sevenDay.usedPercent,
+                                  at: capture.capturedDate,
+                                  resetsAt: capture.sevenDay.resetsDate)
+        currentObservation = entry
+
+        // Fire and forget. `rebuild()` is @MainActor and runs every 10 seconds
+        // plus on every settings mutation — it may never wait on the actor, and
+        // it may never write a file itself.
+        guard entry != lastObservationSent else { return }
+        lastObservationSent = entry
+        let writer = historyWriter
+        Task.detached(priority: .utility) { await writer.observe(entry) }
     }
 }
