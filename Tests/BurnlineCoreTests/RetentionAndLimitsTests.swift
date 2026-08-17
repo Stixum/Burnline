@@ -4,6 +4,13 @@ import Foundation
 
 // MARK: - Buckets inside a surviving file
 
+/// Cells hold raw tokens. An input token on a sonnet model is the identity
+/// mapping under `Weights.default` (`input: 1.0` × sonnet `1.0`), so the totals
+/// asserted below are the same numbers this file always asserted.
+private func cell(_ inputTokens: Int) -> [String: TokenCounts] {
+    ["claude-sonnet-5": TokenCounts(input: inputTokens)]
+}
+
 /// `evict` drops whole files by mtime, but a file that keeps being appended to
 /// never ages out — so its old buckets lived forever. Retention is 14 days and a
 /// window is 7, so a bucket past the cutoff can never fall inside a live window.
@@ -15,13 +22,13 @@ import Foundation
     var cache = ScanCache()
     cache.files["live.jsonl"] = FileState(
         modifiedAt: now, size: 1, offset: 1,
-        buckets: [String(Bucket.key(for: fresh)): 10,
-                  String(Bucket.key(for: ancient)): 999])
+        cells: [String(Bucket.key(for: fresh)): cell(10),
+                String(Bucket.key(for: ancient)): cell(999)])
 
     cache.evict(before: now.addingTimeInterval(-ScanCache.retention))
 
-    #expect(cache.files["live.jsonl"]?.buckets.count == 1)
-    #expect(cache.units(from: .distantPast, to: .distantFuture) == 10)
+    #expect(cache.files["live.jsonl"]?.cells.count == 1)
+    #expect(cache.units(from: .distantPast, to: .distantFuture, weights: .default) == 10)
 }
 
 @Test func evictionKeepsEveryBucketInsideRetention() {
@@ -29,13 +36,13 @@ import Foundation
     var cache = ScanCache()
     cache.files["live.jsonl"] = FileState(
         modifiedAt: now, size: 1, offset: 1,
-        buckets: [String(Bucket.key(for: now.addingTimeInterval(-86_400))): 10,
-                  String(Bucket.key(for: now.addingTimeInterval(-10 * 86_400))): 5])
+        cells: [String(Bucket.key(for: now.addingTimeInterval(-86_400))): cell(10),
+                String(Bucket.key(for: now.addingTimeInterval(-10 * 86_400))): cell(5)])
 
     cache.evict(before: now.addingTimeInterval(-ScanCache.retention))
 
-    #expect(cache.files["live.jsonl"]?.buckets.count == 2)
-    #expect(cache.units(from: .distantPast, to: .distantFuture) == 15)
+    #expect(cache.files["live.jsonl"]?.cells.count == 2)
+    #expect(cache.units(from: .distantPast, to: .distantFuture, weights: .default) == 15)
 }
 
 // MARK: - Anchors are pruned on write, not just filtered on read

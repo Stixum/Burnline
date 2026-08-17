@@ -6,55 +6,68 @@ public struct FileState: Equatable, Sendable, Codable {
     public var size: Int
     /// Byte offset of the end of the last *complete* line consumed.
     public var offset: Int
-    /// Bucket key (as a string, so it survives JSON) → weighted units.
-    public var buckets: [String: Double]
+    /// Bucket key (as a string, so it survives JSON) → model → raw counts.
+    ///
+    /// Nested rather than a `"\(bucket)|\(model)"` composite: a delimiter
+    /// appearing in a model id would silently corrupt the key.
+    public var cells: [String: [String: TokenCounts]]
 
     public init(modifiedAt: Date = .distantPast, size: Int = 0, offset: Int = 0,
-                buckets: [String: Double] = [:]) {
+                cells: [String: [String: TokenCounts]] = [:]) {
         self.modifiedAt = modifiedAt
         self.size = size
         self.offset = offset
-        self.buckets = buckets
+        self.cells = cells
     }
 }
 
 /// Persistent incremental scan state. Lives at
 /// `~/Library/Application Support/Burnline/scan-cache.json`.
 public struct ScanCache: Equatable, Sendable, Codable {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
     /// Files untouched for longer than this are dropped.
     public static let retention: TimeInterval = 14 * 86_400
 
     public var version: Int
     public var files: [String: FileState]
-    /// The weights the buckets were scored with.
-    ///
-    /// Buckets hold *weighted* units, so a cache says nothing about any other
-    /// weight set — and the scale can't be recovered after the fact. `nil` means
-    /// a cache written before this was tracked, which is equally unusable.
-    public var weights: Weights?
 
-    public init(version: Int = ScanCache.currentVersion, files: [String: FileState] = [:],
-                weights: Weights? = nil) {
+    public init(version: Int = ScanCache.currentVersion, files: [String: FileState] = [:]) {
         self.version = version
         self.files = files
-        self.weights = weights
     }
 
     public var isCompatible: Bool { version == Self.currentVersion }
 
-    /// Total weighted units in `[start, end)`.
-    public func units(from start: Date, to end: Date) -> Double {
+    /// Total weighted units in `[start, end)`, weighted at READ time.
+    ///
+    /// Deliberately an explicit overload rather than a defaulted `weights:`
+    /// parameter: a default argument generator is emitted into each *caller's*
+    /// object file, so adding a default renames the symbol every caller
+    /// references. This project has been bitten by exactly that before.
+    public func units(from start: Date, to end: Date, weights: Weights) -> Double {
         let lower = Bucket.key(for: start)
         let upper = Bucket.key(for: end)
+        let resolved = ConsumptionModel.ResolvedMultipliers(models: modelsPresent, weights: weights)
         var total = 0.0
         for state in files.values {
-            for (rawKey, units) in state.buckets {
+            for (rawKey, byModel) in state.cells {
                 guard let key = Int(rawKey), key >= lower, key < upper else { continue }
-                total += units
+                for (model, counts) in byModel {
+                    total += ConsumptionModel.units(for: counts, multiplier: resolved[model],
+                                                    weights: weights)
+                }
             }
         }
         return total
+    }
+
+    /// Every model id in the cache, for one-shot multiplier resolution.
+    var modelsPresent: Set<String> {
+        var models = Set<String>()
+        for state in files.values {
+            for byModel in state.cells.values { models.formUnion(byModel.keys) }
+        }
+        return models
     }
 
     /// Drops files not modified since `cutoff`, and stale buckets inside the
@@ -72,7 +85,7 @@ public struct ScanCache: Equatable, Sendable, Codable {
         files = files.compactMapValues { state in
             guard state.modifiedAt >= cutoff else { return nil }
             var state = state
-            state.buckets = state.buckets.filter { key, _ in
+            state.cells = state.cells.filter { key, _ in
                 guard let key = Int(key) else { return false }
                 return key >= oldestKey
             }

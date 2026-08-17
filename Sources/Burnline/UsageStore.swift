@@ -123,12 +123,12 @@ final class UsageStore {
         isScanning = true
         rebuild()
 
-        let scanner = TranscriptScanner(weights: storedSettings.weights)
+        let scanner = TranscriptScanner()
         let current = cache
         let now = Date()
         let store = cacheStore
 
-        // ScanCache, TranscriptScanner, Weights and CacheStore are all Sendable,
+        // ScanCache, TranscriptScanner and CacheStore are all Sendable,
         // so the scan hops off the main actor cleanly with no locking. Persisting
         // goes with it: the cache is a few hundred KB and encoding it has no
         // business on the UI thread.
@@ -279,7 +279,7 @@ final class UsageStore {
         // Anchor against the window actually on screen, which may have come
         // from a live capture rather than the configured schedule.
         let window = snapshot.window
-        let units = cache.units(from: window.start, to: window.end)
+        let units = cache.units(from: window.start, to: window.end, weights: storedSettings.weights)
         var updated = storedSettings
         updated.calibrationAnchors.append(
             CalibrationAnchor(timestamp: now, observedPercent: observedPercent, unitsInWindow: units)

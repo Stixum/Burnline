@@ -11,10 +11,14 @@ private func settings(anchors: [CalibrationAnchor] = []) -> BurnlineSettings {
     return settings
 }
 
-private func cache(units: Double, at date: Date) -> ScanCache {
+/// Cells hold raw tokens now. An input token on a sonnet model is the identity
+/// mapping under `Weights.default` — `input: 1.0` × sonnet `1.0` — so `units`
+/// here is still both the fixture and the weighted total it renders to.
+private func cache(units: Int, at date: Date) -> ScanCache {
     var cache = ScanCache()
-    cache.files["a.jsonl"] = FileState(modifiedAt: date, size: 1, offset: 1,
-                                       buckets: [String(Bucket.key(for: date)): units])
+    cache.files["a.jsonl"] = FileState(
+        modifiedAt: date, size: 1, offset: 1,
+        cells: [String(Bucket.key(for: date)): ["claude-sonnet-5": TokenCounts(input: units)]])
     return cache
 }
 

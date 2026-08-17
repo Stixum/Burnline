@@ -15,7 +15,7 @@ if let hour = ProcessInfo.processInfo.environment["BURNLINE_HOUR"].flatMap(Int.i
     settings.resetSchedule.hour = hour
 }
 
-let scanner = TranscriptScanner(weights: settings.weights)
+let scanner = TranscriptScanner()
 
 // Cold: empty cache, reads every retained file whole.
 let coldStarted = Date()
@@ -27,8 +27,9 @@ let elapsed = Date().timeIntervalSince(coldStarted)
 let warmStarted = Date()
 let warmCache = try scanner.scan(cache: cache, now: now)
 let warmElapsed = Date().timeIntervalSince(warmStarted)
-let drift = abs(warmCache.units(from: now.addingTimeInterval(-30 * 86_400), to: now)
-    - cache.units(from: now.addingTimeInterval(-30 * 86_400), to: now))
+let drift = abs(warmCache.units(from: now.addingTimeInterval(-30 * 86_400), to: now,
+                                weights: settings.weights)
+    - cache.units(from: now.addingTimeInterval(-30 * 86_400), to: now, weights: settings.weights))
 
 // Same inputs the app uses, so the probe can diagnose what the app is doing —
 // including the high-water reconciliation, without persisting a new mark.

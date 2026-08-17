@@ -43,25 +43,25 @@ private let scanTime = Date()
 @Test func scansASingleFile() throws {
     let dir = TempDir()
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
-    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let scanner = TranscriptScanner(rootURL: dir.url)
     let cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     // 100 output x 5.0 x sonnet 1.0
-    #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 500) < 1e-9)
 }
 
 @Test func ignoresNonJSONLFiles() throws {
     let dir = TempDir()
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
     _ = dir.write(line(output: 100), to: "proj/notes.txt")
-    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let scanner = TranscriptScanner(rootURL: dir.url)
     let cache = try scanner.scan(cache: ScanCache(), now: scanTime)
-    #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 500) < 1e-9)
 }
 
 @Test func secondScanReadsOnlyAppendedBytes() throws {
     let dir = TempDir()
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
-    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let scanner = TranscriptScanner(rootURL: dir.url)
     var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     let firstOffset = cache.files.values.first!.offset
 
@@ -69,17 +69,17 @@ private let scanTime = Date()
     cache = try scanner.scan(cache: cache, now: scanTime)
 
     #expect(cache.files.values.first!.offset > firstOffset)
-    #expect(abs(cache.units(from: never, to: .distantFuture) - 1000) < 1e-9)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 1000) < 1e-9)
 }
 
 @Test func rescanningAnUnchangedFileDoesNotDoubleCount() throws {
     let dir = TempDir()
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
-    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let scanner = TranscriptScanner(rootURL: dir.url)
     var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     cache = try scanner.scan(cache: cache, now: scanTime)
     cache = try scanner.scan(cache: cache, now: scanTime)
-    #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 500) < 1e-9)
 }
 
 @Test func aTrailingPartialLineIsRereadIntact() throws {
@@ -89,41 +89,43 @@ private let scanTime = Date()
     let partial = String(full.dropLast(30))   // no trailing newline
     _ = dir.write(complete + partial, to: "proj/a.jsonl")
 
-    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let scanner = TranscriptScanner(rootURL: dir.url)
     var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
-    #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 500) < 1e-9)
 
     // Complete the partial line; its full value must now be counted exactly once.
     dir.append(String(full.suffix(30)), to: "proj/a.jsonl")
     cache = try scanner.scan(cache: cache, now: scanTime)
-    #expect(abs(cache.units(from: never, to: .distantFuture) - 1500) < 1e-9)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 1500) < 1e-9)
 }
 
 @Test func aTruncatedFileIsRereadWholeRatherThanDoubleCounted() throws {
     let dir = TempDir()
     _ = dir.write(line(output: 100) + line(output: 100), to: "proj/a.jsonl")
-    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let scanner = TranscriptScanner(rootURL: dir.url)
     var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
-    #expect(abs(cache.units(from: never, to: .distantFuture) - 1000) < 1e-9)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 1000) < 1e-9)
 
     // Rewrite shorter — offset now exceeds size.
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
     cache = try scanner.scan(cache: cache, now: scanTime)
-    #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 500) < 1e-9)
 }
 
-@Test func modelWeightingIsAppliedDuringTheScan() throws {
+/// The scan records the model id per cell; the multiplier is chosen at read
+/// time. Both halves have to line up or the id is dead weight.
+@Test func theScannedModelIdSelectsTheMultiplier() throws {
     let dir = TempDir()
     _ = dir.write(line(output: 100, model: "claude-opus-5"), to: "proj/a.jsonl")
-    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let scanner = TranscriptScanner(rootURL: dir.url)
     let cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     // 100 x 5.0 output x 5.0 opus
-    #expect(abs(cache.units(from: never, to: .distantFuture) - 2500) < 1e-9)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 2500) < 1e-9)
 }
 
 @Test func missingRootDirectoryYieldsAnEmptyCache() throws {
     let missing = URL(fileURLWithPath: "/tmp/burnline-does-not-exist-\(UUID().uuidString)")
-    let scanner = TranscriptScanner(rootURL: missing, weights: .default)
+    let scanner = TranscriptScanner(rootURL: missing)
     let cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     #expect(cache.files.isEmpty)
 }
@@ -131,7 +133,7 @@ private let scanTime = Date()
 @Test func entriesForDeletedFilesAreDropped() throws {
     let dir = TempDir()
     let file = dir.write(line(output: 100), to: "proj/a.jsonl")
-    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let scanner = TranscriptScanner(rootURL: dir.url)
     var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
     #expect(cache.files.count == 1)
 
@@ -149,13 +151,13 @@ private let scanTime = Date()
     try FileManager.default.setAttributes(
         [.modificationDate: scanTime.addingTimeInterval(-20 * 86_400)], ofItemAtPath: old.path)
 
-    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let scanner = TranscriptScanner(rootURL: dir.url)
     let cache = try scanner.scan(cache: ScanCache(), now: scanTime)
 
     #expect(cache.files.count == 1)
     #expect(cache.files.keys.first?.hasSuffix("new.jsonl") == true)
     // Only the fresh file's usage counted.
-    #expect(abs(cache.units(from: never, to: .distantFuture) - 500) < 1e-9)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 500) < 1e-9)
 }
 
 /// Not a behaviour this file introduces — a precondition `UsageStore` now leans
@@ -166,7 +168,7 @@ private let scanTime = Date()
     let dir = TempDir()
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
     _ = dir.write(line(output: 250), to: "proj/nested/b.jsonl")
-    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let scanner = TranscriptScanner(rootURL: dir.url)
 
     let first = try scanner.scan(cache: ScanCache(), now: scanTime)
     let second = try scanner.scan(cache: first, now: scanTime)
@@ -174,7 +176,7 @@ private let scanTime = Date()
     #expect(second == first)
 }
 
-// MARK: - Weights are baked into the cache
+// MARK: - Weights are no longer baked into the cache
 
 private func weights(output: Double) -> Weights {
     var weights = Weights.default
@@ -182,55 +184,27 @@ private func weights(output: Double) -> Weights {
     return weights
 }
 
-/// Buckets store *weighted* units, so a cache built under one weight set says
-/// nothing about another. Editing a weight in Settings must rescore everything,
-/// not just bytes appended afterwards.
-@Test func changingWeightsRescoresEveryBucket() throws {
+/// The deliberate inversion of `changingWeightsRescoresEveryBucket`, which this
+/// replaces. Cells hold raw tokens, so a weight change is a read-time
+/// re-render: the scanner never sees the weights, a warm scan reuses the cache
+/// untouched, and the same cells render to a different total. Deleted with it:
+/// `aCacheWithNoRecordedWeightsIsRescored`, which policed the same vanished rule.
+@Test func aWeightChangeNoLongerTriggersARescan() throws {
     let dir = TempDir()
     _ = dir.write(line(output: 100), to: "proj/a.jsonl")
-
-    let light = try TranscriptScanner(rootURL: dir.url, weights: weights(output: 5))
-        .scan(cache: ScanCache(), now: scanTime)
-    #expect(abs(light.units(from: never, to: .distantFuture) - 500) < 1e-9)
-
-    // Same untouched file, tenfold output weight.
-    let heavy = try TranscriptScanner(rootURL: dir.url, weights: weights(output: 50))
-        .scan(cache: light, now: scanTime)
-
-    #expect(abs(heavy.units(from: never, to: .distantFuture) - 5_000) < 1e-9)
-}
-
-/// The counterweight to the test above: rescoring must happen only when the
-/// weights actually differ. Discarding the cache on every scan would turn the
-/// 30ms warm path back into a multi-second cold one on every refresh.
-@Test func unchangedWeightsStillScanIncrementally() throws {
-    let dir = TempDir()
-    _ = dir.write(line(output: 100), to: "proj/a.jsonl")
-    let scanner = TranscriptScanner(rootURL: dir.url, weights: .default)
+    let scanner = TranscriptScanner(rootURL: dir.url)
 
     let first = try scanner.scan(cache: ScanCache(), now: scanTime)
-    let offsetAfterFirst = first.files.values.first?.offset
+    #expect(abs(first.units(from: never, to: .distantFuture,
+                            weights: weights(output: 5)) - 500) < 1e-9)
 
+    // Warm: the same untouched file. A re-read from zero would reset and
+    // re-advance the offset to the same place, so assert the whole of `files` is
+    // unmoved — a full rescan would double the cells too.
     let second = try scanner.scan(cache: first, now: scanTime)
+    #expect(second.files == first.files)
 
-    // A re-read from zero would reset and re-advance the offset to the same
-    // place, so assert on the totals too: a full rescan would double-count.
-    #expect(second.files.values.first?.offset == offsetAfterFirst)
-    #expect(abs(second.units(from: never, to: .distantFuture) - 500) < 1e-9)
-}
-
-/// A cache written before weights were tracked can't be trusted either — there
-/// is no way to know what it was scored with.
-@Test func aCacheWithNoRecordedWeightsIsRescored() throws {
-    let dir = TempDir()
-    _ = dir.write(line(output: 100), to: "proj/a.jsonl")
-
-    var untracked = try TranscriptScanner(rootURL: dir.url, weights: weights(output: 5))
-        .scan(cache: ScanCache(), now: scanTime)
-    untracked.weights = nil
-
-    let rescored = try TranscriptScanner(rootURL: dir.url, weights: weights(output: 50))
-        .scan(cache: untracked, now: scanTime)
-
-    #expect(abs(rescored.units(from: never, to: .distantFuture) - 5_000) < 1e-9)
+    // Tenfold output weight, with no rescan in between.
+    #expect(abs(second.units(from: never, to: .distantFuture,
+                             weights: weights(output: 50)) - 5_000) < 1e-9)
 }
