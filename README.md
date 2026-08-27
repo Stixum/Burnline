@@ -52,6 +52,8 @@ Or with Homebrew:
 brew install --cask stixum/tap/burnline
 ```
 
+Burnline keeps itself up to date. It checks for new versions and offers them in place, and both the check and the automatic checking can be turned off in Settings. Updates are signed, and one that fails signature verification is refused. Homebrew installs can keep using `brew upgrade --cask burnline` instead.
+
 ## Setup
 
 Burnline works the moment you launch it. One step keeps the number current.
