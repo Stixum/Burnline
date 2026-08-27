@@ -166,6 +166,62 @@ menu bar, every format (against \(settings.targetMode.title.lowercased()))
 }.joined(separator: "\n"))
 """)
 
+// MARK: - Threshold notifications
+
+// What would fire right now, and why or why not — determined from the
+// emissions of a real `NotificationDecision.evaluate` call, never by
+// reimplementing its predicates. Thresholds are sanitized exactly as
+// `UsageStore` sanitizes at load, so the numbers shown are the ones the app
+// evaluates against. The app additionally gates on system notification
+// authorization, which a CLI process cannot read — this reports the decision
+// layer only.
+let noteSettings = settings.notifications.sanitized()
+let marks = NotificationMarksStore().load()
+print("\nthreshold notifications")
+print("  enabled          \(noteSettings.enabled ? "on" : "off")")
+if noteSettings.enabled {
+    let (emissions, _) = NotificationDecision.evaluate(
+        snapshot: snapshot, settings: noteSettings,
+        targetMode: settings.targetMode, marks: marks)
+    let firing = Set(emissions.map(\.signal))
+    // "mark held" only when the mark genuinely suppresses this window at this
+    // threshold — a stale mark from an old window, or one minted at a since-
+    // edited threshold, is not holding anything and reads "armed".
+    func describe(_ label: String, signal: NotificationDecision.Signal,
+                  value: Double?, threshold: Double,
+                  mark: NotificationMarks.Mark?, resetsAt: TimeInterval?) {
+        let state: String
+        if firing.contains(signal) {
+            state = "WOULD FIRE"
+        } else if value == nil {
+            state = "silent (no reading)"
+        } else if let resetsAt,
+                  NotificationMarks.suppresses(mark, resetsAt: resetsAt,
+                                               threshold: threshold) {
+            state = "fired this window (mark held)"
+        } else {
+            state = "armed"
+        }
+        let shown = value.map { "\(DisplayValue.whole($0))" } ?? "—"
+        print("  \(label)\(shown) vs \(DisplayValue.whole(threshold)) — \(state)")
+    }
+    let weeklyReset = snapshot.window.end.timeIntervalSince1970
+    // Points behind the target — negative while under budget.
+    describe("behind-pace      ", signal: .behindPace,
+             value: snapshot.delta(settings.targetMode).map { -$0 },
+             threshold: noteSettings.behindPacePoints,
+             mark: marks.behindPace, resetsAt: weeklyReset)
+    describe("weekly           ", signal: .weekly,
+             value: snapshot.estimatedPercent,
+             threshold: noteSettings.weeklyPercent,
+             mark: marks.weekly, resetsAt: weeklyReset)
+    describe("five-hour        ", signal: .fiveHour,
+             value: snapshot.fiveHour?.usedPercent,
+             threshold: noteSettings.fiveHourPercent,
+             mark: marks.fiveHour,
+             resetsAt: snapshot.fiveHour?.resetsAt.timeIntervalSince1970)
+}
+
 // MARK: - Usage archive
 
 // 🔴 The probe DRIVES the archive rather than describing it: it runs exactly

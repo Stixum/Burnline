@@ -10,7 +10,7 @@ import Foundation
 /// evaluation, and a capture correcting the estimate downward then climbing
 /// back does not re-fire — the mark from the first crossing still stands.
 public enum NotificationDecision {
-    public enum Signal: String, Sendable, CaseIterable {
+    public enum Signal: String, Sendable {
         case behindPace = "behind-pace"
         case weekly
         case fiveHour = "five-hour"
