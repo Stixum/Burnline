@@ -43,7 +43,7 @@ public enum NotificationDecision {
         if let delta = snapshot.delta(targetMode), delta <= -settings.behindPacePoints,
            !NotificationMarks.suppresses(marks.behindPace, resetsAt: weeklyReset,
                                          threshold: settings.behindPacePoints) {
-            let day = Int(min(snapshot.window.dayIndex, 6).rounded(.down)) + 1
+            let day = DisplayValue.floor(min(snapshot.window.dayIndex, 6)) + 1
             emissions.append(Emission(
                 signal: .behindPace,
                 title: "Behind pace",

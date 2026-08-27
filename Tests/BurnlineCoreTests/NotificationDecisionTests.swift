@@ -77,6 +77,26 @@ private func fiveHourAt(_ percent: Double, resetsIn: TimeInterval = 6_000) -> Fi
     #expect(fired.marks.fiveHour != nil)
 }
 
+@Test func decisionWeeklyMarkSurvivesAFiveHourRoll() {
+    // Both windows fire together; then the 5-hour window rolls forward while
+    // the weekly window stays put. The 5-hour signal re-fires against its new
+    // reset, and the weekly mark — keyed to the unchanged weekly reset —
+    // still suppresses. The converse direction of
+    // decisionFiveHourMarkDiesWithItsOwnResetNotTheWeekly.
+    let snap1 = decisionSnapshot(estimate: 92, fiveHour: fiveHourAt(82))
+    let fired = NotificationDecision.evaluate(snapshot: snap1, settings: onSettings,
+                                              targetMode: .realTime,
+                                              marks: NotificationMarks())
+    #expect(fired.emissions.contains { $0.signal == .weekly })
+    #expect(fired.emissions.contains { $0.signal == .fiveHour })
+
+    let snap2 = decisionSnapshot(estimate: 92,
+                                 fiveHour: fiveHourAt(82, resetsIn: 6_000 + 5 * 3_600))
+    let next = NotificationDecision.evaluate(snapshot: snap2, settings: onSettings,
+                                             targetMode: .realTime, marks: fired.marks)
+    #expect(next.emissions.map(\.signal) == [.fiveHour])
+}
+
 @Test func decisionThresholdEditRearmsAndOscillationRefires() {
     let snap = decisionSnapshot(estimate: 92)   // over both weekly 90 and pace
     var settings = onSettings
