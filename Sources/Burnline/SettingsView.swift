@@ -1,5 +1,6 @@
 import SwiftUI
 import ServiceManagement
+import UserNotifications
 import BurnlineCore
 
 struct SettingsView: View {
@@ -184,6 +185,44 @@ struct SettingsView: View {
 
                 Divider().overlay(Theme.hairline)
 
+                Text("Notifications").eyebrow()
+
+                // Routes through the store, not a direct binding: enabling
+                // requests notification permission the first time.
+                Toggle("Notify on thresholds", isOn: Binding(
+                    get: { store.settings.notifications.enabled },
+                    set: { store.setNotificationsEnabled($0) }
+                ))
+
+                Group {
+                    Stepper(value: $store.settings.notifications.behindPacePoints, in: 1...100) {
+                        Text("Behind pace by \(DisplayValue.whole(store.settings.notifications.behindPacePoints)) points")
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+
+                    Stepper(value: $store.settings.notifications.weeklyPercent, in: 1...99) {
+                        Text("Weekly usage reaches \(DisplayValue.whole(store.settings.notifications.weeklyPercent))%")
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+
+                    Stepper(value: $store.settings.notifications.fiveHourPercent, in: 1...99) {
+                        Text("5-hour usage reaches \(DisplayValue.whole(store.settings.notifications.fiveHourPercent))%")
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .disabled(!store.settings.notifications.enabled)
+                // The system's disabled rendering is invisible on these dark
+                // hardcoded surfaces — verified by screenshot: the chevrons
+                // barely change. Dim explicitly so off looks off.
+                .opacity(store.settings.notifications.enabled ? 1 : 0.45)
+
+                notificationPermissionStatus
+
+                Divider().overlay(Theme.hairline)
+
                 DisclosureGroup("Advanced") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Weights").eyebrow().padding(.top, 6)
@@ -215,6 +254,11 @@ struct SettingsView: View {
                 }
         }
         .padding(18)
+        // Without this every system control in the window — checkboxes, the
+        // segmented pickers — renders system blue when the window is key. The
+        // History window learned the same lesson. One of the six
+        // screenshot-only defects (CLAUDE.md) was exactly this.
+        .tint(Theme.accent)
         // Width fixed, height follows the content — so expanding Advanced grows
         // the window instead of leaving dead space below when it is collapsed.
         .frame(width: 380, alignment: .leading)
@@ -222,6 +266,7 @@ struct SettingsView: View {
         .onAppear {
             store.refreshClaudeExecutable()
             store.refreshWiringState()
+            store.refreshNotificationAuthorization()
         }
         .alert("Let Burnline refresh your usage?", isPresented: $confirmingPoller) {
             Button("Cancel", role: .cancel) { }
@@ -300,6 +345,29 @@ struct SettingsView: View {
             Spacer()
             TextField("", value: value, format: .number)
                 .textFieldStyle(.roundedBorder).frame(width: 70).monospacedDigit()
+        }
+    }
+
+    /// Exceptions only: shown when notifications are on but macOS has them
+    /// blocked, so the toggle would otherwise promise something that never
+    /// arrives. Word and icon, never colour alone.
+    @ViewBuilder private var notificationPermissionStatus: some View {
+        if store.settings.notifications.enabled,
+           store.notificationAuthorization == .denied {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10)).foregroundStyle(Theme.warning)
+                    Text("Notifications are blocked in System Settings")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.warning)
+                }
+                Button("Open System Settings") {
+                    NSWorkspace.shared.open(
+                        URL(string: "x-apple.systempreferences:com.apple.preference.notifications")!)
+                }
+                .buttonStyle(.bordered)
+            }
         }
     }
 
