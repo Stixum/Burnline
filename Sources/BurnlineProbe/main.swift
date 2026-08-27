@@ -190,6 +190,7 @@ if noteSettings.enabled {
     func describe(_ label: String, signal: NotificationDecision.Signal,
                   value: Double?, threshold: Double,
                   mark: NotificationMarks.Mark?, resetsAt: TimeInterval?) {
+        let padded = label.padding(toLength: 17, withPad: " ", startingAt: 0)
         let state: String
         if firing.contains(signal) {
             state = "WOULD FIRE"
@@ -203,19 +204,21 @@ if noteSettings.enabled {
             state = "armed"
         }
         let shown = value.map { "\(DisplayValue.whole($0))" } ?? "—"
-        print("  \(label)\(shown) vs \(DisplayValue.whole(threshold)) — \(state)")
+        print("  \(padded)\(shown) vs \(DisplayValue.whole(threshold)) — \(state)")
     }
+    // Re-derived mark keys: must match what `evaluate` records (weekly window
+    // end for the weekly signals, the capture's own reset for five-hour).
     let weeklyReset = snapshot.window.end.timeIntervalSince1970
     // Points behind the target — negative while under budget.
-    describe("behind-pace      ", signal: .behindPace,
+    describe("behind-pace", signal: .behindPace,
              value: snapshot.delta(settings.targetMode).map { -$0 },
              threshold: noteSettings.behindPacePoints,
              mark: marks.behindPace, resetsAt: weeklyReset)
-    describe("weekly           ", signal: .weekly,
+    describe("weekly", signal: .weekly,
              value: snapshot.estimatedPercent,
              threshold: noteSettings.weeklyPercent,
              mark: marks.weekly, resetsAt: weeklyReset)
-    describe("five-hour        ", signal: .fiveHour,
+    describe("five-hour", signal: .fiveHour,
              value: snapshot.fiveHour?.usedPercent,
              threshold: noteSettings.fiveHourPercent,
              mark: marks.fiveHour,
