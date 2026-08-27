@@ -39,3 +39,8 @@ CLAUDE.md
 # The cask lives in Stixum/homebrew-tap. A second copy here would drift out of
 # sync with the one that actually gets installed.
 docs/homebrew/
+
+# Sparkle EdDSA private key, if ever exported. The key lives in the login
+# keychain; an export on disk must never reach the repo.
+*private-key*
+*.p8
