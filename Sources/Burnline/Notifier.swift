@@ -8,7 +8,8 @@ import BurnlineCore
 @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// UNUserNotificationCenter.current() traps in a process without a bundle
-    /// identity (swift test, swift run, the probe). Everything gates on this.
+    /// identity — swift run, the probe, the statusline helper. Under swift test
+    /// Bundle.main is the xctest host (which has one), so this is no test guard.
     private var isAvailable: Bool { Bundle.main.bundleIdentifier != nil }
 
     /// Sets the delegate so banners present while the app is "foreground" —
@@ -42,7 +43,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             let content = UNMutableNotificationContent()
             content.title = emission.title
             content.body = emission.body
-            content.sound = .default
+            content.sound = .default  // foreground playback is governed by willPresent below
             // Stable per-signal identifiers: a duplicate could only replace,
             // never stack. The marks make duplicates unreachable anyway.
             center.add(UNNotificationRequest(identifier: emission.identifier,
@@ -50,8 +51,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Banners alone vanish after seconds and the sound never plays unless
+    /// returned here — an LSUIElement app is always "foreground", so these
+    /// options, not the content, govern presentation.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions { .banner }
+    ) async -> UNNotificationPresentationOptions { [.banner, .list, .sound] }
 }
