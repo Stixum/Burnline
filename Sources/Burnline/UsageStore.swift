@@ -597,7 +597,10 @@ final class UsageStore {
             marks: notificationMarks)
         if updated != notificationMarks {
             notificationMarks = updated
-            // Fire and forget: rebuild() may never write a file itself.
+            // Fire and forget: rebuild() may never write a file itself. Saves
+            // are unordered and can be lost to a quit; both are bounded by the
+            // same worst case the marks versioning accepts — one repeated
+            // notification at the next launch.
             let store = marksStore
             Task.detached(priority: .utility) { try? store.save(updated) }
         }
