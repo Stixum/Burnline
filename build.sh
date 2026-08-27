@@ -44,6 +44,21 @@ assemble_bundle() {
   # at a path that moves with the app. Its bash predecessor lived in ~/.claude and
   # could never be updated by anything the app did.
   cp "${PRODUCTS}/BurnlineStatusline" "${APP}/Contents/MacOS/burnline-statusline"
+  # Xcode would do this with an embed build phase and a "Code Sign on Copy"
+  # checkbox. There is no Xcode project, so the framework is copied by hand and
+  # the executable carries an @executable_path/../Frameworks rpath (set in
+  # Package.swift) to find it at runtime. Miss this and the app dies at launch
+  # with `Library not loaded: @rpath/Sparkle.framework`.
+  SPARKLE=$(find .build/artifacts -name "Sparkle.framework" -maxdepth 6 | head -1)
+  if [ -z "${SPARKLE}" ]; then
+    echo "!!! Sparkle.framework not found; run 'swift package resolve'." >&2
+    exit 1
+  fi
+  mkdir -p "${APP}/Contents/Frameworks"
+  rm -rf "${APP}/Contents/Frameworks/Sparkle.framework"
+  # -R preserves the framework's symlink farm; copying it flat breaks the
+  # Versions/Current indirection the rpath resolves through.
+  cp -R "${SPARKLE}" "${APP}/Contents/Frameworks/"
   cp "Resources/Info.plist" "${APP}/Contents/Info.plist"
   cp "${BUILD_DIR}/${APP_NAME}.icns" "${APP}/Contents/Resources/${APP_NAME}.icns"
 }
@@ -64,10 +79,34 @@ echo "==> Signing"
 # Inside-out, always: nested code first, the .app last. Signing the container
 # before its contents invalidates the container's seal, and that is the single
 # most common cause of a notarization rejection.
+
+# Sparkle is four levels of nested code, all of which must be signed before the
+# framework that contains them. ⚠️ `XPCServices` IS present in the shipped
+# framework (Downloader.xpc, Installer.xpc) — Sparkle's docs say they are only
+# *used* by sandboxed apps, but they are still nested code and notarization
+# rejects them unsigned. Verified against Sparkle 2.9.6 on 2026-08-27.
+sign_sparkle() {
+  local identity="$1" framework="${APP}/Contents/Frameworks/Sparkle.framework"
+  local ts=(--timestamp)
+  # An ad-hoc signature cannot carry a trusted timestamp.
+  [ "${identity}" = "-" ] && ts=()
+  [ -d "${framework}" ] || return 0
+  local versioned="${framework}/Versions/Current"
+  for xpc in "${versioned}/XPCServices/"*.xpc; do
+    [ -e "${xpc}" ] || continue
+    codesign --force --options runtime "${ts[@]}" --sign "${identity}" "${xpc}"
+  done
+  for nested in "${versioned}/Updater.app" "${versioned}/Autoupdate"; do
+    [ -e "${nested}" ] || continue
+    codesign --force --options runtime "${ts[@]}" --sign "${identity}" "${nested}"
+  done
+  codesign --force --options runtime "${ts[@]}" --sign "${identity}" "${framework}"
+}
 IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
   | grep "Developer ID Application" | head -1 | awk '{print $2}' || true)
 if [ -n "${IDENTITY}" ]; then
   echo "    Developer ID: ${IDENTITY}"
+  sign_sparkle "${IDENTITY}"
   codesign --force --options runtime --timestamp \
     --sign "${IDENTITY}" "${APP}/Contents/MacOS/burnline-statusline"
   codesign --force --options runtime --timestamp --sign "${IDENTITY}" "${APP}"
@@ -80,6 +119,7 @@ else
   # and could read ~/.claude directly.
   #
   # No --timestamp here: an ad-hoc signature cannot carry a trusted timestamp.
+  sign_sparkle -
   codesign --force --options runtime --sign - "${APP}/Contents/MacOS/burnline-statusline"
   codesign --force --options runtime --sign - "${APP}"
 fi
