@@ -167,6 +167,32 @@ private func fiveHourAt(_ percent: Double, resetsIn: TimeInterval = 6_000) -> Fi
     #expect(!endOfDay.emissions.contains { $0.signal == .behindPace })
 }
 
+@Test func decisionFiresExactlyAtEachThreshold() {
+    // The contract is "at or past the threshold": a value landing EXACTLY on
+    // the line must fire. Pins >= against a >-mutant that no other test catches.
+
+    // Behind pace: the fixture's real-time target is exactly 2/7 × 100, so an
+    // estimate of that plus the 10-point setting puts delta at exactly -10.
+    // Computed from the same expression, not a decimal literal, so it's exact
+    // (verified: delta == -10.0 bit-for-bit).
+    let atPaceLine = NotificationDecision.evaluate(
+        snapshot: decisionSnapshot(estimate: 200.0 / 7 + 10), settings: onSettings,
+        targetMode: .realTime, marks: NotificationMarks())
+    #expect(atPaceLine.emissions.contains { $0.signal == .behindPace })
+
+    // Weekly: estimate exactly at the 90 setting.
+    let atWeeklyLine = NotificationDecision.evaluate(
+        snapshot: decisionSnapshot(estimate: 90), settings: onSettings,
+        targetMode: .realTime, marks: NotificationMarks())
+    #expect(atWeeklyLine.emissions.contains { $0.signal == .weekly })
+
+    // Five-hour: the capture's figure exactly at the 80 setting.
+    let atFiveHourLine = NotificationDecision.evaluate(
+        snapshot: decisionSnapshot(estimate: nil, fiveHour: fiveHourAt(80)),
+        settings: onSettings, targetMode: .realTime, marks: NotificationMarks())
+    #expect(atFiveHourLine.emissions.contains { $0.signal == .fiveHour })
+}
+
 @Test func decisionBodyTextCarriesWordAndNumber() {
     let result = NotificationDecision.evaluate(
         snapshot: decisionSnapshot(estimate: 45), settings: onSettings,
