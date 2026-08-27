@@ -2,7 +2,17 @@ import Testing
 import Foundation
 @testable import BurnlineCore
 
-private func line(output: Int, at iso: String = "2026-08-10T18:51:57.446Z",
+/// Yesterday, not a literal date: records older than `ScanCache.retention`
+/// have their buckets pruned, so a hardcoded timestamp turns every test here
+/// into a time bomb that starts failing 14 days later — which is exactly what
+/// happened to the original `2026-08-10T18:51:57.446Z` on 2026-08-24.
+private let recentISO: String = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: Date().addingTimeInterval(-86_400))
+}()
+
+private func line(output: Int, at iso: String = recentISO,
                   model: String = "claude-sonnet-5") -> String {
     """
     {"type":"assistant","timestamp":"\(iso)","message":{"model":"\(model)","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":\(output)}}}\n
