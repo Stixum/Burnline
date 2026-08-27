@@ -90,7 +90,7 @@ Every real reading is account-wide and corrects for all of it. Only the forward 
 
 ## What it reads
 
-Local files. No credentials, no telemetry, nothing leaves your Mac.
+Local files. No credentials, no telemetry, and no usage data ever leaves your Mac. The only request Burnline makes on its own is an update check against GitHub — no system profile is sent with it (`SUSendProfileInfo` is explicitly false).
 
 | Path | Access | Why |
 |---|---|---|
@@ -113,7 +113,7 @@ It uses no message quota. `/usage` produces no assistant turn.
 
 **Decline all of them. It still works, and Burnline never wanted them.** Verified on a clean machine.
 
-Leave the setting off and Burnline makes no network requests at all.
+Leave the setting off and the only network request left is the update check, which you can turn off too in Settings.
 
 ## Notifications
 
@@ -148,7 +148,7 @@ Everything funnels through **`SnapshotBuilder`**, which builds the one immutable
 - `WindowMath`: reset schedule plus now, into window bounds and elapsed fraction. The half that cannot be wrong.
 - `TranscriptScanner`: walks `~/.claude/projects` incrementally. `ConsumptionModel` weights the result.
 - `RateLimitHighWater`: picks which reading to trust when sources disagree, which they routinely do.
-- `UsagePoller`: the only thing that starts a process, and the only route to the network.
+- `UsagePoller`: the only thing that starts a process. It and the Sparkle update check are the only routes to the network.
 
 Two rules worth knowing before you change anything:
 
