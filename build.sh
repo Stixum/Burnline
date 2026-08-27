@@ -63,23 +63,6 @@ assemble_bundle() {
   cp "${BUILD_DIR}/${APP_NAME}.icns" "${APP}/Contents/Resources/${APP_NAME}.icns"
 }
 
-# `release.sh` sources this file to reuse assemble_bundle. Everything below is
-# the interactive path and must not run on source.
-if [ "${1:-}" = "--assemble-only" ]; then
-  assemble_bundle
-  exit 0
-fi
-if [ "${BURNLINE_BUILD_LIB:-}" = "1" ]; then
-  return 0 2>/dev/null || exit 0
-fi
-
-assemble_bundle
-
-echo "==> Signing"
-# Inside-out, always: nested code first, the .app last. Signing the container
-# before its contents invalidates the container's seal, and that is the single
-# most common cause of a notarization rejection.
-
 # Sparkle is four levels of nested code, all of which must be signed before the
 # framework that contains them. ⚠️ `XPCServices` IS present in the shipped
 # framework (Downloader.xpc, Installer.xpc) — Sparkle's docs say they are only
@@ -102,6 +85,24 @@ sign_sparkle() {
   done
   codesign --force --options runtime "${ts[@]}" --sign "${identity}" "${framework}"
 }
+
+# `release.sh` sources this file to reuse assemble_bundle and sign_sparkle.
+# Everything below is the interactive path and must not run on source.
+if [ "${1:-}" = "--assemble-only" ]; then
+  assemble_bundle
+  exit 0
+fi
+if [ "${BURNLINE_BUILD_LIB:-}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
+
+assemble_bundle
+
+echo "==> Signing"
+# Inside-out, always: nested code first, the .app last. Signing the container
+# before its contents invalidates the container's seal, and that is the single
+# most common cause of a notarization rejection.
+
 IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
   | grep "Developer ID Application" | head -1 | awk '{print $2}' || true)
 if [ -n "${IDENTITY}" ]; then
@@ -114,9 +115,14 @@ else
   echo "    No Developer ID found; signing ad-hoc (hardened runtime on)."
   # Hardened runtime works fine alongside an ad-hoc signature — verified
   # 2026-08-11, flags 0x10002(adhoc,runtime). It blocks DYLD injection and
-  # debugger attach. Cheap hygiene rather than a meaningful hole closed: this
-  # app holds no secrets, so anything able to inject already runs as the user
-  # and could read ~/.claude directly.
+  # debugger attach.
+  #
+  # ⚠️ This used to be filed as cheap hygiene, reasoning that the app holds no
+  # secrets so anything able to inject already runs as the user. Sparkle
+  # changed the premise (2026-08-27): the bundle now loads an embedded
+  # framework and the updater downloads and executes code. Library validation
+  # under the hardened runtime is what keeps a substituted framework out, so
+  # this now closes a real hole rather than a theoretical one.
   #
   # No --timestamp here: an ad-hoc signature cannot carry a trusted timestamp.
   sign_sparkle -
