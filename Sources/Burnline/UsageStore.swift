@@ -160,6 +160,7 @@ final class UsageStore {
         guard scanTask == nil else { return }
 
         notifier.activate()
+        refreshNotificationAuthorization()
 
         startHistoryFill()
 
@@ -590,6 +591,12 @@ final class UsageStore {
     /// and settings edits are covered. All decisions are in
     /// `NotificationDecision`; this only persists marks and hands off I/O.
     private func evaluateNotifications() {
+        // Never mint a mark for a notification the system would drop: while
+        // authorization is undetermined, denied, or not yet read, skip
+        // evaluation entirely — the crossing then fires (late, once) when
+        // permission arrives and the next rebuild runs.
+        guard notificationAuthorization == .authorized
+                || notificationAuthorization == .provisional else { return }
         let (emissions, updated) = NotificationDecision.evaluate(
             snapshot: snapshot,
             settings: storedSettings.notifications,
@@ -605,8 +612,10 @@ final class UsageStore {
             Task.detached(priority: .utility) { try? store.save(updated) }
         }
         guard !emissions.isEmpty else { return }
-        // Marks are minted even if delivery is suppressed by denied
-        // authorization — at-most-once per window, accepted.
+        // Residual race: a revocation in System Settings mid-run leaves
+        // `notificationAuthorization` stale until the next refresh — bounded by
+        // the same one-repeated-or-one-lost-notification worst case the marks
+        // already accept.
         notifier.deliver(emissions)
     }
 
