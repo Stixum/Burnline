@@ -8,6 +8,10 @@ struct SettingsView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var launchAtLoginFailed = false
     @State private var confirmingPoller = false
+    /// Seeded from Sparkle in `onAppear`, because `Updater.shared` starts the
+    /// updater on first access and a property initialiser would do that while
+    /// the view struct is being built.
+    @State private var automaticUpdates = false
 
     private let weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday",
                                 "Thursday", "Friday", "Saturday"]
@@ -226,6 +230,31 @@ struct SettingsView: View {
 
                 Divider().overlay(Theme.hairline)
 
+                Text("Updates").eyebrow()
+
+                // Sparkle's own persisted setting, not a BurnlineSettings field
+                // — Sparkle reads it back on its own at launch, so duplicating
+                // it here would give two answers to one question. Mirrored into
+                // @State only so the checkbox redraws; Sparkle stays the record.
+                Toggle("Automatically check for updates", isOn: Binding(
+                    get: { automaticUpdates },
+                    set: {
+                        automaticUpdates = $0
+                        Updater.shared.automaticallyChecks = $0
+                    }
+                ))
+
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Version \(versionDescription)")
+                        .font(.system(size: 11)).monospacedDigit()
+                        .foregroundStyle(Theme.textMuted)
+                    Spacer()
+                    Button("Check for Updates…") { Updater.shared.checkForUpdates() }
+                        .buttonStyle(.bordered)
+                }
+
+                Divider().overlay(Theme.hairline)
+
                 DisclosureGroup("Advanced") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Weights").eyebrow().padding(.top, 6)
@@ -270,6 +299,7 @@ struct SettingsView: View {
             store.refreshClaudeExecutable()
             store.refreshWiringState()
             store.refreshNotificationAuthorization()
+            automaticUpdates = Updater.shared.automaticallyChecks
         }
         .alert("Let Burnline refresh your usage?", isPresented: $confirmingPoller) {
             Button("Cancel", role: .cancel) { }
@@ -327,6 +357,18 @@ struct SettingsView: View {
             return "\(base) Yours end at \(resetClock), currently \(today)%."
         case .calendarDay:
             return "\(base) Yours end at 12:00 AM, \(resetClock.hasPrefix("12:00") ? "the same as the reset" : "not at the \(resetClock) reset"), currently \(today)%."
+        }
+    }
+
+    /// Marketing version with the build number in parentheses — the pair that
+    /// identifies a build, since the two move independently.
+    private var versionDescription: String {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        switch (short, build) {
+        case let (short?, build?): return "\(short) (\(build))"
+        case let (short?, nil): return short
+        default: return "unknown"
         }
     }
 

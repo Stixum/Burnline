@@ -24,5 +24,14 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Personal utility</string>
+	<key>SUFeedURL</key>
+	<string>https://stixum.github.io/Burnline/appcast.xml</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<!-- Explicitly false, not left to Sparkle's default: a tool whose whole
+	     purpose is watching your usage data must not transmit a system profile,
+	     and the intent belongs in the file where anyone can read it. -->
+	<key>SUSendProfileInfo</key>
+	<false/>
 </dict>
 </plist>
