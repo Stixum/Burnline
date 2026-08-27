@@ -195,19 +195,22 @@ struct SettingsView: View {
                 ))
 
                 Group {
-                    Stepper(value: $store.settings.notifications.behindPacePoints, in: 1...100) {
+                    Stepper(value: $store.settings.notifications.behindPacePoints,
+                            in: NotificationSettings.behindPaceRange) {
                         Text("Behind pace by \(DisplayValue.whole(store.settings.notifications.behindPacePoints)) points")
                             .monospacedDigit()
                             .foregroundStyle(Theme.textSecondary)
                     }
 
-                    Stepper(value: $store.settings.notifications.weeklyPercent, in: 1...99) {
+                    Stepper(value: $store.settings.notifications.weeklyPercent,
+                            in: NotificationSettings.percentRange) {
                         Text("Weekly usage reaches \(DisplayValue.whole(store.settings.notifications.weeklyPercent))%")
                             .monospacedDigit()
                             .foregroundStyle(Theme.textSecondary)
                     }
 
-                    Stepper(value: $store.settings.notifications.fiveHourPercent, in: 1...99) {
+                    Stepper(value: $store.settings.notifications.fiveHourPercent,
+                            in: NotificationSettings.percentRange) {
                         Text("5-hour usage reaches \(DisplayValue.whole(store.settings.notifications.fiveHourPercent))%")
                             .monospacedDigit()
                             .foregroundStyle(Theme.textSecondary)

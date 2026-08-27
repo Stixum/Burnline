@@ -180,6 +180,7 @@ let marks = NotificationMarksStore().load()
 print("\nthreshold notifications")
 print("  enabled          \(noteSettings.enabled ? "on" : "off")")
 if noteSettings.enabled {
+    print("  note             app also gates on notification permission (not readable here)")
     let (emissions, _) = NotificationDecision.evaluate(
         snapshot: snapshot, settings: noteSettings,
         targetMode: settings.targetMode, marks: marks)

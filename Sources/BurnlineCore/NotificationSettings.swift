@@ -23,6 +23,11 @@ public struct NotificationSettings: Equatable, Sendable, Codable {
     public static let `default` = NotificationSettings(
         enabled: false, behindPacePoints: 10, weeklyPercent: 90, fiveHourPercent: 80)
 
+    /// The legal ranges, shared with the Settings steppers so the UI and the
+    /// sanitize clamp can never disagree.
+    public static let behindPaceRange: ClosedRange<Double> = 1...100
+    public static let percentRange: ClosedRange<Double> = 1...99
+
     /// Zero is illegal everywhere — a threshold of 0 under `>=` fires
     /// permanently. 100 is illegal for the percent signals: unreachable in
     /// practice, the window resets first. NaN falls back to the default —
@@ -35,11 +40,11 @@ public struct NotificationSettings: Equatable, Sendable, Codable {
         }
         return NotificationSettings(
             enabled: enabled,
-            behindPacePoints: clamp(behindPacePoints, to: 1...100,
+            behindPacePoints: clamp(behindPacePoints, to: Self.behindPaceRange,
                                     fallback: Self.default.behindPacePoints),
-            weeklyPercent: clamp(weeklyPercent, to: 1...99,
+            weeklyPercent: clamp(weeklyPercent, to: Self.percentRange,
                                  fallback: Self.default.weeklyPercent),
-            fiveHourPercent: clamp(fiveHourPercent, to: 1...99,
+            fiveHourPercent: clamp(fiveHourPercent, to: Self.percentRange,
                                    fallback: Self.default.fiveHourPercent))
     }
 }

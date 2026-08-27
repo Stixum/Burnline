@@ -596,7 +596,15 @@ final class UsageStore {
         // evaluation entirely — the crossing then fires (late, once) when
         // permission arrives and the next rebuild runs.
         guard notificationAuthorization == .authorized
-                || notificationAuthorization == .provisional else { return }
+                || notificationAuthorization == .provisional else {
+            // Self-heal the cached status: grant-after-deny in System Settings
+            // while the Settings window stays open is otherwise invisible until
+            // a relaunch — this re-read lets the next 10s tick see the grant.
+            if storedSettings.notifications.enabled {
+                refreshNotificationAuthorization()
+            }
+            return
+        }
         let (emissions, updated) = NotificationDecision.evaluate(
             snapshot: snapshot,
             settings: storedSettings.notifications,
