@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UserNotifications
 import BurnlineCore
 
 // `HistoryFillState` is in `BurnlineCore`, next to the two rules it carries:
@@ -93,6 +94,14 @@ final class UsageStore {
     @ObservationIgnored private let highWaterStore = HighWaterStore()
     @ObservationIgnored private var highWater = HighWaterStore().load()
 
+    @ObservationIgnored private let marksStore = NotificationMarksStore()
+    @ObservationIgnored private var notificationMarks = NotificationMarksStore().load()
+    @ObservationIgnored private let notifier = Notifier()
+
+    /// Refreshed when Settings appears, and after the toggle changes it — not
+    /// on the capture timer; it only changes when the user acts.
+    private(set) var notificationAuthorization: UNAuthorizationStatus?
+
     /// The archive's sole writer, built once and never replaced. Two paths feed
     /// it — the launch fill and the 60s flush — and the serialization that makes
     /// them safe is a property of this one instance.
@@ -128,7 +137,13 @@ final class UsageStore {
     private static let manualRefreshFloor: TimeInterval = 5
 
     init() {
-        let loadedSettings = settingsStore.load()
+        // Sanitize on load, not just on write: the settings setter is the choke
+        // point for mutations, but a hand-edited settings.json (say,
+        // `behindPacePoints: 0`) would otherwise be live from launch until the
+        // first mutation.
+        var loadedSettings = settingsStore.load()
+        loadedSettings.weights = loadedSettings.weights.sanitized()
+        loadedSettings.notifications = loadedSettings.notifications.sanitized()
         let loadedCache = cacheStore.load()
         storedSettings = loadedSettings
         cache = loadedCache
@@ -143,6 +158,8 @@ final class UsageStore {
 
     func start() {
         guard scanTask == nil else { return }
+
+        notifier.activate()
 
         startHistoryFill()
 
@@ -537,6 +554,10 @@ final class UsageStore {
                                          rejected: rejected,
                                          scopedWeekly: utilization?.scopedWeekly)
 
+        // Before the observation feed's guards: the evaluation must run on
+        // every rebuild, and the block below returns early.
+        evaluateNotifications()
+
         // The archive's observation feed. Gated on `capturedPercent` rather than
         // on the capture existing: that is non-nil only when the reading is
         // Anthropic's own figure for the window now on screen, so an
@@ -561,5 +582,46 @@ final class UsageStore {
         lastObservationSent = entry
         let writer = historyWriter
         Task.detached(priority: .utility) { await writer.observe(entry) }
+    }
+
+    // MARK: - Notifications
+
+    /// The notification evaluation site: every rebuild, so both the 10s loop
+    /// and settings edits are covered. All decisions are in
+    /// `NotificationDecision`; this only persists marks and hands off I/O.
+    private func evaluateNotifications() {
+        let (emissions, updated) = NotificationDecision.evaluate(
+            snapshot: snapshot,
+            settings: storedSettings.notifications,
+            targetMode: storedSettings.targetMode,
+            marks: notificationMarks)
+        if updated != notificationMarks {
+            notificationMarks = updated
+            // Fire and forget: rebuild() may never write a file itself.
+            let store = marksStore
+            Task.detached(priority: .utility) { try? store.save(updated) }
+        }
+        guard !emissions.isEmpty else { return }
+        // Marks are minted even if delivery is suppressed by denied
+        // authorization — at-most-once per window, accepted.
+        notifier.deliver(emissions)
+    }
+
+    /// The master-toggle path. Turning it on requests notification permission
+    /// if the system has never asked — keyed on `.notDetermined`, not a stored
+    /// flag, so resetting permissions re-asks on the next enable.
+    func setNotificationsEnabled(_ enabled: Bool) {
+        var updated = storedSettings
+        updated.notifications.enabled = enabled
+        settings = updated
+        guard enabled else { return }
+        Task {
+            await notifier.requestAuthorizationIfNeeded()
+            notificationAuthorization = await notifier.authorizationStatus()
+        }
+    }
+
+    func refreshNotificationAuthorization() {
+        Task { notificationAuthorization = await notifier.authorizationStatus() }
     }
 }
