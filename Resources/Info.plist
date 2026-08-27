@@ -26,6 +26,12 @@
 	<string>Personal utility</string>
 	<key>SUFeedURL</key>
 	<string>https://stixum.github.io/Burnline/appcast.xml</string>
+	<!-- The EdDSA public key updates are verified against. Its private half
+	     lives in the login keychain and nowhere else; losing it means no
+	     installed copy can ever update again. Changing this string orphans
+	     every copy already in the field, so it is effectively permanent. -->
+	<key>SUPublicEDKey</key>
+	<string>DAjCTDiGv+Xgcgsemzdu8sM38wToOMR5kMqPODxHwXY=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<!-- Explicitly false, not left to Sparkle's default: a tool whose whole
