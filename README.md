@@ -115,6 +115,12 @@ It uses no message quota. `/usage` produces no assistant turn.
 
 Leave the setting off and Burnline makes no network requests at all.
 
+## Notifications
+
+**"Notify on thresholds" is off by default.** Turn it on in Settings and Burnline posts a macOS notification when you slip a set number of points behind pace, or when weekly or 5-hour usage reaches a percentage you pick. macOS asks for notification permission the first time you enable it.
+
+Each threshold fires once per window and re-arms at the reset. A nudge, not a nag.
+
 ## Build from source
 
 ```bash
