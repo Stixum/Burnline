@@ -63,6 +63,7 @@ final class UsageStore {
             // is covered as well as the Settings text fields.
             var sanitized = newValue
             sanitized.weights = newValue.weights.sanitized()
+            sanitized.notifications = newValue.notifications.sanitized()
             withMutation(keyPath: \.settings) { storedSettings = sanitized }
             try? settingsStore.save(sanitized)
             rebuild()

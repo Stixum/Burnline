@@ -21,6 +21,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
     /// whatever the user then does with the window — declining to wire the
     /// statusline is an answer, and re-asking every launch would be nagging.
     public var hasSeenOnboarding: Bool
+    public var notifications: NotificationSettings
 
     public init(resetSchedule: ResetSchedule, weights: Weights,
                 calibrationAnchors: [CalibrationAnchor], launchAtLogin: Bool,
@@ -29,7 +30,8 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
                 menuBarMode: MenuBarMode = .usedOverTarget,
                 refreshesUsageAutomatically: Bool = false,
                 usageRefreshInterval: RefreshInterval = .fortyFive,
-                hasSeenOnboarding: Bool = false) {
+                hasSeenOnboarding: Bool = false,
+                notifications: NotificationSettings = .default) {
         self.resetSchedule = resetSchedule
         self.weights = weights
         self.calibrationAnchors = calibrationAnchors
@@ -40,6 +42,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         self.refreshesUsageAutomatically = refreshesUsageAutomatically
         self.usageRefreshInterval = usageRefreshInterval
         self.hasSeenOnboarding = hasSeenOnboarding
+        self.notifications = notifications
     }
 
     /// Thursday 09:00 local is a placeholder — replaced by the real reset as
@@ -73,5 +76,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         // window once, and only if there is actually something to fix.
         hasSeenOnboarding = try container.decodeIfPresent(
             Bool.self, forKey: .hasSeenOnboarding) ?? false
+        notifications = try container.decodeIfPresent(
+            NotificationSettings.self, forKey: .notifications) ?? .default
     }
 }
