@@ -68,9 +68,47 @@ public struct WindowRow: Equatable, Sendable, Codable {
     public var boundsSource: BoundsSource
     public var observedResetsAt: Date?
 
+    /// The first OBSERVATION after the allowance was re-granted inside this
+    /// window — Anthropic re-issuing it without moving `resets_at`.
+    ///
+    /// 🔴 **Not the re-grant itself, which is unrecoverable.** On the live
+    /// 2026-09-01 event the readings either side were 51% and 3%, ninety-seven
+    /// minutes apart; the re-grant happened somewhere inside that gap and
+    /// nothing recorded where. This is the earliest instant it is known to
+    /// have ALREADY happened, and it can only ever be late.
+    ///
+    /// ⚠️ Goes through `.iso8601` like every other instant here, so it comes
+    /// back up to a second earlier than it went out. Nothing compares it to
+    /// another instant today, and a second cannot move which day it fell on —
+    /// but anything that ever matches it against a tracking entry's `at` must
+    /// use `WindowLedger.sameResetTolerance`, not equality.
+    public var regrantedAt: Date?
+    /// The reading at `regrantedAt` — **the first figure seen after the
+    /// re-grant, not zero.** The live event's was 3%: the capture gap had
+    /// already been burned through by the time anything reported again.
+    public var percentAtRegrant: Double?
+    /// How many re-grants were OBSERVED in this window, when any were.
+    ///
+    /// 🔴 Present so the row never claims there was exactly one.
+    /// `regrantedAt` records the LAST of them — `finalPercent` is the climb
+    /// since that one, so the pair describes a single stretch of the week only
+    /// if it is the last. Without this count a two-re-grant week would report
+    /// as a one-re-grant week, and a window row is written once.
+    ///
+    /// "Observed" is the honest word: a re-grant whose next reading still
+    /// landed above the previous one leaves no drop to see, and this archive
+    /// labels what it knows rather than what it assumes — the same rule as
+    /// `CoverageRecord.truncated` and `verified`.
+    ///
+    /// nil rather than 0 when there was none, so the three annotation fields
+    /// are set together or not at all and no ordinary week grows three keys.
+    public var regrantsObserved: Int?
+
     public init(start: Date, end: Date, counts: TokenCounts, finalPercent: Double?,
                 finalPercentAt: Date?, finalPercentSource: String?,
-                boundsSource: BoundsSource, observedResetsAt: Date?) {
+                boundsSource: BoundsSource, observedResetsAt: Date?,
+                regrantedAt: Date? = nil, percentAtRegrant: Double? = nil,
+                regrantsObserved: Int? = nil) {
         self.start = start
         self.end = end
         self.input = counts.input
@@ -82,6 +120,9 @@ public struct WindowRow: Equatable, Sendable, Codable {
         self.finalPercentSource = finalPercentSource
         self.boundsSource = boundsSource
         self.observedResetsAt = observedResetsAt
+        self.regrantedAt = regrantedAt
+        self.percentAtRegrant = percentAtRegrant
+        self.regrantsObserved = regrantsObserved
     }
 
     public var counts: TokenCounts {

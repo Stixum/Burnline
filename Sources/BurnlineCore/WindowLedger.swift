@@ -138,6 +138,22 @@ public struct WindowLedger: Sendable {
             guard firstBucket <= lastBucket else { continue }
             guard coverage.covers(from: firstBucket, through: lastBucket) else { continue }
 
+            // The re-grant annotation, derived from the entries THIS ROW's
+            // bounds contain — after any substitution above, so an instant it
+            // names always lies inside the window it describes.
+            //
+            // 🔴 Per window, never across the series. The last reading of one
+            // window and the first of the next are 87% and 4% on an ordinary
+            // week: that is the reset, and a walk over the whole series would
+            // annotate almost every week as re-granted.
+            //
+            // A window whose FIRST contained reading is already post-re-grant
+            // shows no drop and goes unannotated. That is deliberate — an
+            // omitted annotation costs a row a note, a guessed one is wrong
+            // forever.
+            let contained = Array(newestFirst.filter { $0.at >= start && $0.at < end }.reversed())
+            let regrants = Self.regrantObservations(in: contained)
+
             // Rule 4. Anthropic's own figure or nothing — never an estimate,
             // never a calibration. `entry` is still contained after any end
             // substitution above, which required `resetsAt > at`.
@@ -149,11 +165,50 @@ public struct WindowLedger: Sendable {
                 finalPercentAt: entry?.at,
                 finalPercentSource: entry == nil ? nil : "live",
                 boundsSource: boundsSource,
-                observedResetsAt: observedResetsAt
+                observedResetsAt: observedResetsAt,
+                // The LAST re-grant: `finalPercent` is the climb since that
+                // one, so only the last pairs with it to describe one stretch
+                // of the week. The count keeps the row from claiming there was
+                // exactly one.
+                regrantedAt: regrants.last?.at,
+                percentAtRegrant: regrants.last?.percent,
+                regrantsObserved: regrants.isEmpty ? nil : regrants.count
             ))
         }
 
         return rows
+    }
+
+    /// The observations that FOLLOW a material drop, oldest first — one per
+    /// re-grant seen in `entries`, which must be one window's own captures in
+    /// chronological order.
+    ///
+    /// 🔴 The threshold is `RateLimitHighWater.materialDropPoints` and is read
+    /// from there, never restated. The archive and the live path must agree on
+    /// what counts as a re-grant, or a week is annotated as re-granted while no
+    /// epoch ever opened, or the reverse — and a 51 → 50 flicker is far likelier
+    /// two sources rounding the same figure than a re-issued allowance.
+    ///
+    /// ⚠️ Materiality is on the ADJACENT drop, not the distance from the epoch
+    /// that opened. Settled in the live path, and it is why a second re-grant
+    /// inside an open epoch re-bases it rather than being absorbed.
+    ///
+    /// The returned entry is the one AFTER the drop: the reading before it is
+    /// the last of the allowance that ended.
+    ///
+    /// 🔴 The entries' own `resetsAt` is NEVER compared. A re-grant is a drop
+    /// with the reset unmoved, but "unmoved" is established by both readings
+    /// being contained in ONE window — not by equality between two `resetsAt`
+    /// values. On the live 2026-09-01 event those two values are
+    /// `06:59:59Z` and `07:00:00Z`, because the readings came from the two
+    /// sources, which report the same instant to different precision. An
+    /// equality test there would have missed the only re-grant on record.
+    static func regrantObservations(in entries: [TrackingEntry]) -> [TrackingEntry] {
+        guard entries.count >= 2 else { return [] }
+        return (1..<entries.count).compactMap { index in
+            let drop = entries[index - 1].percent - entries[index].percent
+            return drop >= RateLimitHighWater.materialDropPoints ? entries[index] : nil
+        }
     }
 
     /// True when a row already tells this window's days.

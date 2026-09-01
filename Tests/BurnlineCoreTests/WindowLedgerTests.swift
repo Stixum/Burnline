@@ -315,3 +315,147 @@ private func writtenWindow(startingAt start: Date) -> WindowRow {
     #expect(rows.contains { $0.start == realReset })
     #expect(!rows.contains { $0.start == gridEnd })
 }
+
+// MARK: - Re-grant annotation
+
+/// A capture inside the FIRST window of the anchored fixture, `days` in.
+/// Its `resetsAt` is that window's grid end, which is what a real capture
+/// inside a window reports.
+private func observed(_ percent: Double, dayIn days: Int) -> TrackingEntry {
+    TrackingEntry(percent: percent, at: plus(days: days, from: anchorDate),
+                  resetsAt: plus(days: 7, from: anchorDate))
+}
+
+@Test func aReGrantedWeekIsAnnotatedAndKeepsAnthropicsLastReading() {
+    // The shape measured live on 2026-09-01: 51% → 3% with `resets_at`
+    // UNMOVED, then a climb. Such a week's token total exceeds a 91% week's
+    // while its `finalPercent` reads 30, so with no annotation the row is
+    // silently wrong-looking — and a window row is written once, so that is
+    // wrong forever.
+    //
+    // 🔴 `percentAtRegrant` is 3, NOT 0. Ninety-seven minutes separated those
+    // two real readings — the stretch where the old code was frozen and
+    // recording nothing — so the first post-re-grant observation was already
+    // at 3%. The annotation records what was SEEN, and the exact re-grant
+    // instant is unrecoverable: it happened somewhere inside that gap.
+    //
+    // 🔴 `finalPercent` stays 30, the newest reading. Never 51 + 30 = 81: the
+    // two epochs need not even be against the same allowance size, and this
+    // field is documented as Anthropic's own figure, not Burnline's
+    // arithmetic.
+    let before = observed(51, dayIn: 1)
+    let after = observed(3, dayIn: 2)
+    let latest = observed(30, dayIn: 4)
+    let rows = rowsAfterAFortnight(tracking: [before, after, latest])
+
+    #expect(rows.first?.finalPercent == 30)
+    #expect(rows.first?.finalPercentAt == latest.at)
+    // The instant is the first OBSERVATION after the re-grant, never the
+    // entry before the drop — that one is the last reading of the allowance
+    // that ended.
+    #expect(rows.first?.regrantedAt == after.at)
+    #expect(rows.first?.regrantedAt != before.at)
+    #expect(rows.first?.percentAtRegrant == 3)
+    #expect(rows.first?.regrantsObserved == 1)
+}
+
+@Test func aWeekThatOnlyClimbedIsNotAnnotated() {
+    // The stop on annotating every week that has a tracking series at all.
+    let rows = rowsAfterAFortnight(tracking: [observed(10, dayIn: 1), observed(37, dayIn: 3),
+                                              observed(64, dayIn: 5)])
+    #expect(rows.first?.finalPercent == 64)
+    #expect(rows.first?.regrantedAt == nil)
+    #expect(rows.first?.percentAtRegrant == nil)
+    // nil, never 0 — the three fields are set together or not at all, so a
+    // reader never meets a row that half-claims a re-grant.
+    #expect(rows.first?.regrantsObserved == nil)
+}
+
+@Test func aDropOfExactlyTheMaterialThresholdIsARegrant() {
+    // Boundary-exact: `RateLimitHighWater.materialDropPoints` is 2, and the
+    // rule is `>=`. The stop on `>`, and on this file restating the threshold
+    // — the archive and the live path must agree on what counts as a re-grant,
+    // or a week is annotated while no epoch ever opened, or the reverse.
+    let rows = rowsAfterAFortnight(tracking: [observed(40, dayIn: 1), observed(38, dayIn: 3),
+                                              observed(45, dayIn: 5)])
+    #expect(rows.first?.regrantedAt == plus(days: 3, from: anchorDate))
+    #expect(rows.first?.percentAtRegrant == 38)
+    #expect(rows.first?.regrantsObserved == 1)
+    #expect(rows.first?.finalPercent == 45)
+}
+
+@Test func aSubMaterialDipIsNoiseAndIsNotAnnotated() {
+    // 40 → 38.1 is 1.9 points. Two sources rounding the same figure
+    // differently is far likelier than a re-issued allowance, which is why the
+    // live path withholds the epoch below the threshold. The archive must
+    // withhold the annotation on the same evidence.
+    let rows = rowsAfterAFortnight(tracking: [observed(40, dayIn: 1), observed(38.1, dayIn: 3),
+                                              observed(44, dayIn: 5)])
+    #expect(rows.first?.finalPercent == 44)
+    #expect(rows.first?.regrantedAt == nil)
+    #expect(rows.first?.percentAtRegrant == nil)
+    #expect(rows.first?.regrantsObserved == nil)
+}
+
+@Test func aSecondReGrantIsTheOneRecordedAndTheCountSaysThereWereTwo() {
+    // 🔴 The decision, pinned. `regrantedAt` is the LAST re-grant in the
+    // window: `finalPercent` is the climb since that one, so the pair
+    // describes a single stretch of the week only if the instant is the last.
+    // Record the first and `finalPercent − percentAtRegrant` spans two
+    // allowances — the same category of arithmetic the spec rejected by name
+    // in 51 + 30 = 81. It also matches the live path, where a material drop
+    // inside an open epoch REPLACES the `Regrant` wholesale.
+    //
+    // The count is what stops the row claiming there was exactly one. Rows are
+    // written once, and this archive already labels what it cannot say
+    // (`CoverageRecord.truncated`, `verified`).
+    let rows = rowsAfterAFortnight(tracking: [
+        observed(51, dayIn: 1), observed(3, dayIn: 2), observed(20, dayIn: 3),
+        observed(6, dayIn: 4), observed(33, dayIn: 5)])
+    #expect(rows.first?.regrantedAt == plus(days: 4, from: anchorDate))
+    #expect(rows.first?.percentAtRegrant == 6)
+    #expect(rows.first?.regrantsObserved == 2)
+    #expect(rows.first?.finalPercent == 33)
+}
+
+@Test func theResetBetweenTwoWindowsIsNotAReGrant() {
+    // 🔴 87% closing one window and 4% opening the next is the weekly reset,
+    // not a re-issued allowance. An implementation that walks the whole series
+    // and hands each drop to the window CONTAINING the lower reading annotates
+    // the second window every single week — quietly, and forever.
+    let closing = observed(87, dayIn: 3)
+    let opening = TrackingEntry(percent: 4, at: plus(days: 8, from: anchorDate),
+                                resetsAt: plus(days: 14, from: anchorDate))
+    let rows = rowsAfterAFortnight(tracking: [closing, opening])
+    #expect(rows.count == 2)
+    #expect(rows.first?.finalPercent == 87)
+    #expect(rows.last?.finalPercent == 4)
+    #expect(rows.allSatisfy { $0.regrantedAt == nil })
+    #expect(rows.allSatisfy { $0.percentAtRegrant == nil })
+    #expect(rows.allSatisfy { $0.regrantsObserved == nil })
+}
+
+@Test func aDropIsAReGrantEvenWhenTheTwoSourcesDisagreeAboutTheReset() {
+    // 🔴 Measured on the live series, 211 entries: the two readings either
+    // side of the real 2026-09-01 drop carry `2026-09-04T06:59:59Z` and
+    // `…07:00:00Z` — the statusline's whole seconds against the utilization
+    // file's fraction, the same one-second disagreement `sameResetTolerance`
+    // exists for.
+    //
+    // So a rule phrased as "a drop with `resets_at` UNMOVED" and implemented
+    // as equality would have missed the only re-grant this project has ever
+    // seen. What establishes that the window did not reset is CONTAINMENT of
+    // both readings in one window; the entries' own `resetsAt` is never
+    // compared, and must not be.
+    let end = plus(days: 7, from: anchorDate)
+    let before = TrackingEntry(percent: 51, at: plus(days: 1, from: anchorDate),
+                               resetsAt: end.addingTimeInterval(-1))
+    let after = TrackingEntry(percent: 3, at: plus(days: 2, from: anchorDate), resetsAt: end)
+    let latest = TrackingEntry(percent: 30, at: plus(days: 4, from: anchorDate), resetsAt: end)
+
+    let rows = rowsAfterAFortnight(tracking: [before, after, latest])
+    #expect(rows.first?.regrantedAt == after.at)
+    #expect(rows.first?.percentAtRegrant == 3)
+    #expect(rows.first?.regrantsObserved == 1)
+    #expect(rows.first?.finalPercent == 30)
+}
