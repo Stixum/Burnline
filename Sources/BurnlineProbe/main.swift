@@ -285,6 +285,10 @@ func candidateRow(_ source: Loaded, _ candidate: CaptureSelection.Candidate) -> 
     // and nothing more.
     let dating = candidate.capture.provenAt.map { "proven \(instant($0))" } ?? "inferred"
     let tail = notes.joined(separator: " · ")
+    // ⚠️ `padding(toLength:)` TRUNCATES what is too long rather than clipping
+    // with a marker. Latent, not a bug: the four label shapes and `instant()`'s
+    // fixed-width format all sit under both caps. Widen either and a row loses
+    // characters silently.
     return source.label.padding(toLength: 20, withPad: " ", startingAt: 0)
         + String(format: "%6.1f%%  ", candidate.capture.sevenDay.usedPercent)
         // Padded only when something follows it, so an unremarkable row does not

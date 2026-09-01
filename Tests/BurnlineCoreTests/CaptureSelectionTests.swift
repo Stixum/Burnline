@@ -478,3 +478,41 @@ private func replay(_ percent: Double, at captured: TimeInterval,
 @Test func resolvingNothingReportsNoCandidates() {
     #expect(CaptureSelection.resolve([], against: .empty).candidates.isEmpty)
 }
+
+/// The coherence `Candidate` asserts in prose, asserted as a contract.
+///
+/// Both halves hold only because `resolve` is the sole construction site —
+/// `Candidate` is a public struct with no public initialiser, so nothing outside
+/// `BurnlineCore` can mint an incoherent one. That is enforcement by access
+/// control, which is real but silent, and the other seven tests here only
+/// exercise it incidentally through scenarios that happen to have one candidate
+/// or two. Stated once, directly:
+///
+/// - **`isSelected` implies `isEligible`.** A refused candidate that was also
+///   marked chosen would have the probe name a source the filter had just
+///   rejected — the exact mis-report this task existed to remove.
+/// - **At most one `isSelected`.** `freshestIndex` returns one position, so a
+///   second would mean the flags were derived from something other than it.
+///
+/// Deliberately run over the epoch case with a mixed field, since that is the
+/// only shape where eligible and ineligible candidates coexist at all.
+@Test func selectionFlagsAreCoherentAcrossTheWholeField() {
+    let mark = markWithRegrant(startedAt: 2_000, startPercent: 0, usedPercent: 7)
+    let resolution = CaptureSelection.resolve([capture(51, at: 9_999),          // undated
+                                               proven(40, at: 1_000, provenAt: 1_000),  // too early
+                                               proven(9, at: 3_000, provenAt: 3_000),   // eligible
+                                               proven(8, at: 2_500, provenAt: 2_500)],  // eligible
+                                              against: mark)
+
+    #expect(resolution.candidates.count == 4)
+    #expect(resolution.candidates.filter(\.isSelected).count == 1,
+            "freshestIndex returns one position, so exactly one may be flagged")
+    for candidate in resolution.candidates where candidate.isSelected {
+        #expect(candidate.isEligible,
+                "a refused candidate must never be reported as the chosen one")
+    }
+    // The winner is the eligible one with the latest capturedAt, not the
+    // freshest overall — which is the refused undated 51%.
+    #expect(resolution.candidates.map(\.isSelected) == [false, false, true, false])
+    #expect(resolution.candidates.map(\.isFreshestOnDisk) == [true, false, false, false])
+}

@@ -89,8 +89,20 @@ public struct CaptureDirectory: Sendable {
         }
     }
 
-    /// The capture to trust. Pure — callers date the inputs first, since dating
-    /// is file I/O and this must stay testable without it.
+    /// The freshest capture's POSITION, restricted to `admissible`.
+    ///
+    /// The ranking primitive: every production path — `CaptureSelection.picked`
+    /// and `CaptureSelection.resolve` — goes through this one. Pure; callers
+    /// date the inputs first, since dating is file I/O and this must stay
+    /// testable without it.
+    ///
+    /// 🔴 A position rather than a value, because that is what lets a caller
+    /// correlate the winner back to the file it was loaded from. Correlating by
+    /// content cannot work: `sessionId` is `nil` on the shared
+    /// `rate-limits.json`, on the `cachedUsageUtilization` capture and on
+    /// `CaptureSelection`'s stand-in, so `first { $0.sessionId ==
+    /// winner.sessionId }` returns whichever of those was loaded first.
+    /// `BurnlineProbe` did precisely that and named the wrong source.
     ///
     /// ⚠️ **Ties break on provenance, never on magnitude.** This used to read
     /// "the higher percentage: same instant and cumulative usage means the
@@ -103,44 +115,45 @@ public struct CaptureDirectory: Sendable {
     /// A reading whose date is PROVEN (`RateLimitCapture.provenAt`: an explicit
     /// `fetchedAtMs`, or an exact `TranscriptDating.mintedAt`) therefore wins
     /// over one whose age is merely inferred. Beyond that the FIRST of the
-    /// equals wins — `max(by:)` replaces only on a strict increase — so the
-    /// caller's order decides, and every caller's order is deterministic:
-    /// `CaptureDirectory.load` sorts by session id and `UsageStore` appends the
-    /// other sources in a fixed order.
+    /// equals wins — `max(by:)` replaces only on a strict increase, and
+    /// `admissible` is ascending — so the caller's order decides, and every
+    /// caller's order is deterministic: `CaptureDirectory.load` sorts by session
+    /// id and `UsageStore` appends the other sources in a fixed order.
     ///
     /// Note that eligibility is decided upstream in `CaptureSelection` — this
-    /// only ranks what it is given.
+    /// only ranks the positions it is handed.
     ///
-    /// 🔴 **`internal`, and the narrowing is the point.** `BurnlineProbe` is a
-    /// separate target, so it cannot reach this and must go through
-    /// `CaptureSelection.resolve` like the app does. Wiring only `UsageStore`
-    /// when the per-session capture files landed left the probe disagreeing
-    /// with the app in exactly the case the feature existed for, and a
-    /// diagnostic that reports something other than the app is worse than no
-    /// diagnostic because it is trusted. Making it `public` again turns that
-    /// compile error back into a comment someone has to read.
-    static func freshest(of captures: [RateLimitCapture]) -> RateLimitCapture? {
-        freshestIndex(of: captures, among: Array(captures.indices)).map { captures[$0] }
-    }
-
-    /// `freshest` as a POSITION rather than a value, restricted to `admissible`.
-    ///
-    /// 🔴 The index is what lets a caller correlate the winner back to the file
-    /// it was loaded from. Correlating by content cannot work: `sessionId` is
-    /// `nil` on the shared `rate-limits.json`, on the `cachedUsageUtilization`
-    /// capture and on `CaptureSelection`'s stand-in, so `first { $0.sessionId ==
-    /// winner.sessionId }` returns whichever of those was loaded first.
-    /// `BurnlineProbe` did precisely that and named the wrong source.
-    ///
-    /// Ranking is written once, here, so `freshest` and the filtered pick can
-    /// never rank differently. `max(by:)` replaces only on a strict increase and
-    /// `admissible` is ascending, so the FIRST of the equals still wins — the
-    /// caller's order decides, exactly as before.
+    /// 🔴 **`internal`, and the narrowing is the point.** Neither ranking entry
+    /// point is `public`, so `BurnlineProbe` — a separate target — cannot reach
+    /// either and must go through `CaptureSelection.resolve` like the app does.
+    /// Wiring only `UsageStore` when the per-session capture files landed left
+    /// the probe disagreeing with the app in exactly the case the feature
+    /// existed for, and a diagnostic that reports something other than the app
+    /// is worse than no diagnostic because it is trusted. Widening either one
+    /// turns that compile error back into a comment someone has to read.
     static func freshestIndex(of captures: [RateLimitCapture],
                               among admissible: [Int]) -> Int? {
         admissible.max {
             (captures[$0].capturedAt, captures[$0].provenAt != nil ? 1 : 0)
                 < (captures[$1].capturedAt, captures[$1].provenAt != nil ? 1 : 0)
         }
+    }
+
+    /// `freshestIndex` over every position, as a value.
+    ///
+    /// ⚠️ **No production path calls this.** `CaptureSelection.picked` and
+    /// `CaptureSelection.resolve` both need the winner's POSITION as well as its
+    /// value, so both call `freshestIndex` and subscript for themselves — which
+    /// is this body, inlined. It is kept as a stable value-returning façade for
+    /// the tests in `CaptureDirectoryTests` and `UsageUtilizationTests` that
+    /// assert on ranking directly, where an index would say nothing readable.
+    ///
+    /// So: reach for `freshestIndex` in anything shipping, and do not read this
+    /// declaration's position in the file as evidence of what production uses.
+    /// It is deliberately NOT wired back into `resolve` to make this comment
+    /// true again — that would add a redundant ranking pass to spare a comment
+    /// a correction.
+    static func freshest(of captures: [RateLimitCapture]) -> RateLimitCapture? {
+        freshestIndex(of: captures, among: Array(captures.indices)).map { captures[$0] }
     }
 }
