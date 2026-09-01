@@ -1,27 +1,48 @@
 import Foundation
 
 /// Which threshold notifications have already fired, so a signal fires once
-/// per window and re-arms on that window's reset.
+/// per allowance and re-arms when a new one begins.
 ///
-/// A mark records the window it fired in *and the threshold it fired at*. It
-/// suppresses only while the current threshold equals the recorded one — so
-/// editing a threshold re-arms the signal with no clear-on-edit hook, and this
-/// file needs no coordination with settings.json. Accepted consequence, per the
-/// spec: oscillating a threshold can fire more than once per window; each edit
-/// expresses fresh intent.
+/// A mark records the window it fired in, *the allowance epoch inside that
+/// window*, and *the threshold it fired at*. It suppresses only while the
+/// current threshold equals the recorded one — so editing a threshold re-arms
+/// the signal with no clear-on-edit hook, and this file needs no coordination
+/// with settings.json. Accepted consequence, per the spec: oscillating a
+/// threshold can fire more than once per window; each edit expresses fresh
+/// intent.
+///
+/// 🔴 Marks are never cleared imperatively when an epoch opens. A clear is a
+/// write that can fail or race; a mark that no longer matches the current
+/// epoch simply stops suppressing. That is the whole mechanism.
 public struct NotificationMarks: Equatable, Sendable, Codable {
     /// Bump when a stored mark's meaning changes. Same treatment as
     /// `RateLimitHighWater`: discard, never migrate — this is derived state and
     /// the worst case after a discard is one repeated notification.
-    public static let currentVersion = 1
+    ///
+    /// v2 (2026-09-01): `Mark` gained `epochStartedAt`. A v1 file has no such
+    /// key, so it neither decodes nor passes the version check — that *is* the
+    /// migration; there is no migration code and there must not be.
+    public static let currentVersion = 2
 
     public struct Mark: Equatable, Sendable, Codable {
         public var resetsAt: TimeInterval
         public var threshold: Double
+        /// The allowance epoch this mark fired in: for the weekly signals the
+        /// open re-grant's start, or the window's own start when no allowance
+        /// has been re-issued; for the five-hour signal, that window's start.
+        ///
+        /// 🔴 NON-OPTIONAL on purpose, unlike `RateLimitHighWater.Mark.regrant`
+        /// where the optional *is* the discriminator for "an epoch is open".
+        /// Different type, different rule: a notification mark always fired
+        /// inside some allowance, so there is always an instant to record. Do
+        /// not harmonise the two.
+        public var epochStartedAt: TimeInterval
 
-        public init(resetsAt: TimeInterval, threshold: Double) {
+        public init(resetsAt: TimeInterval, threshold: Double,
+                    epochStartedAt: TimeInterval) {
             self.resetsAt = resetsAt
             self.threshold = threshold
+            self.epochStartedAt = epochStartedAt
         }
     }
 
@@ -44,12 +65,21 @@ public struct NotificationMarks: Equatable, Sendable, Codable {
     public var isCompatible: Bool { version == Self.currentVersion }
 
     /// Reset instants compare with the shared 60s tolerance — the two capture
-    /// sources describe the same window to different precision. Thresholds
-    /// compare exactly: they come from steppers, not arithmetic.
+    /// sources describe the same window to different precision. Epoch instants
+    /// compare the same way and for the same reason: a window start is derived
+    /// from a ledger anchor whose fractional second comes and goes, and exact
+    /// equality would hand every rebuild its own epoch. Thresholds compare
+    /// exactly: they come from steppers, not arithmetic.
+    ///
+    /// `epochStartedAt` is required, never defaulted — a caller that forgot it
+    /// would fall back to suppressing across a re-grant, which is the bug this
+    /// dimension exists to fix.
     public static func suppresses(_ mark: Mark?, resetsAt: TimeInterval,
-                                  threshold: Double) -> Bool {
+                                  threshold: Double,
+                                  epochStartedAt: TimeInterval) -> Bool {
         guard let mark else { return false }
         return abs(mark.resetsAt - resetsAt) <= WindowLedger.sameResetTolerance
+            && abs(mark.epochStartedAt - epochStartedAt) <= WindowLedger.sameResetTolerance
             && mark.threshold == threshold
     }
 }

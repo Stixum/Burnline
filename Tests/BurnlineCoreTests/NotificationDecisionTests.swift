@@ -139,7 +139,7 @@ private func fiveHourAt(_ percent: Double, resetsIn: TimeInterval = 6_000) -> Fi
     var off = onSettings
     off.enabled = false
     let existing = NotificationMarks(
-        weekly: NotificationMarks.Mark(resetsAt: 1, threshold: 90))
+        weekly: NotificationMarks.Mark(resetsAt: 1, threshold: 90, epochStartedAt: 2))
     let result = NotificationDecision.evaluate(
         snapshot: decisionSnapshot(estimate: 99, fiveHour: fiveHourAt(99)),
         settings: off, targetMode: .realTime, marks: existing)

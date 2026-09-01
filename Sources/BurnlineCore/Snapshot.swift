@@ -16,6 +16,16 @@ public struct FiveHourStatus: Equatable, Sendable {
         self.timeRemaining = timeRemaining
     }
 
+    /// The window's own span. Fixed, and the reset is the only end of it this
+    /// source reports — so `startedAt` is derived, not observed.
+    public static let windowDuration: TimeInterval = 5 * 3_600
+
+    /// When this window opened. Used as the five-hour signal's notification
+    /// epoch, where it is a rigid function of `resetsAt` and so discriminates
+    /// exactly as `resetsAt` does — the point is that it is *this* window's
+    /// instant and never the weekly one's.
+    public var startedAt: Date { resetsAt.addingTimeInterval(-Self.windowDuration) }
+
     public var remainingDescription: String {
         let total = max(0, DisplayValue.seconds(timeRemaining))
         let hours = total / 3_600

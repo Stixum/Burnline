@@ -208,17 +208,19 @@ if noteSettings.enabled {
     // edited threshold, is not holding anything and reads "armed".
     func describe(_ label: String, signal: NotificationDecision.Signal,
                   value: Double?, threshold: Double,
-                  mark: NotificationMarks.Mark?, resetsAt: TimeInterval?) {
+                  mark: NotificationMarks.Mark?, resetsAt: TimeInterval?,
+                  epochStartedAt: TimeInterval?) {
         let padded = label.padding(toLength: 17, withPad: " ", startingAt: 0)
         let state: String
         if firing.contains(signal) {
             state = "WOULD FIRE"
         } else if value == nil {
             state = "silent (no reading)"
-        } else if let resetsAt,
+        } else if let resetsAt, let epochStartedAt,
                   NotificationMarks.suppresses(mark, resetsAt: resetsAt,
-                                               threshold: threshold) {
-            state = "fired this window (mark held)"
+                                               threshold: threshold,
+                                               epochStartedAt: epochStartedAt) {
+            state = "fired this allowance (mark held)"
         } else {
             state = "armed"
         }
@@ -226,22 +228,30 @@ if noteSettings.enabled {
         print("  \(padded)\(shown) vs \(DisplayValue.whole(threshold)) — \(state)")
     }
     // Re-derived mark keys: must match what `evaluate` records (weekly window
-    // end for the weekly signals, the capture's own reset for five-hour).
+    // end for the weekly signals, the capture's own reset for five-hour) and
+    // the epoch each records alongside it — the open re-grant when there is
+    // one, otherwise the window's own start; the five-hour window's own start
+    // for five-hour, never the weekly epoch.
     let weeklyReset = snapshot.window.end.timeIntervalSince1970
+    let weeklyEpoch = (snapshot.regrant?.startedAt ?? snapshot.window.start)
+        .timeIntervalSince1970
     // Points behind the target — negative while under budget.
     describe("behind-pace", signal: .behindPace,
              value: snapshot.delta(settings.targetMode).map { -$0 },
              threshold: noteSettings.behindPacePoints,
-             mark: marks.behindPace, resetsAt: weeklyReset)
+             mark: marks.behindPace, resetsAt: weeklyReset,
+             epochStartedAt: weeklyEpoch)
     describe("weekly", signal: .weekly,
              value: snapshot.estimatedPercent,
              threshold: noteSettings.weeklyPercent,
-             mark: marks.weekly, resetsAt: weeklyReset)
+             mark: marks.weekly, resetsAt: weeklyReset,
+             epochStartedAt: weeklyEpoch)
     describe("five-hour", signal: .fiveHour,
              value: snapshot.fiveHour?.usedPercent,
              threshold: noteSettings.fiveHourPercent,
              mark: marks.fiveHour,
-             resetsAt: snapshot.fiveHour?.resetsAt.timeIntervalSince1970)
+             resetsAt: snapshot.fiveHour?.resetsAt.timeIntervalSince1970,
+             epochStartedAt: snapshot.fiveHour?.startedAt.timeIntervalSince1970)
 }
 
 // MARK: - Usage archive
