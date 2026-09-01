@@ -14,10 +14,17 @@ import Foundation
 ///
 /// **Why taking the maximum is sound.** Usage inside a fixed window is
 /// cumulative. It cannot go down. So a reading lower than one already observed
-/// in the same window is necessarily staler — never a correction. The only case
-/// this would suppress is a genuine downward revision by Anthropic mid-window,
-/// which isn't a thing cumulative usage does; if it ever happened, the mark
-/// clears by itself at the next reset.
+/// in the same window is *presumed* staler rather than a correction.
+///
+/// ⚠️ **That presumption is defeasible, and it was defeated on 2026-09-01.**
+/// This comment used to call a mid-window downward revision "not a thing
+/// cumulative usage does". Anthropic re-issued the weekly allowance without
+/// moving `resets_at`; the true figure went 51% → 0% and the app displayed 51%
+/// for hours while blaming a stale session. So the rule is now falsifiable: a
+/// lower reading demotes the mark when — and only when — its date is *proven*
+/// (`RateLimitCapture.provenAt`) rather than inferred, and later than the
+/// evidence behind the mark. An undated reading still cannot demote anything,
+/// which is what keeps the idle-session defence intact.
 public struct RateLimitHighWater: Equatable, Sendable, Codable {
 
     /// A reading on disk that the high-water mark overrode, kept so the popover
@@ -151,12 +158,14 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
 
         let (sevenDay, sevenMark) = best(capture.sevenDay,
                                          capturedAt: capture.capturedAt,
+                                         provenAt: capture.provenAt,
                                          against: highWater.sevenDay)
 
         var fiveHour: RateLimitCapture.Reading?
         var fiveMark: Mark?
         if let reading = capture.fiveHour {
             let (resolved, mark) = best(reading, capturedAt: capture.capturedAt,
+                                        provenAt: capture.provenAt,
                                         against: highWater.fiveHour)
             fiveHour = resolved
             fiveMark = mark
@@ -200,25 +209,68 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         abs(a - b) <= sameWindowTolerance
     }
 
+    /// The later of two proofs, where either may be absent.
+    ///
+    /// 🔴 An absent incoming proof leaves the existing one alone. `capturedAt`
+    /// moves on any equal-or-higher confirmation; `provenAt` moves only on
+    /// evidence. Letting an undated replayer creep this forward would let it
+    /// outrun a frozen proven date indefinitely, which silently restores the
+    /// bug this whole rule exists to fix.
+    private static func laterProof(_ existing: TimeInterval?,
+                                   _ incoming: TimeInterval?) -> TimeInterval? {
+        guard let incoming else { return existing }
+        guard let existing else { return incoming }
+        return max(existing, incoming)
+    }
+
     private static func best(_ reading: RateLimitCapture.Reading,
                              capturedAt: TimeInterval,
+                             provenAt: TimeInterval?,
                              against mark: Mark?) -> (RateLimitCapture.Reading, Mark) {
         guard let mark, isSameWindow(mark.resetsAt, reading.resetsAt) else {
             return (reading, Mark(resetsAt: reading.resetsAt,
                                   usedPercent: reading.usedPercent,
-                                  capturedAt: capturedAt))
+                                  capturedAt: capturedAt,
+                                  provenAt: provenAt))
         }
+
         if reading.usedPercent < mark.usedPercent {
-            return (RateLimitCapture.Reading(usedPercent: mark.usedPercent,
-                                             resetsAt: mark.resetsAt),
-                    mark)
+            // The demotion basis: the latest instant the mark's reading is
+            // known to have been current. A mark with no proof falls back to
+            // `capturedAt`, an UPPER bound on when it was minted — so an
+            // unproven mark is HARDER to demote, never easier. A reading with
+            // no proof of its own cannot demote at all.
+            let basis = mark.provenAt ?? mark.capturedAt
+            guard (provenAt ?? -.infinity) > basis else {
+                return (RateLimitCapture.Reading(usedPercent: mark.usedPercent,
+                                                 resetsAt: mark.resetsAt),
+                        mark)
+            }
+            // Proven to have been minted after everything backing the mark, so
+            // it is a correction rather than a replay. `provenAt` is already
+            // later than the mark's, by the guard above.
+            return (reading, Mark(resetsAt: reading.resetsAt,
+                                  usedPercent: reading.usedPercent,
+                                  capturedAt: capturedAt,
+                                  provenAt: provenAt,
+                                  regrant: mark.regrant))
         }
+
         let confirmedAt = reading.usedPercent == mark.usedPercent
             ? max(capturedAt, mark.capturedAt)
             : capturedAt
+        // Equal re-confirms the mark's own reading, so the two proofs describe
+        // the same value and the later one wins. A strictly higher reading
+        // REPLACES that value, so it brings its own proof — or none, in which
+        // case the fallback is its own `capturedAt` upper bound.
+        let confirmedProof = reading.usedPercent == mark.usedPercent
+            ? laterProof(mark.provenAt, provenAt)
+            : provenAt
         return (reading, Mark(resetsAt: reading.resetsAt,
                               usedPercent: reading.usedPercent,
-                              capturedAt: confirmedAt))
+                              capturedAt: confirmedAt,
+                              provenAt: confirmedProof,
+                              regrant: mark.regrant))
     }
 }
 

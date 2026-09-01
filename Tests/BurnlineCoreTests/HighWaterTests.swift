@@ -19,6 +19,11 @@ private func capture(_ percent: Double, at captured: TimeInterval,
                      fiveHour: fiveHour)
 }
 
+private func proven(_ percent: Double, at t: TimeInterval,
+                    provenAt: TimeInterval) -> RateLimitCapture {
+    var c = capture(percent, at: t); c.provenAt = provenAt; return c
+}
+
 /// Several Claude Code sessions run the statusline script concurrently, each on
 /// its own timer, each carrying the rate_limits block from its own last API
 /// response — and they all overwrite the same file blind. An idle session
@@ -72,6 +77,38 @@ private func capture(_ percent: Double, at captured: TimeInterval,
 
     #expect(result.sevenDay.usedPercent == 4)
     #expect(updated.sevenDay?.resetsAt == reset + 7 * 86_400)
+}
+
+// MARK: - Demotion, when the lower reading can be PROVEN to be the later one
+
+/// The 2026-09-01 event: Anthropic re-issued the allowance mid-window and
+/// the app rejected the truth as a stale session for three days.
+@Test func aProvenLaterLowerReadingDemotesTheMark() {
+    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
+                                                 against: .empty)
+    let (result, _) = RateLimitHighWater.reconcile(proven(0, at: 2_000, provenAt: 2_000),
+                                                   against: mark)
+    #expect(result.sevenDay.usedPercent == 0)
+}
+
+/// POSITIVE CONTROL for the test above: the identical fixture with an
+/// INFERRED date must still be rejected. If this passes as 0, provenance is
+/// decorative and the stale-session defence is gone.
+@Test func anInferredLowerReadingNeverDemotes() {
+    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
+                                                 against: .empty)
+    let (result, _) = RateLimitHighWater.reconcile(capture(0, at: 2_000), against: mark)
+    #expect(result.sevenDay.usedPercent == 51)
+}
+
+/// An undated replayer must not creep the demotion basis forward, or it
+/// outruns a frozen proven date indefinitely.
+@Test func anUndatedReconfirmationDoesNotAdvanceTheProvenDate() {
+    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
+                                                 against: .empty)
+    let (_, after) = RateLimitHighWater.reconcile(capture(51, at: 9_000), against: mark)
+    #expect(after.sevenDay?.provenAt == 1_000)
+    #expect(after.sevenDay?.capturedAt == 9_000, "display age still moves")
 }
 
 // MARK: - The 5-hour reading has the same problem and its own window
