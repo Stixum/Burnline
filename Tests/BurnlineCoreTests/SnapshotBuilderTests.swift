@@ -219,3 +219,124 @@ private func capture(percent: Double, at captured: Date, resetsAt: Date) -> Rate
     #expect(snapshot.source == .paceOnly)
     #expect(snapshot.regrant == nil)
 }
+
+// MARK: - Projection is measured over the epoch, pace over the window
+
+// 🔴 The formula tests in `ProjectionTests` cannot see the call site. An
+// implementation that adds `epochStartPercent` correctly and still passes
+// `window.elapsedFraction` satisfies every one of them while leaving the
+// projection wrong for the whole epoch — mid-week the window denominator is
+// ~0.64 and the epoch's is ~0.05, an order of magnitude apart.
+//
+// ⚠️ Every fixture instant and percentage below is distinct: `window.start`,
+// `regrant.startedAt`, the capture instant and `now` are four same-typed
+// `Date`s, and `startPercent` (2), the captured figure (7) and the extrapolated
+// estimate (9) are three same-typed `Double`s.
+
+/// `now` is 11,400s into an epoch whose run to the reset is 228,000s — exactly
+/// 5% — while the window is ~64.2% elapsed.
+private let epochWindowEnd = capturedBucketStart.addingTimeInterval(217_600)
+private let epochNow = capturedBucketStart.addingTimeInterval(1_000)
+private let epochStartedAt = capturedBucketStart.addingTimeInterval(-10_400)
+private let epochCaptured = capturedBucketStart.addingTimeInterval(100)
+/// Burned under the *previous* allowance: in the window, out of the epoch.
+private let beforeTheEpoch = capturedBucketStart.addingTimeInterval(-3 * 86_400)
+/// The epoch's own units, before the capture.
+private let insideTheEpoch = capturedBucketStart.addingTimeInterval(-1_800)
+/// A later bucket than the capture's own, so it is genuine drift since.
+private let afterTheCapture = capturedBucketStart.addingTimeInterval(950)
+
+@Test func theBuilderProjectsOverTheEpochNotTheWindow() throws {
+    let snapshot = SnapshotBuilder.build(
+        cache: cache([(beforeTheEpoch, 16_000), (insideTheEpoch, 1_000),
+                      (afterTheCapture, 400)]),
+        settings: settings(),
+        rateLimit: capture(percent: 7, at: epochCaptured, resetsAt: epochWindowEnd),
+        now: epochNow, isScanning: false,
+        regrant: .init(startedAt: epochStartedAt.timeIntervalSince1970, startPercent: 2))
+
+    // The epoch bought 5 points with 1,000 units -> 200/point; 400 more -> 9.
+    #expect(abs(snapshot.estimatedPercent! - 9) < 1e-9)
+
+    // `#require`, not `!`: measuring the epoch's age against the seven days
+    // rather than its own run to the reset drops the fraction under the noise
+    // floor, and a force unwrap turns that failure into a crash that takes the
+    // whole suite's reporting with it.
+    let projected = try #require(snapshot.projectedPercent)
+
+    // 2 + (9 - 2) / 0.05 = 142. Every wrong wiring lands elsewhere:
+    //   window fraction, offset kept:  2 + 7/0.6419  = 12.9
+    //   window fraction, naive:            9/0.6419  = 14.0
+    //   epoch fraction, start not added back:  7/0.05 = 140
+    //   epoch fraction, start not subtracted:  9/0.05 = 180
+    #expect(abs(projected - 142) < 1e-9)
+
+    // Said the other way, against the figure the window denominator produces —
+    // computed from the snapshot's own window, so it cannot drift out of date.
+    let windowFigure = 2 + (9 - 2) / snapshot.window.elapsedFraction
+    #expect(abs(projected - windowFigure) > 100,
+            "the window denominator is nowhere near the epoch's")
+
+    // The fixture's premise, stated so a later edit cannot quietly void it.
+    #expect(abs(snapshot.window.elapsedFraction - 0.6419) < 0.01,
+            "deep into the window, and only 5% into the epoch")
+
+    // 🔴 Pace does NOT re-base. Two denominators on one screen, deliberately:
+    // the window did not change, so the target is still the clock's.
+    #expect(abs(snapshot.targetPercent - snapshot.window.elapsedFraction * 100) < 1e-9)
+    #expect(snapshot.targetPercent < 65)
+}
+
+/// 🔴 The noise floor lands on the EPOCH's elapsed fraction, not the window's.
+/// Right after a re-grant the epoch holds no units, the estimate is Anthropic's
+/// captured figure unscaled, and projecting a rate off a minutes-old denominator
+/// is exactly what `minimumElapsedFraction` exists to refuse. Guarding the
+/// window's fraction instead never fires here: it is 0.64, thirty times the
+/// floor.
+@Test func aFreshEpochSuppressesTheProjectionThoughTheWindowIsLongPastTheFloor() {
+    let justOpened = epochNow.addingTimeInterval(-4_000)   // 4,000 / 220,600 = 0.0181
+
+    let snapshot = SnapshotBuilder.build(
+        cache: cache([(beforeTheEpoch, 16_000)]),
+        settings: settings(),
+        rateLimit: capture(percent: 7, at: epochCaptured, resetsAt: epochWindowEnd),
+        now: epochNow, isScanning: false,
+        regrant: .init(startedAt: justOpened.timeIntervalSince1970, startPercent: 2))
+
+    // The epoch holds nothing yet, so the capture is reported unscaled — and an
+    // estimate exists, so a nil projection is the denominator's doing and not a
+    // missing numerator.
+    #expect(snapshot.estimatedPercent == 7)
+    #expect(snapshot.regrant != nil)
+    #expect(snapshot.projectedPercent == nil)
+
+    // Positive control on the guard: the window's fraction would have sailed past.
+    #expect(snapshot.window.elapsedFraction > Projection.minimumElapsedFraction * 30)
+}
+
+/// 🔴 POSITIVE CONTROL, at the call site rather than in the formula. Nearly
+/// every window has no epoch, and for those the denominator must still be the
+/// window's — a re-based projection is a correction for a rare event, not a new
+/// default. Nothing else in the suite pins this: the epoch tests above pass
+/// unchanged if the no-epoch branch returns anything at all, and a fraction of 0
+/// would silently blank the projection for every ordinary week.
+@Test func theBuilderStillProjectsOverTheWindowWithNoRegrant() throws {
+    let snapshot = SnapshotBuilder.build(
+        cache: cache([(beforeTheEpoch, 16_000), (insideTheEpoch, 1_000),
+                      (afterTheCapture, 400)]),
+        settings: settings(),
+        rateLimit: capture(percent: 7, at: epochCaptured, resetsAt: epochWindowEnd),
+        now: epochNow, isScanning: false)
+
+    let projected = try #require(snapshot.projectedPercent)
+    #expect(snapshot.regrant == nil)
+
+    // The whole window bought the whole 7%: 17,000 units -> 2,428.57/point, and
+    // 400 more -> 7.165. Over 0.6419 of the window that lands at ~11.16.
+    #expect(abs(snapshot.estimatedPercent! - 7.1647) < 0.001)
+    #expect(projected > 11 && projected < 12)
+
+    // Said definitionally, so the claim is about the wiring and not the digits:
+    // estimate over the window's own fraction, no offset anywhere.
+    #expect(abs(projected - snapshot.estimatedPercent! / snapshot.window.elapsedFraction) < 1e-9)
+}

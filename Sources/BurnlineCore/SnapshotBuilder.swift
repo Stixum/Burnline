@@ -91,8 +91,13 @@ public enum SnapshotBuilder {
             targetPercent: window.targetPercent,
             estimatedPercent: estimated,
             capturedPercent: capturedPercent,
+            // 🔴 The epoch's fraction, never the window's — and note this sits
+            // one line below `targetPercent`, which stays the window's. Two
+            // denominators on one screen, deliberately: see `Projection`.
             projectedPercent: Projection.projectedPercent(
-                estimatedPercent: estimated, elapsedFraction: window.elapsedFraction),
+                estimatedPercent: estimated,
+                elapsedFraction: epochElapsedFraction(epoch, in: window),
+                epochStartPercent: epoch?.startPercent ?? 0),
             unitsInWindow: units,
             calibrationAge: Calibration.age(of: settings.calibrationAnchors, now: now),
             source: source,
@@ -126,6 +131,29 @@ public enum SnapshotBuilder {
         let startedAt = Date(timeIntervalSince1970: regrant.startedAt)
         guard startedAt >= window.start, startedAt < window.end else { return nil }
         return Snapshot.Regrant(startedAt: startedAt, startPercent: regrant.startPercent)
+    }
+
+    /// How far through the **allowance epoch** `now` is: the epoch's own start
+    /// to the window's end.
+    ///
+    /// A re-grant re-issues the allowance without moving `resets_at`, so an
+    /// epoch is a shorter run to the same finish line and its fraction is
+    /// measured against that shorter span — not against the seven days, of
+    /// which most may already be gone. With no epoch open this is
+    /// `window.elapsedFraction`, unchanged.
+    ///
+    /// 🔴 `Projection.minimumElapsedFraction` then lands on *this* fraction,
+    /// which is the whole point of computing it here rather than in the view:
+    /// mid-week the window is thirty times past the noise floor while a
+    /// minutes-old epoch sits right on it, and the epoch is what the rate is
+    /// being measured over. Read from `epoch` on every call, like
+    /// `extrapolate` — a second re-grant re-bases the epoch wholesale.
+    private static func epochElapsedFraction(_ epoch: Snapshot.Regrant?,
+                                             in window: Window) -> Double {
+        guard let epoch else { return window.elapsedFraction }
+        let span = window.end.timeIntervalSince(epoch.startedAt)
+        guard span > 0 else { return 0 }
+        return min(max(window.now.timeIntervalSince(epoch.startedAt) / span, 0), 1)
     }
 
     /// The window ending at `reset`, rolled forward in 7-day steps if that
