@@ -137,6 +137,24 @@ private func capture(_ percent: Double, at captured: TimeInterval,
     #expect(HighWaterStore(directory: directory).load() == .empty)
 }
 
+/// A v1 mark has no provenAt and no regrant. Loading one would present a
+/// pre-versioning claim as a proven date. Discard, never migrate — the same
+/// rule ScanCache uses.
+///
+/// ⚠️ POSITIVE CONTROL: the v1 fixture carries 99%, a value that would be
+/// glaringly visible if it were migrated rather than dropped. Without a
+/// distinctive value, "discarded" and "loaded but equal" look identical.
+@Test func aVersionOneHighWaterFileIsDiscardedNotMigrated() throws {
+    let dir = highWaterScratch()
+    let legacy = #"{"version":1,"sevenDay":{"resetsAt":1,"usedPercent":99,"capturedAt":1}}"#
+    try Data(legacy.utf8).write(to: dir.appendingPathComponent("rate-limit-highwater.json"))
+
+    let loaded = HighWaterStore(directory: dir).load()
+
+    #expect(loaded.sevenDay == nil, "a v1 mark must not survive")
+    #expect(loaded.sevenDay?.usedPercent != 99, "99 would prove it was migrated")
+}
+
 @Test func highWaterRoundTripsAtTheCurrentVersion() throws {
     let directory = highWaterScratch()
     let store = HighWaterStore(directory: directory)

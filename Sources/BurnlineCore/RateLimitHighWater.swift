@@ -54,16 +54,56 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         return RejectedReading(reportedPercent: reported, usingPercent: using)
     }
 
-    /// A high-water mark for one reading, tied to the window it was taken in.
+    /// A re-grant: the allowance re-issued inside an unchanged window.
+    ///
+    /// Anthropic sometimes re-issues the weekly allowance *inside* a window
+    /// without moving the reset instant, which is a second way an epoch can
+    /// end besides the window itself resetting. `startedAt` is the opening
+    /// reading's `provenAt` and `startPercent` is the value it opened at.
+    ///
+    /// 🔴 The OPTIONAL on `Mark.regrant` is the discriminator for "is a
+    /// re-grant open?" — never a percentage. The observed 2026-09-01 event
+    /// re-granted to 0%, identical to the ordinary window-start value, so any
+    /// test of `startPercent` itself would silently disable this for exactly
+    /// the case it exists for.
+    public struct Regrant: Equatable, Sendable, Codable {
+        public var startedAt: TimeInterval
+        public var startPercent: Double
+
+        public init(startedAt: TimeInterval, startPercent: Double) {
+            self.startedAt = startedAt
+            self.startPercent = startPercent
+        }
+    }
+
+    /// A high-water mark for one reading, scoped to the allowance epoch it was
+    /// taken in — not merely the window. An epoch ends at a window reset *or*
+    /// at a re-grant; `regrant`, when set, records the latter.
     public struct Mark: Equatable, Sendable, Codable {
         public var resetsAt: TimeInterval
         public var usedPercent: Double
         public var capturedAt: TimeInterval
+        /// The instant this mark's reading can be PROVEN to have been minted,
+        /// carried over from `RateLimitCapture.provenAt`.
+        ///
+        /// 🔴 Unlike `RateLimitCapture.provenAt` — deliberately excluded from
+        /// Codable because a decoded capture is never re-saved — `Mark` IS
+        /// persisted every rebuild, so this MUST survive a decode or the
+        /// demotion rule (Task 4) silently weakens on every app launch.
+        public var provenAt: TimeInterval?
+        /// Set when this epoch opened via a re-grant rather than a window
+        /// reset. `nil` for an ordinary mark, including every five-hour mark
+        /// — no five-hour figure is ever extrapolated, so there is nothing
+        /// for an epoch to re-base there.
+        public var regrant: Regrant?
 
-        public init(resetsAt: TimeInterval, usedPercent: Double, capturedAt: TimeInterval) {
+        public init(resetsAt: TimeInterval, usedPercent: Double, capturedAt: TimeInterval,
+                    provenAt: TimeInterval? = nil, regrant: Regrant? = nil) {
             self.resetsAt = resetsAt
             self.usedPercent = usedPercent
             self.capturedAt = capturedAt
+            self.provenAt = provenAt
+            self.regrant = regrant
         }
     }
 
@@ -78,7 +118,12 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
     ///
     /// Same treatment as `ScanCache`: discard, never migrate. This is derived
     /// state and rebuilds from the next capture.
-    public static let currentVersion = 1
+    ///
+    /// v2 (2026-09-01): `Mark` gained `provenAt` and `regrant`, scoping the
+    /// mark to an allowance epoch rather than only a window. A v1 file has
+    /// neither field and no way to earn them retroactively — discard rather
+    /// than migrate, same as the v1 bump above.
+    public static let currentVersion = 2
 
     public var version: Int
     public var sevenDay: Mark?
