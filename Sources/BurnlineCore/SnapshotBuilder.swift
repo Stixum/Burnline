@@ -39,6 +39,18 @@ public enum SnapshotBuilder {
         // keyed to the current window — permanently wrong, and silently.
         let capturedPercent: Double?
         let source: UsageSource
+        // 🔴 Scoped to the live branch on purpose, the same as `capturedPercent`
+        // — so "a re-grant implies a live capture" is a fact about the code
+        // rather than a rule a test has to remember.
+        //
+        // An epoch re-bases a figure that was measured from it. Under `.live`
+        // that is exactly what `estimated` is. Under `.calibrated` it is not:
+        // that estimate comes from `unitsInWindow` and the user's anchors,
+        // counted from `window.start`, and offering an epoch alongside it hands
+        // every later reader — the projection, the notification identity, the
+        // popover row — an epoch that nothing in the figure it decorates was
+        // measured from. Under `.paceOnly` there is no usage figure at all.
+        let epoch: Snapshot.Regrant?
 
         // The capture's percentage is only meaningful inside the window it was
         // taken in. Once that window resets, the number is about a period that
@@ -46,18 +58,21 @@ public enum SnapshotBuilder {
         if let capture = rateLimit,
            capture.capturedDate >= window.start,
            capture.capturedDate < window.end {
+            epoch = openEpoch(regrant, in: window)
             estimated = extrapolate(capture: capture, cache: cache, window: window,
-                                    weights: settings.weights)
+                                    epoch: epoch, weights: settings.weights)
             capturedPercent = capture.sevenDay.usedPercent
             source = .live(capturedAt: capture.capturedDate)
         } else if let calibrated = Calibration.estimatedPercent(
             unitsInWindow: units, anchors: settings.calibrationAnchors, now: now) {
             estimated = calibrated
             capturedPercent = nil
+            epoch = nil
             source = .calibrated
         } else {
             estimated = nil
             capturedPercent = nil
+            epoch = nil
             source = .paceOnly
         }
 
@@ -69,23 +84,6 @@ public enum SnapshotBuilder {
             return FiveHourStatus(usedPercent: reading.usedPercent,
                                   resetsAt: reading.resetsDate,
                                   timeRemaining: remaining)
-        }
-
-        // An epoch belongs to the window it opened in. A mark outlives its own
-        // window — `reconcile` clears it only once a capture for a *different*
-        // window arrives, and in the gap `CaptureSelection` hands back that dead
-        // mark as a stand-in — so a `Regrant` from the previous window is a
-        // reachable state, not a hypothetical.
-        //
-        // Same shape as the `capturedPercent` guard above, and for the same
-        // reason: `windowFromReset` rolls a window forward from a dead capture,
-        // and anything keyed to the old one is then silently wrong about the new
-        // one. Here that would date the extrapolation's epoch re-base from an
-        // instant that is not in the window being re-based.
-        let epoch = regrant.flatMap { regrant -> Snapshot.Regrant? in
-            let startedAt = Date(timeIntervalSince1970: regrant.startedAt)
-            guard startedAt >= window.start, startedAt < window.end else { return nil }
-            return Snapshot.Regrant(startedAt: startedAt, startPercent: regrant.startPercent)
         }
 
         return Snapshot(
@@ -107,6 +105,27 @@ public enum SnapshotBuilder {
             scopedWeekly: scopedWeekly,
             regrant: epoch
         )
+    }
+
+    /// The open allowance epoch, in `Date` terms, when one belongs to `window`.
+    ///
+    /// An epoch belongs to the window it opened in. A mark outlives its own
+    /// window — `reconcile` clears it only once a capture for a *different*
+    /// window arrives, and in the gap `CaptureSelection` hands back that dead
+    /// mark as a stand-in — so a `Regrant` from the previous window is a
+    /// reachable state, not a hypothetical.
+    ///
+    /// Same shape as the `capturedPercent` guard, and for the same reason:
+    /// `windowFromReset` rolls a window forward from a dead capture, and
+    /// anything keyed to the old one is then silently wrong about the new one.
+    /// Here that would measure the extrapolation's denominator from an instant
+    /// that is not in the window being measured.
+    private static func openEpoch(_ regrant: RateLimitHighWater.Regrant?,
+                                  in window: Window) -> Snapshot.Regrant? {
+        guard let regrant else { return nil }
+        let startedAt = Date(timeIntervalSince1970: regrant.startedAt)
+        guard startedAt >= window.start, startedAt < window.end else { return nil }
+        return Snapshot.Regrant(startedAt: startedAt, startPercent: regrant.startPercent)
     }
 
     /// The window ending at `reset`, rolled forward in 7-day steps if that
@@ -132,11 +151,39 @@ public enum SnapshotBuilder {
     /// percentage, and — paired with the local token count at that instant —
     /// the units-per-percent needed to project past it. No stored anchors, no
     /// user input.
+    ///
+    /// 🔴 **Everything is measured from the allowance epoch, which is the window
+    /// only while no re-grant is open.** `observed` counts from whenever the
+    /// current allowance began, so the units it was bought with have to be
+    /// counted from the same instant. Post-re-grant that instant is
+    /// `regrant.startedAt`: `observed` is the new small percentage while
+    /// `window.start` still drags in every token burned under the *previous*
+    /// allowance, which inflated units-per-percent ~17x on the observed
+    /// 2026-09-01 data and left the figure barely moving between captures.
+    ///
+    /// **Both cumulative measurements move together, and that is not
+    /// cosmetic.** `since` is their difference, so the pre-epoch units cancel
+    /// and the answer is the same either way — *provided* both move. Re-base
+    /// only `unitsAtCapture` and `since` becomes "everything since the window
+    /// started minus the epoch's own units", which on this data reads 71%
+    /// instead of 7%. Re-base only `unitsNow` and `since` clamps to zero and
+    /// the figure freezes at the capture. `Snapshot.unitsInWindow` is a
+    /// different quantity and deliberately does not move: it is a true fact
+    /// about the week, not a denominator.
     private static func extrapolate(capture: RateLimitCapture,
                                     cache: ScanCache,
                                     window: Window,
+                                    epoch: Snapshot.Regrant?,
                                     weights: Weights) -> Double {
         let observed = capture.sevenDay.usedPercent
+
+        // 🔴 Read from the epoch on EVERY call, never latched on "an epoch
+        // exists". A second material drop inside an open epoch re-bases the
+        // `Regrant` wholesale (`RateLimitHighWater.best`), which is the real
+        // 51 -> 0 -> 20 -> 0 shape; anything that remembered the first epoch is
+        // stale by the whole of it — this same error, one level down.
+        let epochStart = epoch?.startedAt ?? window.start
+        let epochStartPercent = epoch?.startPercent ?? 0
 
         // The capture's own 15-minute bucket straddles the capture instant, and
         // the sub-bucket detail was never stored — its units can't be split into
@@ -151,16 +198,27 @@ public enum SnapshotBuilder {
         // way costs at most one bucket of genuine drift, and captures land every
         // 30s, so it is corrected almost immediately.
         let captureBucketEnd = Bucket.start(ofKey: Bucket.key(for: capture.capturedDate) + 1)
-        let unitsAtCapture = cache.units(from: window.start, to: captureBucketEnd,
+        let unitsAtCapture = cache.units(from: epochStart, to: captureBucketEnd,
                                          weights: weights)
-        let unitsNow = cache.units(from: window.start, to: window.end, weights: weights)
+        let unitsNow = cache.units(from: epochStart, to: window.end, weights: weights)
 
-        guard observed >= minimumExtrapolationPercent, unitsAtCapture > 0 else {
+        // The progress the epoch's units actually bought. Without a re-grant
+        // this is `observed` unchanged, so every ordinary window is untouched.
+        // The noise guard belongs on this difference, not on `observed`: 1.5%
+        // against an epoch that opened at 1% is half a point of signal, and
+        // dividing by it is the near-zero denominator the guard exists to
+        // refuse — however comfortably 1.5 clears the threshold on its own.
+        let observedInEpoch = observed - epochStartPercent
+
+        guard observedInEpoch >= minimumExtrapolationPercent, unitsAtCapture > 0 else {
             // Nothing trustworthy to scale by — report what Claude Code said.
+            // Right after a re-grant `unitsAtCapture` is legitimately zero; the
+            // window's units are not a stand-in for it, because they bought the
+            // percentage of an allowance that no longer applies.
             return observed
         }
 
-        let unitsPerPercent = unitsAtCapture / observed
+        let unitsPerPercent = unitsAtCapture / observedInEpoch
         let since = max(0, unitsNow - unitsAtCapture)
         return observed + since / unitsPerPercent
     }

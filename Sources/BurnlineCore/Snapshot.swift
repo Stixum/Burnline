@@ -95,6 +95,11 @@ public struct Snapshot: Equatable, Sendable {
     /// `nil` in the ordinary case, which is nearly always. Non-nil is the
     /// discriminator, never `startPercent`: the observed 2026-09-01 event
     /// re-granted to 0%, identical to the ordinary window-start value.
+    ///
+    /// Present only under `.live`, like `capturedPercent` and for the same
+    /// reason — an epoch re-bases a figure that was measured from it, and only
+    /// the extrapolated live figure is. A calibrated estimate counts from
+    /// `window.start`, so an epoch beside it would describe nothing.
     public let regrant: Regrant?
 
     public init(window: Window, targetPercent: Double, estimatedPercent: Double?,
