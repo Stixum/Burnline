@@ -37,10 +37,29 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
     public struct RejectedReading: Equatable, Sendable {
         public let reportedPercent: Double
         public let usingPercent: Double
+        /// Set when the refused reading describes a weekly window that has
+        /// already reset, rather than a rival claim about the current one.
+        ///
+        /// Reachable, and it was reachable silently: with an epoch open and the
+        /// window then rolling, `CaptureSelection.eligible` refuses an undated
+        /// replay of the old window while admitting a proven capture of the new
+        /// one — so `onDisk` and `trusted` end up describing different windows.
+        /// Without this the row explained that with the re-grant story, which
+        /// says "inside this window" about a reading that is not in it.
+        ///
+        /// 🔴 Only the EARLIER direction is claimed, because only it is
+        /// checkable from what `rejection` is handed and only it is the case
+        /// that actually occurs. A refused reading from a *later* window would
+        /// mean the shown figure is the dead one, a different defect entirely,
+        /// and it falls through to the direction branches rather than being
+        /// mislabelled here.
+        public let isFromAnEarlierWindow: Bool
 
-        public init(reportedPercent: Double, usingPercent: Double) {
+        public init(reportedPercent: Double, usingPercent: Double,
+                    isFromAnEarlierWindow: Bool = false) {
             self.reportedPercent = reportedPercent
             self.usingPercent = usingPercent
+            self.isFromAnEarlierWindow = isFromAnEarlierWindow
         }
 
         /// Assembled here, like `FiveHourStatus.rowValue`, so no view body does
@@ -49,18 +68,19 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
             "said \(DisplayValue.whole(reportedPercent))%, kept \(DisplayValue.whole(usingPercent))%"
         }
 
-        /// Why the two figures differ — in the direction they actually differ.
+        /// Why the two figures differ — for the reason they actually differ.
         ///
         /// ⚠️ The popover used to state one reason unconditionally: "usage
         /// inside a window cannot go down, so the lower reading is always the
         /// older one". That is the exact axiom a re-grant falsifies, so over a
         /// re-grant refusal it explained the disagreement with a sentence the
-        /// disagreement disproves. Direction is decided here rather than in the
+        /// disagreement disproves. Branching is decided here rather than in the
         /// view, like `rowValue`, so the wording stays test-covered.
         ///
-        /// 🔴 **Both branches claim only what the two percentages can support.**
-        /// This type holds nothing else — not the candidate, not its dates — so
-        /// neither branch may name a reason it cannot check:
+        /// 🔴 **Every branch claims only what this type can support.** It holds
+        /// two percentages and one checked fact about the two windows — not the
+        /// candidate, not its dates — so no branch may name a reason it cannot
+        /// check:
         ///
         /// - The re-grant branch must NOT say the reading "predates" the
         ///   re-issue. `CaptureSelection.eligible` refuses two kinds of
@@ -71,19 +91,40 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         ///   is showing a pre-re-grant number would be false at the exact moment
         ///   they are comparing the two. "Could not be shown to postdate it" is
         ///   the claim the filter actually makes.
-        /// - The idle-session branch is a PRESUMPTION, not a deduction, for the
-        ///   same reason: it fires for a reading that is merely not provably
-        ///   newer. "By consumption" is the qualifier that keeps the axiom true
-        ///   after 2026-09-01 — an allowance re-issue is not consumption.
+        /// - ⚠️ **The overridden-from-below branch names the missing PROOF, not
+        ///   the axiom** (changed 2026-09-01, with the tests that pinned the old
+        ///   wording). It used to read "usage inside a window cannot go down by
+        ///   consumption, so the lower reading is presumed older — an idle
+        ///   session republishing what it cached". The axiom sentence is true
+        ///   and it is not the reason: `best()` refuses a lower reading purely
+        ///   because its date could not be shown to be later than the evidence
+        ///   behind the mark. An allowance re-issue is not consumption, so a
+        ///   GENUINE re-grant that happened to arrive undated lands in this
+        ///   branch too — and was told, in the app's own words, that what it
+        ///   reported cannot happen. The idle session stays in the copy as the
+        ///   likely cause it is, never as the deduction it was.
+        /// - The earlier-window branch is the one place a date is named, and it
+        ///   rests on `isFromAnEarlierWindow`, which `rejection` computes from
+        ///   the two reset instants. Do not fire it on direction: a rejected
+        ///   reading can be higher or lower than the shown one, and a re-grant
+        ///   and a rolled window look identical through the percentages alone.
         public var explanation: String {
             let said = DisplayValue.whole(reportedPercent)
             let kept = DisplayValue.whole(usingPercent)
+            if isFromAnEarlierWindow {
+                return """
+                       Another Claude Code session reported \(said)%, but that reading is from \
+                       the previous weekly window, which has already reset — so it was ignored. \
+                       The \(kept)% shown is measured against the current window.
+                       """
+            }
             if usingPercent > reportedPercent {
                 return """
                        Another Claude Code session reported \(said)%, which is lower than the \
-                       \(kept)% already seen this window, so it was ignored. Usage inside a \
-                       window cannot go down by consumption, so the lower reading is presumed \
-                       older — an idle session republishing what it cached.
+                       \(kept)% already seen this window and could not be shown to have been \
+                       taken later, so it was ignored. Usually that is an idle session \
+                       republishing what it cached — but a reading whose time can be proven \
+                       replaces this one whichever way it moves the figure.
                        """
             }
             return """
@@ -120,7 +161,16 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         let reported = onDisk.sevenDay.usedPercent
         let using = resolved.sevenDay.usedPercent
         guard using != reported else { return nil }
-        return RejectedReading(reportedPercent: reported, usingPercent: using)
+        // The one fact beyond the two percentages that this comparison can
+        // establish, and the row is wrong without it: once the window rolls
+        // under an open epoch, the freshest reading on disk can be a replay of
+        // the window that just ended while the trusted one describes the new
+        // one. Same tolerance as window identity everywhere else — the two
+        // sources spell one boundary 0.58s apart, and that must not read as two
+        // windows.
+        let earlier = onDisk.sevenDay.resetsAt < resolved.sevenDay.resetsAt - sameWindowTolerance
+        return RejectedReading(reportedPercent: reported, usingPercent: using,
+                               isFromAnEarlierWindow: earlier)
     }
 
     /// A re-grant: the allowance re-issued inside an unchanged window.

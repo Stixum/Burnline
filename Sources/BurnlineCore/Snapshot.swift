@@ -60,6 +60,43 @@ public struct Snapshot: Equatable, Sendable {
             self.startedAt = startedAt
             self.startPercent = startPercent
         }
+
+        /// The popover row's value: `"Mon 2:14 PM, was 0%"`.
+        ///
+        /// Assembled here, like `FiveHourStatus.rowValue` and
+        /// `RejectedReading.rowValue`, because no view body in this codebase
+        /// formats — and because `Sources/Burnline` has no test target, so a
+        /// string built there is a string nothing can check.
+        ///
+        /// 🔴 `was N%` is `startPercent`: where the figure stood when the NEW
+        /// allowance was issued, not the figure it replaced. That is the only
+        /// percentage this type carries, and it is the one that makes the drop
+        /// legible — the headline is measured up from it. It is routinely 0,
+        /// which is correct and is why nothing keys off its value.
+        public var rowValue: String { rowValue(in: .current) }
+
+        /// The zone split out so the wording is testable without depending on
+        /// wherever the suite happens to run.
+        ///
+        /// `.current` rather than the reset schedule's zone: a re-grant is an
+        /// instant the user lived through, so it is reported on their own clock.
+        /// The weekday is part of it — an epoch can have opened days ago inside
+        /// a seven-day window, and a bare `2:14 PM` would be ambiguous across
+        /// seven of them.
+        ///
+        /// `en_US_POSIX` because a custom `dateFormat` otherwise picks up the
+        /// user's locale symbols and prints things like `14:14 PM`. The whole UI
+        /// is hardcoded English.
+        func rowValue(in timeZone: TimeZone) -> String {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = timeZone
+            formatter.dateFormat = "EEE h:mm a"
+            // Through `DisplayValue`, which saturates: `Int(Double)` traps on a
+            // value outside `Int`'s range, and every percentage here descends
+            // from JSON on disk.
+            return "\(formatter.string(from: startedAt)), was \(DisplayValue.whole(startPercent))%"
+        }
     }
 
     public let window: Window
@@ -176,6 +213,24 @@ public struct Snapshot: Equatable, Sendable {
     public var deltaPercent: Double? { delta(.realTime) }
 
     public var isUnderBudget: Bool? { isUnder(.realTime) }
+
+    /// The projection row's label, which has to name its denominator once a
+    /// second one is on screen.
+    ///
+    /// `targetPercent` is measured over the window and `projectedPercent` over
+    /// the allowance epoch — deliberately, see `Projection` — so with an epoch
+    /// open the popover shows two rates against two spans and said so nowhere.
+    /// "At this rate" then silently means "at this rate since the re-grant",
+    /// which is not the rate the pace figure beside it is about.
+    ///
+    /// A label and not a tooltip because the ambiguity is on the face of the
+    /// row; a rule and not a view branch because every other rule in this app
+    /// lives where the tests are. Kept to the width class of the string it
+    /// replaces: the row's worst-case value is `over limit · 999% by reset`,
+    /// and a longer label truncates one of the two.
+    public var projectionLabel: String {
+        regrant == nil ? "At this rate" : "Rate since re-grant"
+    }
 
     /// No calibration yet — show the pace target alone.
     public var isPaceOnly: Bool { estimatedPercent == nil }

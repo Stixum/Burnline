@@ -120,7 +120,12 @@ struct PopoverView: View {
             row("Time left", remainingDescription)
             // The one row that should change what you do next, so it is allowed
             // to shout when the week is heading past the limit.
-            row("At this rate", Projection.description(snapshot.projectedPercent),
+            // ⚠️ The label is `snapshot.projectionLabel`, not a literal: this
+            // row's denominator is the allowance epoch while the pace figure
+            // above it is the window's, and once a re-grant opens those are
+            // different spans. The rule lives on `Snapshot` because a view
+            // branch is a rule no test can see.
+            row(snapshot.projectionLabel, Projection.description(snapshot.projectedPercent),
                 tint: Projection.isOverLimit(snapshot.projectedPercent)
                     ? Theme.danger : Theme.textSecondary)
             // Only when a live capture carries one — it's absent on plans that
@@ -133,6 +138,12 @@ struct PopoverView: View {
             // recorded for months as impossible to obtain.
             if let scoped = snapshot.scopedWeekly {
                 row(scoped.modelName, scoped.rowValue)
+            }
+            // Exceptions-only, and above the rejection row on purpose: a
+            // re-grant is the CAUSE of the disagreement the rejection row
+            // reports, so it reads cause then consequence.
+            if let regrant = snapshot.regrant {
+                regrantRow(regrant)
             }
             // Exceptions-only, per the portfolio status-chip standard: absent
             // unless the file actually disagrees with what's on screen.
@@ -166,6 +177,33 @@ struct PopoverView: View {
         .font(.system(size: 11.5))
         .foregroundStyle(Theme.warning)
         .help(rejected.explanation)
+    }
+
+    /// The one thing that can make the figure fall without the window
+    /// resetting: Anthropic re-issued the weekly allowance mid-window.
+    ///
+    /// Without this row the drop has no cause on screen, which is the shape of
+    /// the 2026-09-01 incident in reverse — the app was believed broken because
+    /// its number disagreed with the terminal and nothing said why.
+    ///
+    /// Accent violet, not amber: this is notable, not wrong, and the amber
+    /// rejection row can sit directly beneath it. Symbol + word + colour, never
+    /// colour alone.
+    ///
+    /// The value string is `Snapshot.Regrant.rowValue`; this target has no
+    /// tests, so nothing is assembled here.
+    private func regrantRow(_ regrant: Snapshot.Regrant) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "arrow.counterclockwise.circle.fill").font(.system(size: 9))
+            Text("Limits re-granted")
+            Spacer()
+            Text(regrant.rowValue).monospacedDigit()
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(Theme.accent)
+        .help("Anthropic re-issued the weekly allowance inside this window, "
+              + "without moving the reset. The rate above is measured from "
+              + "there; the pace target still runs from the window's own start.")
     }
 
     private func row(_ label: String, _ value: String,

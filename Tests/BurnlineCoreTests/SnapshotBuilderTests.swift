@@ -345,3 +345,93 @@ private let afterTheCapture = capturedBucketStart.addingTimeInterval(950)
     let estimate = try #require(snapshot.estimatedPercent)
     #expect(abs(projected - estimate / snapshot.window.elapsedFraction) < 1e-9)
 }
+
+// MARK: - The "Limits re-granted" row
+
+// `Sources/Burnline` has no test target, so every string it renders is
+// assembled in this module or it is assembled where nothing can check it. The
+// row reads `Limits re-granted   Mon 2:14 PM, was 0%`.
+
+/// Mon 2026-08-10 14:14 UTC. A fixed instant and an explicit zone, because
+/// `rowValue` itself renders on `.current` and a test that used it would only be
+/// asserting that the machine agrees with itself.
+private let regrantInstant = Date(timeIntervalSince1970: 1_786_371_240)
+private let utc = TimeZone(identifier: "UTC")!
+
+@Test func theRegrantRowNamesTheInstantAndWhereTheAllowanceOpened() {
+    let regrant = Snapshot.Regrant(startedAt: regrantInstant, startPercent: 0)
+
+    #expect(regrant.rowValue(in: utc) == "Mon 2:14 PM, was 0%")
+}
+
+/// 🔴 The weekday is not decoration. An epoch can have opened days back inside a
+/// seven-day window, and `2:14 PM` alone names seven different instants.
+@Test func theRegrantRowCarriesTheWeekdayNotJustTheClockTime() {
+    let regrant = Snapshot.Regrant(startedAt: regrantInstant.addingTimeInterval(-2 * 86_400),
+                                   startPercent: 0)
+
+    #expect(regrant.rowValue(in: utc) == "Sat 2:14 PM, was 0%")
+}
+
+/// The zone is honoured rather than ignored — the same instant, read on the
+/// clock the user was actually looking at. `chicago` is UTC-5 in August.
+@Test func theRegrantRowRendersOnTheGivenClock() {
+    let regrant = Snapshot.Regrant(startedAt: regrantInstant, startPercent: 0)
+
+    #expect(regrant.rowValue(in: chicago) == "Mon 9:14 AM, was 0%")
+}
+
+/// `was 0%` is the ordinary case — the real 2026-09-01 event re-granted to zero
+/// — so a fixture at 0 alone cannot tell `startPercent` from a hardcoded 0.
+@Test func theRegrantRowReportsTheEpochsOwnStartPercent() {
+    let regrant = Snapshot.Regrant(startedAt: regrantInstant, startPercent: 4)
+
+    #expect(regrant.rowValue(in: utc) == "Mon 2:14 PM, was 4%")
+}
+
+/// Through `DisplayValue`, like every other figure: it rounds, and it saturates
+/// rather than trapping on a value out of `Int`'s range. Every percentage in
+/// this app descends from JSON on disk.
+@Test func theRegrantRowRoundsAndSaturatesLikeEveryOtherFigure() {
+    #expect(Snapshot.Regrant(startedAt: regrantInstant, startPercent: 51.6)
+        .rowValue(in: utc) == "Mon 2:14 PM, was 52%")
+    #expect(Snapshot.Regrant(startedAt: regrantInstant, startPercent: 1e20)
+        .rowValue(in: utc) == "Mon 2:14 PM, was 999%")
+}
+
+// MARK: - The projection row names its denominator
+
+// 🔴 Two rates against two spans sit on one screen once an epoch opens: the pace
+// target is measured over the window and the projection over the epoch (see
+// `Projection`). That is deliberate, and until now the screen said so nowhere —
+// "At this rate" silently meant "at this rate since the re-grant".
+
+@Test func theProjectionRowIsLabelledForTheWindowWithNoEpochOpen() {
+    let snapshot = SnapshotBuilder.build(
+        cache: cache([(capturedBucketStart, 9_000)]),
+        settings: settings(),
+        rateLimit: capture(percent: 3, at: capturedBucketStart,
+                           resetsAt: capturedBucketStart.addingTimeInterval(2 * 86_400)),
+        now: capturedBucketStart.addingTimeInterval(1_000), isScanning: false)
+
+    #expect(snapshot.regrant == nil)
+    #expect(snapshot.projectionLabel == "At this rate")
+}
+
+/// Built through the real builder rather than by hand: the label follows the
+/// epoch the snapshot actually carries, and `openEpoch` is what decides whether
+/// there is one.
+@Test func theProjectionRowNamesTheRegrantOnceAnEpochIsOpen() {
+    let snapshot = SnapshotBuilder.build(
+        cache: cache([(capturedBucketStart, 9_000)]),
+        settings: settings(),
+        rateLimit: capture(percent: 3, at: capturedBucketStart,
+                           resetsAt: capturedBucketStart.addingTimeInterval(2 * 86_400)),
+        now: capturedBucketStart.addingTimeInterval(1_000), isScanning: false,
+        regrant: .init(startedAt: capturedBucketStart.addingTimeInterval(-3_600)
+                                                     .timeIntervalSince1970,
+                       startPercent: 4))
+
+    #expect(snapshot.regrant != nil)
+    #expect(snapshot.projectionLabel == "Rate since re-grant")
+}
