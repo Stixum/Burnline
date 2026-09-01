@@ -264,11 +264,22 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
             // unproven mark is HARDER to demote, never easier. A reading with
             // no proof of its own cannot demote at all.
             //
-            // 🔴 Binding `provenAt` here rather than testing `?? -.infinity` is
-            // load-bearing below: it makes "only a proven reading can open an
-            // epoch" structural. `Regrant.startedAt` is non-optional, and the
-            // one thing it must never hold is an INFERRED date dressed up as a
-            // proven one — so there must be no `?? capturedAt` to reach for.
+            // 🔴 Binding `provenAt` here rather than testing `?? -.infinity`
+            // is load-bearing below — but only HALF of it is enforced by the
+            // compiler, and the difference matters to anyone editing this.
+            //
+            // Structural: revert this to the optional form and
+            // `Regrant(startedAt: provenAt` stops compiling, so the `??`
+            // fallback cannot come back without a visible decision at the
+            // construction site. "Only a proven reading can open an epoch" is
+            // therefore a fact about the types.
+            //
+            // NOT structural: `capturedAt` is a sibling parameter of the same
+            // type, so `startedAt: capturedAt` compiles silently while writing
+            // an INFERRED date as a proven one. Nothing but
+            // `theEpochStartsAtTheOpeningReadingsProvenDateNotItsCapturedAt`
+            // and `aMaterialDropInsideAnOpenEpochRebasesIt` stands between
+            // that edit and a corrupted extrapolation denominator.
             let basis = mark.provenAt ?? mark.capturedAt
             guard let provenAt, provenAt > basis else {
                 return (RateLimitCapture.Reading(usedPercent: mark.usedPercent,
@@ -278,24 +289,38 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
             // Proven to have been minted after everything backing the mark, so
             // it is a correction rather than a replay. `provenAt` is already
             // later than the mark's, by the guard above.
-            //
-            // A material drop re-issued the allowance: open an epoch dated by
-            // the instant this reading was PROVEN minted, not by detection
-            // wall-clock and not by `capturedAt`. Both wrong answers put the
-            // epoch start after the reading that opened it, which makes the
-            // opening capture instantly ineligible under the selection rule and
-            // leaves `unitsAtEpochStart` measured at the wrong instant. Below
-            // the threshold the value still comes down; only the epoch is
-            // withheld, and any epoch already open is carried.
             let isMaterial = mark.usedPercent - reading.usedPercent >= materialDropPoints
+
+            // A material drop means the allowance was re-issued, so an epoch
+            // opens — dated by the instant this reading was PROVEN minted,
+            // never detection wall-clock and never `capturedAt`. Both wrong
+            // answers put the epoch start AFTER the reading that opened it,
+            // which makes the opening capture instantly ineligible under the
+            // selection rule and measures `unitsAtEpochStart` at the wrong
+            // instant.
+            //
+            // 🔴 A material drop inside an ALREADY-OPEN epoch REPLACES the
+            // `Regrant` wholesale rather than keeping the first one. An epoch
+            // ends at a window reset *or* at a re-grant, and a second re-grant
+            // is the second of those. Do not "fix" this by adding
+            // `mark.regrant == nil &&` — on 51 → 0, a climb to 20, then 0
+            // again, keeping the first epoch leaves `unitsAtEpochStart` stale
+            // by the whole first epoch's consumption, which is the same
+            // denominator error this feature exists to fix, one level down.
+            // Task 8's extrapolation depends on this; only
+            // `aMaterialDropInsideAnOpenEpochRebasesIt` pins it.
+            //
+            // Below the threshold the value still comes down and only the
+            // epoch is withheld — any epoch already open is carried unchanged.
+            let regrant: Regrant? = opensEpochs && isMaterial
+                ? Regrant(startedAt: provenAt, startPercent: reading.usedPercent)
+                : mark.regrant
+
             return (reading, Mark(resetsAt: reading.resetsAt,
                                   usedPercent: reading.usedPercent,
                                   capturedAt: capturedAt,
                                   provenAt: provenAt,
-                                  regrant: opensEpochs && isMaterial
-                                      ? Regrant(startedAt: provenAt,
-                                                startPercent: reading.usedPercent)
-                                      : mark.regrant))
+                                  regrant: regrant))
         }
 
         let confirmedAt = reading.usedPercent == mark.usedPercent

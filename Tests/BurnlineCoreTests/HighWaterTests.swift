@@ -252,10 +252,8 @@ private func markAt51() -> RateLimitHighWater {
 /// re-grant, and opening an epoch for it corrupts the extrapolation
 /// denominator. The value is still accepted; only the epoch is withheld.
 @Test func aSubMaterialDropIsAcceptedButOpensNoEpoch() {
-    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
-                                                 against: .empty)
     let (result, after) = RateLimitHighWater.reconcile(proven(50, at: 2_000, provenAt: 2_000),
-                                                       against: mark)
+                                                       against: markAt51())
     #expect(result.sevenDay.usedPercent == 50, "the mark stops lying")
     #expect(after.sevenDay?.usedPercent == 50, "and the MARK itself comes down")
     #expect(after.sevenDay?.regrant == nil, "but no epoch opens")
@@ -263,10 +261,8 @@ private func markAt51() -> RateLimitHighWater {
 
 /// BOUNDARY-EXACT, so a `>=` mutated to `>` dies here. Exactly 2 points.
 @Test func aTwoPointDropOpensAnEpoch() {
-    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
-                                                 against: .empty)
     let (_, after) = RateLimitHighWater.reconcile(proven(49, at: 2_000, provenAt: 2_000),
-                                                  against: mark)
+                                                  against: markAt51())
     #expect(after.sevenDay?.regrant?.startPercent == 49)
     #expect(after.sevenDay?.regrant?.startedAt == 2_000, "the OPENING READING's provenAt")
 }
@@ -276,10 +272,8 @@ private func markAt51() -> RateLimitHighWater {
 /// it only rules out a `Date()` implementation. Split them and the rule becomes
 /// testable.
 @Test func theEpochStartsAtTheOpeningReadingsProvenDateNotItsCapturedAt() {
-    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
-                                                 against: .empty)
     let (_, after) = RateLimitHighWater.reconcile(proven(49, at: 2_500, provenAt: 2_400),
-                                                  against: mark)
+                                                  against: markAt51())
     #expect(after.sevenDay?.regrant?.startedAt == 2_400, "provenAt, not capturedAt (2_500)")
 }
 
@@ -288,10 +282,8 @@ private func markAt51() -> RateLimitHighWater {
 /// `startPercent > 0` implementation passes every other test in this file and
 /// fails this one.
 @Test func aRegrantToZeroOpensAnEpoch() {
-    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
-                                                 against: .empty)
     let (_, after) = RateLimitHighWater.reconcile(proven(0, at: 2_000, provenAt: 2_000),
-                                                  against: mark)
+                                                  against: markAt51())
     #expect(after.sevenDay?.regrant != nil)
     #expect(after.sevenDay?.regrant?.startPercent == 0)
 }
@@ -315,20 +307,36 @@ private func markAt51() -> RateLimitHighWater {
 }
 
 /// The demotion rule applies to five_hour too; only the epoch machinery is
-/// withheld. Without this, "no epoch on five-hour" is satisfiable by never
-/// letting a five-hour reading come down at all.
+/// withheld.
+///
+/// ⚠️ Narrow on purpose. The MARK side is already covered by
+/// `aFiveHourDropNeverOpensAnEpoch`'s first assertion — every mutation that
+/// breaks one breaks the other — so this asserts only the RETURNED CAPTURE,
+/// which is what `UsageStore` emits and what the popover's five-hour row
+/// reads. The two can diverge: the rejection branch hands back a reading
+/// rebuilt from the mark while the demotion branch hands back the incoming
+/// one, so "lowers the mark but keeps serving the old reading" is one edit
+/// away, and it would show a stale five-hour figure indefinitely.
+///
+/// Being straight about its strength: `best()` is shared, so breaking that
+/// branch today also fails `aProvenLaterLowerReadingDemotesTheMark`, and
+/// breaking the five-hour assembly in `reconcile` fails
+/// `theFiveHourReadingIsReconciledIndependently`. Both verified by mutation.
+/// No mutation kills this test alone. It is a regression guard for the
+/// five-hour path specifically, not uniquely-killable coverage — kept because
+/// the five-hour reading reaches the capture through its own `best()` call
+/// and its own assembly, and nothing else asserts the result of that pair.
 @Test func aFiveHourMarkStillDemotesOnProvenEvidence() {
     let fiveReset: TimeInterval = 1_786_491_600
     let (_, mark) = RateLimitHighWater.reconcile(
         proven(51, at: 1_000, provenAt: 1_000,
                fiveHour: .init(usedPercent: 30, resetsAt: fiveReset)),
         against: .empty)
-    let (result, after) = RateLimitHighWater.reconcile(
+    let (result, _) = RateLimitHighWater.reconcile(
         proven(51, at: 2_000, provenAt: 2_000,
                fiveHour: .init(usedPercent: 4, resetsAt: fiveReset)),
         against: mark)
-    #expect(result.fiveHour?.usedPercent == 4)
-    #expect(after.fiveHour?.usedPercent == 4)
+    #expect(result.fiveHour?.usedPercent == 4, "the RETURNED capture, not the mark")
 }
 
 /// A re-grant ends an epoch exactly as a window reset does, so a second one
