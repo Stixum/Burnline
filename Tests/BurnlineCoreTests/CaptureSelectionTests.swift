@@ -269,7 +269,7 @@ private func replay(_ percent: Double, at captured: TimeInterval,
 
     let resolution = CaptureSelection.resolve([stale], against: mark)
 
-    #expect(resolution.capture?.sevenDay.usedPercent == 7)
+    #expect(resolution.trusted?.sevenDay.usedPercent == 7)
     #expect(resolution.highWater.sevenDay?.usedPercent == 7,
             "the refused replay must never reach best()'s higher branch")
     #expect(resolution.highWater.sevenDay?.regrant != nil, "the epoch is still open")
@@ -287,7 +287,7 @@ private func replay(_ percent: Double, at captured: TimeInterval,
 
     let resolution = CaptureSelection.resolve([stale, truth], against: mark)
 
-    #expect(resolution.capture?.sevenDay.usedPercent == 7)
+    #expect(resolution.trusted?.sevenDay.usedPercent == 7)
     #expect(resolution.rejected?.reportedPercent == 51)
     #expect(resolution.rejected?.usingPercent == 7)
 }
@@ -301,7 +301,7 @@ private func replay(_ percent: Double, at captured: TimeInterval,
     let resolution = CaptureSelection.resolve([capture(51, at: 9_999)], against: mark)
 
     #expect(resolution.onDisk?.sevenDay.usedPercent == 51)
-    #expect(resolution.capture?.sevenDay.usedPercent == 7)
+    #expect(resolution.trusted?.sevenDay.usedPercent == 7)
     #expect(resolution.rejected?.rowValue == "said 51%, kept 7%")
 }
 
@@ -312,7 +312,7 @@ private func replay(_ percent: Double, at captured: TimeInterval,
     let mark = markWithoutRegrant(usedPercent: 74)
     let resolution = CaptureSelection.resolve([capture(69, at: 2_000)], against: mark)
 
-    #expect(resolution.capture?.sevenDay.usedPercent == 74)
+    #expect(resolution.trusted?.sevenDay.usedPercent == 74)
     #expect(resolution.rejected?.reportedPercent == 69)
     #expect(resolution.rejected?.usingPercent == 74)
 }
@@ -335,8 +335,8 @@ private func replay(_ percent: Double, at captured: TimeInterval,
 
     #expect(resolution.onDisk == nil)
     #expect(resolution.rejected == nil)
-    #expect(resolution.capture?.sevenDay.usedPercent == 7)
-    #expect(resolution.capture?.sevenDay.resetsAt == windowReset,
+    #expect(resolution.trusted?.sevenDay.usedPercent == 7)
+    #expect(resolution.trusted?.sevenDay.resetsAt == windowReset,
             "the window boundary is what the stand-in exists to preserve")
 }
 
@@ -345,7 +345,7 @@ private func replay(_ percent: Double, at captured: TimeInterval,
 @Test func resolvingNothingAtAllChangesNothing() {
     let resolution = CaptureSelection.resolve([], against: .empty)
 
-    #expect(resolution.capture == nil)
+    #expect(resolution.trusted == nil)
     #expect(resolution.onDisk == nil)
     #expect(resolution.rejected == nil)
     #expect(resolution.highWater == .empty)
@@ -358,4 +358,41 @@ private func replay(_ percent: Double, at captured: TimeInterval,
 
     #expect(resolution.highWater.sevenDay?.usedPercent == 51)
     #expect(resolution.highWater.sevenDay?.capturedAt == 9_999)
+}
+
+/// 🔴 The stand-in must NOT be reconciled, and this is the case that proves it.
+///
+/// `standIn` has one `capturedAt`/`provenAt` to give — the SEVEN-DAY mark's —
+/// and it stamps them on a capture carrying both readings. Reconciled, the
+/// five-hour reading equals its own mark, takes the equal-value branch, and has
+/// its dates advanced to the seven-day's by `max(capturedAt, mark.capturedAt)`.
+/// The two marks diverge routinely (a seven-day climb accepted while a lower
+/// unproven five-hour reading was refused), and `UsageStore` persists any mark
+/// that differs — so this writes a confirmation the five-hour reading never
+/// earned, which is the class `best()` explicitly refuses for itself.
+@Test func reconcilingTheStandInWouldFabricateAFiveHourConfirmation() {
+    let mark = RateLimitHighWater(
+        sevenDay: .init(resetsAt: windowReset, usedPercent: 51,
+                        capturedAt: 3_000, provenAt: 3_000),
+        fiveHour: .init(resetsAt: 1_786_700_000, usedPercent: 42,
+                        capturedAt: 1_000, provenAt: 1_000))
+
+    let resolution = CaptureSelection.resolve([], against: mark)
+
+    #expect(resolution.highWater.fiveHour?.capturedAt == 1_000,
+            "the five-hour reading was never re-confirmed at the seven-day's instant")
+    #expect(resolution.highWater.fiveHour?.provenAt == 1_000)
+    #expect(resolution.highWater == mark, "the stand-in IS the mark; nothing to reconcile")
+    // Still the stand-in the app displays, five-hour block and all.
+    #expect(resolution.trusted?.sevenDay.usedPercent == 51)
+    #expect(resolution.trusted?.fiveHour?.usedPercent == 42)
+}
+
+/// The convenience accessor both call sites use instead of reaching through two
+/// levels. `UsageStore` has no test target, so the spelling is pinned here.
+@Test func theResolutionSurfacesTheOpenEpoch() {
+    let mark = markWithRegrant(startedAt: 1_000, startPercent: 0, usedPercent: 7)
+
+    #expect(CaptureSelection.resolve([], against: mark).regrant?.startedAt == 1_000)
+    #expect(CaptureSelection.resolve([], against: .empty).regrant == nil)
 }

@@ -58,7 +58,7 @@ let onDisk = resolution.onDisk
 let rawOnDisk = onDisk.flatMap { resolved in
     allCandidates.first { $0.sessionId == resolved.sessionId }
 }
-let capture = resolution.capture
+let capture = resolution.trusted
 
 // Which evidence dated the reading. "wall clock" means neither rule applied and
 // the figure is only as honest as the writing session was fresh.
@@ -100,7 +100,7 @@ if let raw = rawOnDisk, raw == utilization?.asCapture() {
 let snapshot = SnapshotBuilder.build(cache: cache, settings: settings,
                                      rateLimit: capture, now: now, isScanning: false,
                                      rejected: resolution.rejected,
-                                     regrant: resolution.highWater.sevenDay?.regrant)
+                                     regrant: resolution.regrant)
 
 func percent(_ value: Double?) -> String {
     value.map { String(format: "%.1f%%", $0) } ?? "—"

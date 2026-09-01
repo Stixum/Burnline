@@ -57,6 +57,24 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         /// re-grant refusal it explained the disagreement with a sentence the
         /// disagreement disproves. Direction is decided here rather than in the
         /// view, like `rowValue`, so the wording stays test-covered.
+        ///
+        /// 🔴 **Both branches claim only what the two percentages can support.**
+        /// This type holds nothing else — not the candidate, not its dates — so
+        /// neither branch may name a reason it cannot check:
+        ///
+        /// - The re-grant branch must NOT say the reading "predates" the
+        ///   re-issue. `CaptureSelection.eligible` refuses two kinds of
+        ///   candidate: one proven to predate the epoch, **and one with no
+        ///   proven date at all** — the shared file with no `session_id`, the
+        ///   rollback script, an older build still in someone's bundle. That
+        ///   second kind may be perfectly live. Telling its owner their terminal
+        ///   is showing a pre-re-grant number would be false at the exact moment
+        ///   they are comparing the two. "Could not be shown to postdate it" is
+        ///   the claim the filter actually makes.
+        /// - The idle-session branch is a PRESUMPTION, not a deduction, for the
+        ///   same reason: it fires for a reading that is merely not provably
+        ///   newer. "By consumption" is the qualifier that keeps the axiom true
+        ///   after 2026-09-01 — an allowance re-issue is not consumption.
         public var explanation: String {
             let said = DisplayValue.whole(reportedPercent)
             let kept = DisplayValue.whole(usingPercent)
@@ -64,14 +82,15 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
                 return """
                        Another Claude Code session reported \(said)%, which is lower than the \
                        \(kept)% already seen this window, so it was ignored. Usage inside a \
-                       window cannot go down, so the lower reading is the older one — an idle \
-                       session republishing what it cached.
+                       window cannot go down by consumption, so the lower reading is presumed \
+                       older — an idle session republishing what it cached.
                        """
             }
             return """
                    Another Claude Code session reported \(said)%, but the weekly allowance was \
-                   re-issued inside this window and that reading predates it, so it was \
-                   ignored. The \(kept)% shown is measured against the new allowance.
+                   re-issued inside this window and that reading could not be shown to \
+                   postdate it, so it was ignored. The \(kept)% shown is measured against the \
+                   new allowance.
                    """
         }
     }

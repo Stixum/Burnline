@@ -42,10 +42,19 @@ public enum CaptureSelection {
     ///   epoch lives. Passing `.empty` reduces this to `freshest` exactly.
     public static func select(_ candidates: [RateLimitCapture],
                               mark: RateLimitHighWater) -> RateLimitCapture? {
-        if let picked = CaptureDirectory.freshest(of: eligible(candidates, mark: mark)) {
-            return picked
-        }
-        return standIn(for: mark)
+        picked(candidates, mark: mark) ?? standIn(for: mark)
+    }
+
+    /// The eligible winner, or nil when nothing on disk survives the filter.
+    ///
+    /// `select`'s first half, split out because `resolve` needs to tell the two
+    /// outcomes APART and `select` deliberately hides which happened: a real
+    /// candidate must be reconciled against the mark, while the stand-in must
+    /// not be — it IS the mark, and reconciling it fabricates dates. See
+    /// `resolve`.
+    static func picked(_ candidates: [RateLimitCapture],
+                       mark: RateLimitHighWater) -> RateLimitCapture? {
+        CaptureDirectory.freshest(of: eligible(candidates, mark: mark))
     }
 
     /// 🔴 The filter applies only while an epoch is open, and the discriminator
@@ -117,12 +126,22 @@ public enum CaptureSelection {
         /// eligible. This is what the user's own terminal status line is
         /// showing, and the only honest answer to "what does the file say".
         public let onDisk: RateLimitCapture?
-        /// The capture to trust: selected, then reconciled against the mark.
-        public let capture: RateLimitCapture?
+        /// The capture to trust: the eligible winner reconciled against the
+        /// mark, or the mark standing in when nothing on disk survived.
+        ///
+        /// 🔴 Named for its ROLE, not its type. `onDisk` is a
+        /// `RateLimitCapture?` too, so `build(rateLimit: resolution.onDisk)`
+        /// compiles and quietly shows the reading this unit just refused —
+        /// and `UsageStore` has no test target to catch it.
+        public let trusted: RateLimitCapture?
         /// The mark to persist.
         public let highWater: RateLimitHighWater
-        /// Set only when `onDisk` and `capture` disagree.
+        /// Set only when `onDisk` and `trusted` disagree.
         public let rejected: RateLimitHighWater.RejectedReading?
+
+        /// The open allowance epoch, if any. Both call sites reach through the
+        /// same two levels; this is the one place that spelling lives.
+        public var regrant: RateLimitHighWater.Regrant? { highWater.sevenDay?.regrant }
     }
 
     /// Select, then reconcile, then report — in that order, once.
@@ -151,15 +170,36 @@ public enum CaptureSelection {
         // needed whether or not the file's claim survives selection.
         let onDisk = CaptureDirectory.freshest(of: candidates)
 
-        guard let incoming = select(candidates, mark: highWater) else {
-            return Resolution(onDisk: onDisk, capture: nil,
-                              highWater: highWater, rejected: nil)
+        func reported(_ trusted: RateLimitCapture?) -> RateLimitHighWater.RejectedReading? {
+            guard let trusted, let onDisk else { return nil }
+            return RateLimitHighWater.rejection(onDisk: onDisk, resolved: trusted)
+        }
+
+        // 🔴 The stand-in is NOT reconciled, and this is not an optimisation.
+        //
+        // `standIn` reconstitutes one capture from a mark that holds TWO
+        // independently-dated readings, stamping the seven-day mark's
+        // `capturedAt`/`provenAt` on the whole thing — there is nowhere else for
+        // them to come from. Send that through `reconcile` and the five-hour
+        // reading, equal in value to its own mark, takes the equal-value branch:
+        // `max(capturedAt, mark.capturedAt)` and `laterProof(…)` then advance
+        // the FIVE-HOUR mark's dates to the seven-day's. The two diverge
+        // routinely — a seven-day climb accepted while a lower unproven
+        // five-hour reading was refused — and `UsageStore` persists any mark
+        // that differs, so a confirmation the five-hour reading never earned is
+        // written to disk. That is the exact class `best()` refuses for itself:
+        // "a clamped value is a fabricated proof written to disk".
+        //
+        // There is also nothing to reconcile. The stand-in IS the mark; passing
+        // the mark through untouched is the whole of the correct answer.
+        guard let incoming = picked(candidates, mark: highWater) else {
+            let standIn = standIn(for: highWater)
+            return Resolution(onDisk: onDisk, trusted: standIn,
+                              highWater: highWater, rejected: reported(standIn))
         }
         let (resolved, mark) = RateLimitHighWater.reconcile(incoming, against: highWater)
-        return Resolution(onDisk: onDisk, capture: resolved, highWater: mark,
-                          rejected: onDisk.flatMap {
-                              RateLimitHighWater.rejection(onDisk: $0, resolved: resolved)
-                          })
+        return Resolution(onDisk: onDisk, trusted: resolved, highWater: mark,
+                          rejected: reported(resolved))
     }
 
     /// The mark, reconstituted as a capture, for when nothing survives.

@@ -546,7 +546,7 @@ final class UsageStore {
         // overridden. Silently disagreeing with the user's own terminal status
         // line reads as a broken app rather than as the protection it is.
         let resolution = CaptureSelection.resolve(dated, against: highWater)
-        let capture = resolution.capture
+        let capture = resolution.trusted
         if resolution.highWater != highWater {
             highWater = resolution.highWater
             try? highWaterStore.save(resolution.highWater)
@@ -562,7 +562,7 @@ final class UsageStore {
                                          now: Date(), isScanning: isScanning,
                                          rejected: resolution.rejected,
                                          scopedWeekly: utilization?.scopedWeekly,
-                                         regrant: resolution.highWater.sevenDay?.regrant)
+                                         regrant: resolution.regrant)
 
         // Before the observation feed's guards: the evaluation must run on
         // every rebuild, and the block below returns early.

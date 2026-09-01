@@ -106,12 +106,41 @@ private func reading(_ percent: Double, at capturedAt: TimeInterval) -> RateLimi
     #expect(!idleSession.explanation.contains("re-issued"))
 }
 
-/// Both figures appear in both directions, so the tooltip can never name one
-/// number and leave the other to be guessed at.
-@Test func theExplanationAlwaysNamesBothFigures() {
-    for reading in [RateLimitHighWater.RejectedReading(reportedPercent: 51, usingPercent: 7),
-                    RateLimitHighWater.RejectedReading(reportedPercent: 69, usingPercent: 74)] {
-        #expect(reading.explanation.contains("\(DisplayValue.whole(reading.reportedPercent))%"))
-        #expect(reading.explanation.contains("\(DisplayValue.whole(reading.usingPercent))%"))
-    }
+/// ⚠️ Anchored to the PHRASE around each figure, never merely to its presence.
+/// "Names both figures" cannot see a transposition — swap `said` and `kept`
+/// inside a branch and both numbers are still there, while the tooltip now reads
+/// "reported 7% … the 51% shown", which is the disagreement backwards. That is a
+/// very plausible slip during a re-word and it is user-facing.
+@Test func theExplanationNeverTransposesTheTwoFigures() {
+    let regrant = RateLimitHighWater.RejectedReading(reportedPercent: 51, usingPercent: 7)
+    #expect(regrant.explanation.contains("reported 51%"))
+    #expect(regrant.explanation.contains("The 7% shown"))
+
+    let idleSession = RateLimitHighWater.RejectedReading(reportedPercent: 69, usingPercent: 74)
+    #expect(idleSession.explanation.contains("reported 69%"))
+    #expect(idleSession.explanation.contains("lower than the 74% already seen"))
+}
+
+/// 🔴 The re-grant branch may not say the reading PREDATES the re-issue.
+/// `CaptureSelection.eligible` refuses two kinds of candidate — one proven to
+/// predate the epoch, and one with no proven date at all (the shared file with
+/// no `session_id`, the rollback script, an older build). The second may be
+/// perfectly live, and telling its owner their terminal shows a pre-re-grant
+/// number is false at the exact moment they are comparing the two. Only
+/// "could not be shown to postdate" is a claim the filter actually makes.
+@Test func theRegrantExplanationClaimsOnlyWhatTheFilterChecked() {
+    let regrant = RateLimitHighWater.RejectedReading(reportedPercent: 51, usingPercent: 7)
+    #expect(regrant.explanation.contains("could not be shown to postdate"))
+    #expect(!regrant.explanation.contains("predates"))
+}
+
+/// The same discipline on the other branch: it fires for a reading that is
+/// merely not provably newer, so "presumed older" is the claim, and the axiom
+/// survives 2026-09-01 only with "by consumption" attached — a re-issued
+/// allowance is not consumption.
+@Test func theIdleSessionExplanationPresumesRatherThanDeduces() {
+    let idleSession = RateLimitHighWater.RejectedReading(reportedPercent: 69, usingPercent: 74)
+    #expect(idleSession.explanation.contains("cannot go down by consumption"))
+    #expect(idleSession.explanation.contains("presumed older"))
+    #expect(!idleSession.explanation.contains("always the older one"))
 }
