@@ -16,10 +16,19 @@ public enum CaptureDirectoryError: Error, Equatable {
 /// sessions, one active and one idle, and the idle one overwrites the active
 /// one's reading twice a minute.
 ///
-/// `RateLimitHighWater` keeps the correct *value* through that — usage inside a
-/// window is cumulative, so a lower reading is always staler. What it cannot fix
-/// is the **age**: dating would pin to the idle session's last turn and fire a
-/// "nothing is reporting" nudge while something very much is.
+/// `RateLimitHighWater` keeps the correct *value* through that — a lower reading
+/// is presumed staler.
+///
+/// ⚠️ That sentence read "usage inside a window is cumulative, so a lower
+/// reading is always staler" until 2026-09-01, when Anthropic re-issued the
+/// weekly allowance mid-window and the true figure went 51% → 0%. The
+/// presumption is defeasible, and `RateLimitHighWater`'s header carries the
+/// correction in full. It still holds against the idle session this file is
+/// about, which is why the reasoning is kept rather than deleted.
+///
+/// What the mark cannot fix is the **age**: dating would pin to the idle
+/// session's last turn and fire a "nothing is reporting" nudge while something
+/// very much is.
 ///
 /// A file per session removes the contention rather than defending against it.
 /// Nothing is lost, so nothing needs arbitrating — only choosing, at read time.
