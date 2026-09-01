@@ -117,9 +117,6 @@ var sourcesNote = sessionCaptures.isEmpty
 if let utilization {
     let age = DisplayValue.seconds(now.timeIntervalSince1970 - utilization.fetchedAt)
     sourcesNote += " + utilization (fetched \(age)s ago)"
-    if let scoped = utilization.scopedWeekly {
-        sourcesNote += "\n  per-model        \(scoped.modelName) \(scoped.percent)% · \(scoped.severity)"
-    }
 } else {
     sourcesNote += " + no utilization block"
 }
@@ -148,10 +145,31 @@ if let onDiskSource {
         }
     }
 }
+// 🔴 EVERY argument `UsageStore.rebuild` passes, passed here too — including
+// `scopedWeekly`, which nothing in this file reads back off the snapshot.
+//
+// The rule is not "the probe computes the same numbers", it is that the probe
+// must never DISAGREE with the app; a snapshot that is merely equivalent is how
+// the next field gets threaded into one call site and not the other, silently,
+// because nothing compares them. Two arguments differ on purpose and only two:
+// `isScanning` is false because a CLI run has already finished scanning by the
+// time it builds, and `now` is the single instant this run was pinned to — the
+// same one the scan and the window used — where the app re-reads the clock on a
+// 10s timer.
 let snapshot = SnapshotBuilder.build(cache: cache, settings: settings,
                                      rateLimit: capture, now: now, isScanning: false,
                                      rejected: resolution.rejected,
+                                     scopedWeekly: utilization?.scopedWeekly,
                                      regrant: resolution.regrant)
+
+// The per-model weekly limit, read off the SNAPSHOT rather than off the
+// `cachedUsageUtilization` block it came from. It is the row the popover
+// renders, and reading the source directly is exactly how a probe keeps
+// printing a figure the app has stopped being handed — the divergence this
+// file exists to make impossible.
+let scopedNote = snapshot.scopedWeekly.map {
+    "\n  per-model        \($0.modelName) \($0.percent)% · \($0.severity)"
+} ?? ""
 
 func percent(_ value: Double?) -> String {
     value.map { String(format: "%.1f%%", $0) } ?? "—"
@@ -222,7 +240,7 @@ print("""
 Burnline probe
   data dir         \(dataDirectoryNote)
   capture          \(captureNote)
-  read from        \(sourcesNote)
+  read from        \(sourcesNote)\(scopedNote)
   dated by         \(datingNote)
   high water       \(highWaterNote)
   allowance epoch  \(epochNote)
