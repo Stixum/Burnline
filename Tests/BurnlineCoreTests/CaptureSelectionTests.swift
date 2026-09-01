@@ -36,14 +36,28 @@ private func proven(_ percent: Double, at captured: TimeInterval,
     return c
 }
 
+/// ⚠️ `capturedAt` and `provenAt` default to `startedAt` only because most tests
+/// have no reason to separate them. They are three same-typed fields and an
+/// implementation can confuse them silently, so
+/// `theBarIsTheEpochStartNotTheMarksOwnDate` splits all three.
 private func markWithRegrant(startedAt: TimeInterval, startPercent: Double,
                              usedPercent: Double = 51,
+                             capturedAt: TimeInterval? = nil,
+                             provenAt: TimeInterval? = nil,
                              fiveHour: RateLimitHighWater.Mark? = nil) -> RateLimitHighWater {
     RateLimitHighWater(
         sevenDay: .init(resetsAt: windowReset, usedPercent: usedPercent,
-                        capturedAt: startedAt, provenAt: startedAt,
+                        capturedAt: capturedAt ?? startedAt,
+                        provenAt: provenAt ?? startedAt,
                         regrant: .init(startedAt: startedAt, startPercent: startPercent)),
         fiveHour: fiveHour)
+}
+
+private func capture(_ percent: Double, at captured: TimeInterval,
+                     resetsAt: TimeInterval) -> RateLimitCapture {
+    RateLimitCapture(version: RateLimitCapture.currentVersion, capturedAt: captured,
+                     sevenDay: .init(usedPercent: percent, resetsAt: resetsAt),
+                     fiveHour: nil)
 }
 
 private func markWithoutRegrant(usedPercent: Double = 51) -> RateLimitHighWater {
@@ -90,6 +104,53 @@ private func markWithoutRegrant(usedPercent: Double = 51) -> RateLimitHighWater 
     #expect(picked?.sevenDay.usedPercent == 0)
 }
 
+/// 🔴 `regrant.startedAt` is fixed for the life of the epoch; the mark's own
+/// `capturedAt` and `provenAt` advance on every equal-or-higher confirmation.
+/// Comparing against either of those same-typed siblings compiles silently and
+/// ratchets the bar up behind the readings that must clear it — here, a genuine
+/// post-re-grant reading proven at 3_000 would be refused by a mark that has
+/// since re-confirmed at 5_000. Every other fixture in this file sets all three
+/// to one value and cannot see the difference.
+@Test func theBarIsTheEpochStartNotTheMarksOwnDate() {
+    let mark = markWithRegrant(startedAt: 1_000, startPercent: 0, usedPercent: 7,
+                               capturedAt: 5_000, provenAt: 5_000)
+    let later = proven(20, at: 3_000, provenAt: 3_000)
+
+    let picked = CaptureSelection.select([later], mark: mark)
+
+    #expect(picked?.sevenDay.usedPercent == 20)
+}
+
+/// An epoch belongs to one window, and the rule exists to refuse replays of
+/// *that* window's pre-re-grant reading. A capture describing a different window
+/// cannot be one — so refusing it would discard live information and pin the app
+/// to the stand-in, which is the dead window's mark. On an all-undated machine
+/// nothing would ever clear the bar again.
+///
+/// ⚠️ The comparison carries `sameWindowTolerance` because two sources spell the
+/// same boundary 0.58s apart. That is a fact about window identity, and the
+/// reason the same slack would be wrong on `provenAt`.
+@Test func aCandidateFromAnotherWindowIsNotJudgedByThisEpoch() {
+    let mark = markWithRegrant(startedAt: 1_000, startPercent: 0, usedPercent: 7)
+    let nextWindow = capture(4, at: 9_999, resetsAt: windowReset + 7 * 86_400)
+
+    let picked = CaptureSelection.select([nextWindow], mark: mark)
+
+    #expect(picked?.sevenDay.usedPercent == 4, "undated, but it cannot be a replay of this epoch")
+}
+
+/// The converse, so the tolerance is not a hole: the two sources' spellings of
+/// one boundary are still the same window, and a replay inside it is still
+/// refused.
+@Test func aSubSecondDifferenceInTheResetInstantIsStillThisWindow() {
+    let mark = markWithRegrant(startedAt: 2_000, startPercent: 0, usedPercent: 3)
+    let replay = capture(51, at: 9_999, resetsAt: windowReset - 0.58)
+
+    let picked = CaptureSelection.select([replay], mark: mark)
+
+    #expect(picked?.sevenDay.usedPercent == 3, "the mark stood in; the replay was refused")
+}
+
 // MARK: - The stand-in
 
 /// 🔴 Falling through to nil reverts the window to the Thursday 09:00 schedule
@@ -131,6 +192,10 @@ private func markWithoutRegrant(usedPercent: Double = 51) -> RateLimitHighWater 
 
     #expect(picked?.capturedAt == 1_000)
     #expect(picked?.provenAt == 1_000)
+    // 🔴 The window boundary is the whole point of the stand-in: `resetsAt` is
+    // what stops `SnapshotBuilder` reverting to the Thursday 09:00 schedule
+    // placeholder. Zeroing it survived every other assertion here.
+    #expect(picked?.sevenDay.resetsAt == windowReset)
 }
 
 @Test func selectingNothingWithNoMarkIsStillNothing() {
@@ -143,10 +208,28 @@ private func markWithoutRegrant(usedPercent: Double = 51) -> RateLimitHighWater 
 /// has never seen a re-grant loses its statusline captures, which carry no
 /// `provenAt` unless a transcript happened to date them.
 @Test func selectionIsUnchangedWhileNoEpochIsOpen() {
-    let mark = markWithoutRegrant()
+    // ⚠️ The mark holds a percentage matching NEITHER candidate, and the age is
+    // asserted too. An earlier version of this test defaulted the mark to 51 —
+    // the same figure as the expected winner — so deleting the no-epoch guard
+    // outright still passed: the stand-in returned the number being asserted.
+    // A fixture that shares a value with the expectation cannot distinguish the
+    // implementation from its failure mode.
+    let mark = markWithoutRegrant(usedPercent: 33)
     let picked = CaptureSelection.select([capture(51, at: 9_999),
                                           proven(3, at: 1_500, provenAt: 1_500)], mark: mark)
     #expect(picked?.sevenDay.usedPercent == 51)
+    #expect(picked?.capturedAt == 9_999, "the candidate itself, not the mark standing in")
+}
+
+/// The trade this unit accepts, pinned here rather than left in the plan: with
+/// nothing on disk the mark stands in even though no epoch is open, where
+/// `freshest` alone returned nil. `SnapshotBuilder` handles a dead-window mark
+/// safely — `capturedDate < window.start` drops the source to calibrated or
+/// pace-only — and the window it rolls forward beats the Thursday 09:00
+/// placeholder that nil produces.
+@Test func theMarkStandsInWithNoEpochWhenNothingIsOnDisk() {
+    #expect(CaptureSelection.select([], mark: markWithoutRegrant(usedPercent: 33))?
+        .sevenDay.usedPercent == 33)
 }
 
 // MARK: - The tie-break

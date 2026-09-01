@@ -33,6 +33,11 @@ public enum CaptureSelection {
     /// candidates first, because both are file I/O and this must stay testable
     /// without either.
     ///
+    /// Ranking is `freshest`'s: latest `capturedAt`, then a proven date over an
+    /// inferred one, then first-listed wins. `select` takes any array, so that
+    /// last clause is the caller's contract too — pass candidates in a
+    /// deterministic order.
+    ///
     /// - Parameter mark: the persisted high-water state, which is where an open
     ///   epoch lives. Passing `.empty` reduces this to `freshest` exactly.
     public static func select(_ candidates: [RateLimitCapture],
@@ -47,24 +52,61 @@ public enum CaptureSelection {
     /// is `regrant != nil` — never a percentage, for the reason recorded on
     /// `RateLimitHighWater.Regrant`.
     ///
-    /// Before any epoch exists, selection is unchanged. Statusline captures
-    /// carry no `provenAt` unless a transcript happened to date them, so an
-    /// unconditional proof requirement would silently blind every machine that
-    /// has never seen a re-grant — the overwhelming majority of the time.
+    /// While no epoch is open every candidate is eligible, so any non-empty
+    /// input is ranked exactly as `freshest` alone would rank it. (Selection as
+    /// a whole is not unchanged: an EMPTY input now yields the stand-in rather
+    /// than nil — see `standIn`.) Statusline captures carry no `provenAt` unless
+    /// a transcript happened to date them, so an unconditional proof requirement
+    /// would silently blind every machine that has never seen a re-grant, which
+    /// is the overwhelming majority of the time.
     static func eligible(_ candidates: [RateLimitCapture],
                          mark: RateLimitHighWater) -> [RateLimitCapture] {
-        guard let regrant = mark.sevenDay?.regrant else { return candidates }
+        guard let sevenDay = mark.sevenDay, let regrant = sevenDay.regrant else {
+            return candidates
+        }
         return candidates.filter { candidate in
+            // An epoch belongs to one window, and this rule exists to refuse
+            // REPLAYS of that window's pre-re-grant reading. A candidate
+            // describing a different window cannot be one, so refusing it would
+            // discard live information — and, since the stand-in is the mark
+            // from the window that just ended, freeze the app on a dead window
+            // until some proven source happens to report. An all-undated machine
+            // — the "older build still in someone's bundle" — would never
+            // recover at all.
+            //
+            // ⚠️ **This is the one comparison in this type where the 60s
+            // tolerance belongs.** Window identity is exactly what it was
+            // introduced for: the statusline reports whole epoch seconds
+            // (`1786690800`) while `cachedUsageUtilization` reports
+            // `…06:59:59.424563Z` for the same boundary, 0.58s apart, and exact
+            // equality silently gives each source its own view. It would be
+            // wrong on `provenAt` below: those are instants of two different API
+            // calls, not two spellings of one instant, and slack there is slack
+            // in the bar a replay has to clear.
+            guard abs(candidate.sevenDay.resetsAt - sevenDay.resetsAt)
+                    <= RateLimitHighWater.sameWindowTolerance
+            else { return true }
             // An inferred date cannot clear this bar. `capturedAt` is an upper
             // bound on when a reading was minted, so "it was seen after the
             // re-grant" is not evidence that it was *produced* after it — which
             // is the only thing that makes a reading able to describe the new
             // allowance.
             guard let provenAt = candidate.provenAt else { return false }
-            // 🔴 `>=`, not `>`. The epoch is dated by the `provenAt` of the very
+            // 🔴 `>=` against `regrant.startedAt`, and all three parts matter.
+            //
+            // `>=` and not `>`: the epoch is dated by the `provenAt` of the very
             // reading that opened it (see `RateLimitHighWater.best`), so a
             // strict comparison would make that reading instantly ineligible —
             // refusing the one capture that reported the re-grant.
+            //
+            // `startedAt` and not `sevenDay.capturedAt` or `sevenDay.provenAt`,
+            // which are same-typed siblings that compile just as happily. This
+            // is the hazard `RateLimitHighWater.best` documents for its own
+            // parameters, one level up. Those two advance on every equal-or-
+            // higher confirmation while `startedAt` stays fixed for the life of
+            // the epoch, so either substitution silently ratchets the bar up
+            // behind the readings that have to clear it. The fixtures make all
+            // three differ for exactly this reason.
             return provenAt >= regrant.startedAt
         }
     }

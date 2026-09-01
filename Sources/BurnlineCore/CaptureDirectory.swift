@@ -93,9 +93,11 @@ public struct CaptureDirectory: Sendable {
     ///
     /// A reading whose date is PROVEN (`RateLimitCapture.provenAt`: an explicit
     /// `fetchedAtMs`, or an exact `TranscriptDating.mintedAt`) therefore wins
-    /// over one whose age is merely inferred. Beyond that the input order
-    /// stands, which is deterministic: `CaptureDirectory.load` sorts by session
-    /// id and `UsageStore` appends the other sources in a fixed order.
+    /// over one whose age is merely inferred. Beyond that the FIRST of the
+    /// equals wins — `max(by:)` replaces only on a strict increase — so the
+    /// caller's order decides, and every caller's order is deterministic:
+    /// `CaptureDirectory.load` sorts by session id and `UsageStore` appends the
+    /// other sources in a fixed order.
     ///
     /// Note that eligibility is decided upstream in `CaptureSelection` — this
     /// only ranks what it is given.
