@@ -74,6 +74,16 @@ public struct NotificationMarks: Equatable, Sendable, Codable {
     /// `epochStartedAt` is required, never defaulted — a caller that forgot it
     /// would fall back to suppressing across a re-grant, which is the bug this
     /// dimension exists to fix.
+    ///
+    /// 🔴 For the FIVE-HOUR mark this comparison is redundant by construction
+    /// and must not be special-cased away. That window's start is its reset
+    /// less a fixed span, and a constant translation cancels under
+    /// `abs(a - b) <= tol` — so the epoch clause can never decide a five-hour
+    /// call the reset clause did not already decide. Its value is not
+    /// discriminating power: it is that a real, required field forces the
+    /// five-hour call site to *feed* something, which is the only reason a test
+    /// can catch an edit that threads `weeklyEpoch` through there instead.
+    /// Delete it as dead weight and that check has nothing left to hold onto.
     public static func suppresses(_ mark: Mark?, resetsAt: TimeInterval,
                                   threshold: Double,
                                   epochStartedAt: TimeInterval) -> Bool {
