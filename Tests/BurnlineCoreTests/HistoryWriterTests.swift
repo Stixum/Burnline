@@ -188,7 +188,19 @@ private func nothingNew() -> HistoryArchive.Payload {
 
 // MARK: - Windows, tracking and the anchor
 
-@Test func aTrackedEntryIsPrunedOnlyAfterItsRowIsWritten() async throws {
+/// ⚠️ THIS TEST IS AN INVERSION. It used to be
+/// `aTrackedEntryIsPrunedOnlyAfterItsRowIsWritten`, asserting the entries a row
+/// consumed were dropped once it landed.
+///
+/// The rule it policed is gone. `finalPercent` is a single figure and by
+/// construction cannot show a drop, so the tracking series is the ONLY record
+/// that Anthropic re-granted the allowance mid-window — and pruning it destroyed
+/// that record the moment the row was written. Retention measured on the live
+/// archive: ~15KB per window, ≈800KB/year against an existing ≈3.9MB/year.
+///
+/// Everything else here is unchanged and still load-bearing: the row is still
+/// written, and it still takes its final percentage from the entry it consumed.
+@Test func aTrackedEntryOutlivesTheRowThatConsumedIt() async throws {
     let dir = writerDirectory()
     defer { try? FileManager.default.removeItem(at: dir) }
     let store = HistoryStore(directory: dir)
@@ -210,8 +222,9 @@ private func nothingNew() -> HistoryArchive.Payload {
     #expect(written.count == 2)
     #expect(written.last?.finalPercent == 61)
     // The live window's observation must survive, or the next row loses its
-    // percentage — the one figure a row may never estimate.
-    #expect(try store.loadTracking().entries == [live])
+    // percentage — the one figure a row may never estimate. The CONSUMED one
+    // must now survive too: it is the series a re-grant is visible in.
+    #expect(try store.loadTracking().entries == [consumed, live])
 }
 
 @Test func aNilObservationLeavesTheAnchorAlone() async throws {

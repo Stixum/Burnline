@@ -159,7 +159,7 @@ public actor HistoryWriter {
 
     private func writeCompletedWindows(now: Date) {
         guard let windows = supersedeScheduleRows((try? store.loadWindows()) ?? []) else { return }
-        var tracking = (try? store.loadTracking()) ?? TrackingFile()
+        let tracking = (try? store.loadTracking()) ?? TrackingFile()
 
         let ledger = WindowLedger(anchor: anchor, schedule: schedule,
                                   hasEverObservedAReset: hasEverObservedAReset)
@@ -173,14 +173,19 @@ public actor HistoryWriter {
             return
         }
 
-        // Prune ONLY the entries those rows consumed, by the same containment
-        // rule the ledger matched them with. Everything else is the live
-        // window's, and dropping it costs the next row its final percentage —
-        // the one figure a window row may never estimate.
-        tracking.entries.removeAll { entry in
-            rows.contains { entry.at >= $0.start && entry.at < $0.end }
-        }
-        try? store.saveTracking(tracking)
+        // ⚠️ NOTHING IS PRUNED HERE, AND THAT IS THE POINT.
+        //
+        // Entries a row consumed used to be dropped once it landed, on the
+        // reasoning that the row had extracted the only figure worth keeping.
+        // It hadn't. `finalPercent` is ONE number and cannot express a drop, so
+        // a mid-window allowance re-grant — Anthropic re-issuing the allowance
+        // without moving `resetsAt` — was visible in the series and nowhere
+        // else, and the prune destroyed it at the moment the row was written.
+        //
+        // Measured on the live archive: ~15KB per window, ≈800KB/year beside an
+        // existing ≈3.9MB/year. Guarded by
+        // `aTrackedEntryOutlivesTheRowThatConsumedIt`, which is the inversion of
+        // the test that used to police the prune.
     }
 
     /// Drops rows whose bounds came from the schedule, once a real reset is
@@ -213,10 +218,15 @@ public actor HistoryWriter {
     ///
     /// A percentless row is safe to drop because it is a pure function of the
     /// grid and the cells, both still in hand. One with a percentage is not:
-    /// that is Anthropic's own figure, its tracking entry has since been
-    /// pruned, and nothing can reconstruct it — so it stays, even at the cost
-    /// of leaving the weeks behind it unwritten. (An `.observed` row always
+    /// that is Anthropic's own figure — so it stays, even at the cost of
+    /// leaving the weeks behind it unwritten. (An `.observed` row always
     /// carries one, so this never drops ground truth.)
+    ///
+    /// ⚠️ This paragraph used to reason from "its tracking entry has since been
+    /// pruned, and nothing can reconstruct it". That premise died with the
+    /// prune: the entry now survives. Dropping such a row would in principle be
+    /// recoverable — but it is still not dropped, because the reconstruction
+    /// path does not exist and inventing one buys nothing here.
     ///
     /// Idempotent, and after the first pass it costs one `filter`.
     private func supersedeScheduleRows(_ windows: [WindowRow]) -> [WindowRow]? {
