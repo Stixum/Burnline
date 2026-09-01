@@ -340,3 +340,55 @@ private func regrant(at started: Date, startPercent: Double) -> RateLimitHighWat
     #expect(snapshot.source == .paceOnly)
     #expect(snapshot.regrant == nil)
 }
+
+/// The `.calibrated` counterpart, and it needs a real anchor to exist: with no
+/// anchors the build falls through to `.paceOnly` and the calibrated branch is
+/// never entered, so the sibling test above cannot speak for it. Asserting the
+/// source is what proves the branch under test actually ran.
+///
+/// A calibrated estimate is `unitsInWindow` over a fitted units-per-percent,
+/// counted from `window.start`. An epoch handed out beside it would tell
+/// `Projection` — which may assume a re-grant implies a live capture — to
+/// re-base a figure that was never measured from the epoch.
+@Test func anEpochIsNotCarriedBesideACalibratedEstimate() {
+    let now = epochNow
+    let window = WindowMath.window(for: settings().resetSchedule, now: now)
+    var calibrated = settings()
+    calibrated.calibrationAnchors = [
+        CalibrationAnchor(timestamp: now.addingTimeInterval(-86_400),
+                          observedPercent: 20, unitsInWindow: 4_000)
+    ]
+
+    let snapshot = SnapshotBuilder.build(
+        cache: cache([(window.start.addingTimeInterval(3_600), 16_000)]),
+        settings: calibrated, rateLimit: nil, now: now, isScanning: false,
+        regrant: regrant(at: window.start.addingTimeInterval(7_200), startPercent: 1))
+
+    #expect(snapshot.source == .calibrated, "the branch under test really ran")
+    #expect(snapshot.estimatedPercent != nil, "16,000 units over a fitted 200/point")
+    #expect(snapshot.regrant == nil)
+}
+
+/// The window gate is a half-open interval, matching the capture guard beside
+/// it and `Window` itself. Both boundaries are pinned because both comparisons
+/// flip silently: `>` at the start refuses an epoch that opened exactly at the
+/// reset — reachable, since a re-grant landing on the boundary is precisely
+/// when the two events coincide — and `<=` at the end admits one dated at an
+/// instant this window does not contain.
+@Test func theEpochWindowGateIncludesTheStartInstantAndExcludesTheEnd() {
+    let scan = cache([(beforeEpoch, 16_000), (insideEpoch, 1_000), (afterCapture, 500)])
+    let live = capture(percent: 5, at: epochCaptured, now: epochNow)
+    let base = SnapshotBuilder.build(cache: scan, settings: settings(), rateLimit: live,
+                                     now: epochNow, isScanning: false)
+
+    func snapshot(epochAt started: Date) -> Snapshot {
+        SnapshotBuilder.build(cache: scan, settings: settings(), rateLimit: live,
+                              now: epochNow, isScanning: false,
+                              regrant: regrant(at: started, startPercent: 1))
+    }
+
+    #expect(snapshot(epochAt: base.window.start).regrant?.startedAt == base.window.start,
+            "an epoch opening exactly at the reset is this window's")
+    #expect(snapshot(epochAt: base.window.end).regrant == nil,
+            "the end instant belongs to the next window")
+}

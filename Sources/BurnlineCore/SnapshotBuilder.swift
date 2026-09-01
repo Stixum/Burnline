@@ -5,6 +5,13 @@ public enum SnapshotBuilder {
 
     /// Below this the derived units-per-percent is dominated by noise, so the
     /// exact figure is reported without extrapolating past it.
+    ///
+    /// Measured against the **allowance epoch's own progress**
+    /// (`observed - regrant.startPercent`), not the raw percentage — the two
+    /// differ only after a mid-window re-grant, and that is exactly when the
+    /// raw figure can clear this bar on progress that belongs to the previous
+    /// allowance. Equal to `observed` while no epoch is open, so an ordinary
+    /// window sees the rule it always had.
     private static let minimumExtrapolationPercent: Double = 1
 
     public static func build(cache: ScanCache,
