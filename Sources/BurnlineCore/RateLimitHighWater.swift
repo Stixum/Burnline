@@ -48,17 +48,59 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         public var rowValue: String {
             "said \(DisplayValue.whole(reportedPercent))%, kept \(DisplayValue.whole(usingPercent))%"
         }
+
+        /// Why the two figures differ — in the direction they actually differ.
+        ///
+        /// ⚠️ The popover used to state one reason unconditionally: "usage
+        /// inside a window cannot go down, so the lower reading is always the
+        /// older one". That is the exact axiom a re-grant falsifies, so over a
+        /// re-grant refusal it explained the disagreement with a sentence the
+        /// disagreement disproves. Direction is decided here rather than in the
+        /// view, like `rowValue`, so the wording stays test-covered.
+        public var explanation: String {
+            let said = DisplayValue.whole(reportedPercent)
+            let kept = DisplayValue.whole(usingPercent)
+            if usingPercent > reportedPercent {
+                return """
+                       Another Claude Code session reported \(said)%, which is lower than the \
+                       \(kept)% already seen this window, so it was ignored. Usage inside a \
+                       window cannot go down, so the lower reading is the older one — an idle \
+                       session republishing what it cached.
+                       """
+            }
+            return """
+                   Another Claude Code session reported \(said)%, but the weekly allowance was \
+                   re-issued inside this window and that reading predates it, so it was \
+                   ignored. The \(kept)% shown is measured against the new allowance.
+                   """
+        }
     }
 
     /// What the file said versus what is being shown, when the two differ.
     ///
     /// `nil` in the ordinary case — this surfaces as an exceptions-only row, per
     /// the portfolio status-chip standard.
+    ///
+    /// ⚠️ **Both directions, not just an override upwards.** This guard was
+    /// `using > reported`, on the reasoning that only the high-water mark could
+    /// ever disagree with the file and it only ever disagrees upwards. Once an
+    /// allowance epoch is open, `CaptureSelection` refuses a pre-re-grant replay
+    /// outright and what is shown is *lower* than what the file says — the
+    /// terminal reads 51%, the app reads 7%, and one-way meant the row that
+    /// exists to explain that went silent for precisely the case it was built
+    /// for. Equality still reports nothing; a disagreement is a disagreement in
+    /// either direction.
+    ///
+    /// 🔴 `onDisk` means the freshest reading *actually in a file*, so callers
+    /// must pass the UNFILTERED candidate — see `CaptureSelection.resolve`,
+    /// which is the only place that composition should be written. The selected
+    /// capture may be a stand-in that was never on disk at all, and passing that
+    /// makes both sides the same object and the answer always `nil`.
     public static func rejection(onDisk: RateLimitCapture,
                                  resolved: RateLimitCapture) -> RejectedReading? {
         let reported = onDisk.sevenDay.usedPercent
         let using = resolved.sevenDay.usedPercent
-        guard using > reported else { return nil }
+        guard using != reported else { return nil }
         return RejectedReading(reportedPercent: reported, usingPercent: using)
     }
 

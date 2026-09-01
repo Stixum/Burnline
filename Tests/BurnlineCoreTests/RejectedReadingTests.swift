@@ -71,3 +71,47 @@ private func reading(_ percent: Double, at capturedAt: TimeInterval) -> RateLimi
                                          rateLimit: nil, now: Date(), isScanning: false)
     #expect(snapshot.rejectedReading == nil)
 }
+
+// MARK: - The other direction
+
+// ⚠️ The rule used to be one-way: only a HIGHER shown figure counted as a
+// rejection, because "usage inside a window cannot go down" made the lower
+// reading always the older one. Anthropic re-issued the weekly allowance inside
+// an unchanged window on 2026-09-01 and the true figure went 51% → 0%, so the
+// stale replay is now the HIGHER one and the row that explains the disagreement
+// has to fire in both directions or it goes silent exactly when it is needed.
+
+/// The re-grant direction. Left one-way, the app shows 7% while the user's
+/// terminal shows 51% and nothing on screen says why.
+@Test func aRegrantMakesTheHigherFileReadingTheRejectedOne() {
+    let rejected = RateLimitHighWater.rejection(onDisk: reading(51, at: 9_999),
+                                                resolved: reading(7, at: 1_000))
+    #expect(rejected?.reportedPercent == 51)
+    #expect(rejected?.usingPercent == 7)
+    #expect(rejected?.rowValue == "said 51%, kept 7%")
+}
+
+/// 🔴 The explanation is direction-aware and lives on the model, like
+/// `rowValue`, so no view body branches. The old copy asserted "usage inside a
+/// window cannot go down, so the lower reading is always the older one" — the
+/// exact axiom the re-grant falsified. Printing that over a re-grant refusal
+/// would explain the disagreement with a statement the disagreement disproves.
+@Test func theExplanationDoesNotClaimUsageCannotGoDownAfterARegrant() {
+    let regrant = RateLimitHighWater.RejectedReading(reportedPercent: 51, usingPercent: 7)
+    #expect(regrant.explanation.contains("re-issued"))
+    #expect(!regrant.explanation.contains("cannot go down"))
+
+    let idleSession = RateLimitHighWater.RejectedReading(reportedPercent: 69, usingPercent: 74)
+    #expect(idleSession.explanation.contains("cannot go down"))
+    #expect(!idleSession.explanation.contains("re-issued"))
+}
+
+/// Both figures appear in both directions, so the tooltip can never name one
+/// number and leave the other to be guessed at.
+@Test func theExplanationAlwaysNamesBothFigures() {
+    for reading in [RateLimitHighWater.RejectedReading(reportedPercent: 51, usingPercent: 7),
+                    RateLimitHighWater.RejectedReading(reportedPercent: 69, usingPercent: 74)] {
+        #expect(reading.explanation.contains("\(DisplayValue.whole(reading.reportedPercent))%"))
+        #expect(reading.explanation.contains("\(DisplayValue.whole(reading.usingPercent))%"))
+    }
+}

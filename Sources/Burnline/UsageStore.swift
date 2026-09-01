@@ -534,26 +534,35 @@ final class UsageStore {
                     TranscriptDating.mintedAt(transcriptPath: $0, observedAt: loaded.capturedAt)
                 })
             }
-        var capture = CaptureDirectory.freshest(of: dated)
-        // Kept so the popover can say the file was overridden. Silently
-        // disagreeing with the user's own terminal status line reads as a broken
-        // app rather than as the protection it is.
-        var rejected: RateLimitHighWater.RejectedReading?
-        if let incoming = capture {
-            let (resolved, mark) = RateLimitHighWater.reconcile(incoming, against: highWater)
-            rejected = RateLimitHighWater.rejection(onDisk: incoming, resolved: resolved)
-            capture = resolved
-            if mark != highWater {
-                highWater = mark
-                try? highWaterStore.save(mark)
-            }
+        // Select, then reconcile, then report — one pure step, in
+        // `CaptureSelection.resolve`, because the ORDER of those three is
+        // load-bearing and this target has no tests. Selection is what refuses a
+        // reading that cannot postdate an open allowance re-grant; doing it
+        // after reconciliation leaves the mark already corrupted, and computing
+        // the rejection from the selected capture silences the row that explains
+        // the disagreement. Both are pinned in `CaptureSelectionTests`.
+        //
+        // `resolution.rejected` is kept so the popover can say the file was
+        // overridden. Silently disagreeing with the user's own terminal status
+        // line reads as a broken app rather than as the protection it is.
+        let resolution = CaptureSelection.resolve(dated, against: highWater)
+        let capture = resolution.capture
+        if resolution.highWater != highWater {
+            highWater = resolution.highWater
+            try? highWaterStore.save(resolution.highWater)
         }
 
+        // The allowance epoch the mark is in, carried onto the snapshot so every
+        // reader gets one answer rather than each recomputing it. Read off the
+        // resolution, not the property assigned above, so this cannot silently
+        // depend on that assignment having happened. `SnapshotBuilder` drops it
+        // if it belongs to a window that has since reset.
         snapshot = SnapshotBuilder.build(cache: cache, settings: storedSettings,
                                          rateLimit: capture,
                                          now: Date(), isScanning: isScanning,
-                                         rejected: rejected,
-                                         scopedWeekly: utilization?.scopedWeekly)
+                                         rejected: resolution.rejected,
+                                         scopedWeekly: utilization?.scopedWeekly,
+                                         regrant: resolution.highWater.sevenDay?.regrant)
 
         // Before the observation feed's guards: the evaluation must run on
         // every rebuild, and the block below returns early.

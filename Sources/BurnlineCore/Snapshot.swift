@@ -32,6 +32,26 @@ public struct FiveHourStatus: Equatable, Sendable {
 /// Everything the UI renders, computed in one pass. Views read this and do no
 /// arithmetic of their own.
 public struct Snapshot: Equatable, Sendable {
+
+    /// The instant the weekly allowance was re-issued inside the current
+    /// window, and the percentage it re-opened at.
+    ///
+    /// The `Date` twin of `RateLimitHighWater.Regrant`, which persists epoch
+    /// seconds. `SnapshotBuilder` is the one place that conversion happens —
+    /// everything downstream of the snapshot works in `Date`, and a view that
+    /// had to convert would be doing arithmetic.
+    public struct Regrant: Equatable, Sendable {
+        /// When the new allowance began: the `provenAt` of the reading that
+        /// reported it, never a detection wall-clock.
+        public let startedAt: Date
+        public let startPercent: Double
+
+        public init(startedAt: Date, startPercent: Double) {
+            self.startedAt = startedAt
+            self.startPercent = startPercent
+        }
+    }
+
     public let window: Window
     /// Exact. Where the clock says you should be.
     public let targetPercent: Double
@@ -69,6 +89,13 @@ public struct Snapshot: Equatable, Sendable {
     /// Absent on plans that don't, and absent entirely when only the statusline
     /// source is available — it omits this figure.
     public let scopedWeekly: UsageUtilization.ScopedLimit?
+    /// The allowance epoch currently open, when one is — the weekly allowance
+    /// re-issued *inside* this window rather than at its reset.
+    ///
+    /// `nil` in the ordinary case, which is nearly always. Non-nil is the
+    /// discriminator, never `startPercent`: the observed 2026-09-01 event
+    /// re-granted to 0%, identical to the ordinary window-start value.
+    public let regrant: Regrant?
 
     public init(window: Window, targetPercent: Double, estimatedPercent: Double?,
                 capturedPercent: Double? = nil,
@@ -79,7 +106,8 @@ public struct Snapshot: Equatable, Sendable {
                 dayTimeZoneIdentifier: String = TimeZone.current.identifier,
                 fiveHour: FiveHourStatus? = nil,
                 rejectedReading: RateLimitHighWater.RejectedReading? = nil,
-                scopedWeekly: UsageUtilization.ScopedLimit? = nil) {
+                scopedWeekly: UsageUtilization.ScopedLimit? = nil,
+                regrant: Regrant? = nil) {
         self.window = window
         self.targetPercent = targetPercent
         self.estimatedPercent = estimatedPercent
@@ -95,6 +123,7 @@ public struct Snapshot: Equatable, Sendable {
         self.fiveHour = fiveHour
         self.rejectedReading = rejectedReading
         self.scopedWeekly = scopedWeekly
+        self.regrant = regrant
     }
 
     /// Age of the live capture, when there is one.

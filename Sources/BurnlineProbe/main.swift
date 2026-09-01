@@ -48,12 +48,17 @@ let utilization = UtilizationStore().load()
 let allCandidates = sessionCaptures
     + [sharedCapture].compactMap { $0 }
     + [utilization?.asCapture()].compactMap { $0 }
-let onDisk = CaptureDirectory.freshest(of: allCandidates.map(date))
+// ⚠️ Resolution goes through `CaptureSelection.resolve`, exactly as the app
+// does. Wiring only `UsageStore` once left the probe disagreeing with the app in
+// precisely the case the per-session files existed for; the same trap applies to
+// the allowance-epoch filter, which changes which capture wins.
+let storedMark = HighWaterStore().load()
+let resolution = CaptureSelection.resolve(allCandidates.map(date), against: storedMark)
+let onDisk = resolution.onDisk
 let rawOnDisk = onDisk.flatMap { resolved in
     allCandidates.first { $0.sessionId == resolved.sessionId }
 }
-let storedMark = HighWaterStore().load()
-let capture = onDisk.map { RateLimitHighWater.reconcile($0, against: storedMark).capture }
+let capture = resolution.capture
 
 // Which evidence dated the reading. "wall clock" means neither rule applied and
 // the figure is only as honest as the writing session was fresh.
@@ -93,7 +98,9 @@ if let raw = rawOnDisk, raw == utilization?.asCapture() {
     }
 }
 let snapshot = SnapshotBuilder.build(cache: cache, settings: settings,
-                                     rateLimit: capture, now: now, isScanning: false)
+                                     rateLimit: capture, now: now, isScanning: false,
+                                     rejected: resolution.rejected,
+                                     regrant: resolution.highWater.sevenDay?.regrant)
 
 func percent(_ value: Double?) -> String {
     value.map { String(format: "%.1f%%", $0) } ?? "—"
@@ -119,14 +126,24 @@ if let capture {
 // Every open Claude Code session overwrites rate-limits.json on its own timer,
 // and an idle one keeps republishing the snapshot it started with. When these
 // two disagree, a stale session wrote last.
+//
+// The rule is `RateLimitHighWater.rejection`, read off the resolution rather
+// than restated here: it is directional now — a pre-re-grant replay is refused
+// while reading HIGHER than what is shown — and a second copy would go stale.
 var highWaterNote = "no mark yet"
 if let onDisk {
     let raw = onDisk.sevenDay.usedPercent
-    let used = capture?.sevenDay.usedPercent ?? raw
-    highWaterNote = used > raw
-        ? "on disk \(raw)% -> REJECTED as stale, using \(used)%"
-        : "on disk \(raw)% accepted"
+    highWaterNote = resolution.rejected.map {
+        "on disk \(raw)% -> REJECTED as stale, using \($0.usingPercent)%"
+    } ?? "on disk \(raw)% accepted"
 }
+
+// The allowance re-issued mid-window. Absent almost always; when present it is
+// what the extrapolation must measure from, so a disagreement between this and
+// the window start is the thing to look at first.
+let epochNote = snapshot.regrant.map {
+    "opened \($0.startedAt) at \(percent($0.startPercent))"
+} ?? "none open"
 
 // First line, before anything else: which directory this run is reading and
 // writing. `BURNLINE_DATA_DIR` is what makes the statusline helper safe to
@@ -143,6 +160,7 @@ Burnline probe
   read from        \(sourcesNote)
   dated by         \(datingNote)
   high water       \(highWaterNote)
+  allowance epoch  \(epochNote)
   source           \(describeSource(snapshot.source))
   auto schedule    \(snapshot.isScheduleAutomatic)
   scanned          \(cache.files.count) files

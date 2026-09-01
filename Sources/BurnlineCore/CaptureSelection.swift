@@ -111,6 +111,57 @@ public enum CaptureSelection {
         }
     }
 
+    /// Everything one rebuild needs out of the captures on disk.
+    public struct Resolution: Equatable, Sendable {
+        /// The freshest reading actually in a file, whether or not it was
+        /// eligible. This is what the user's own terminal status line is
+        /// showing, and the only honest answer to "what does the file say".
+        public let onDisk: RateLimitCapture?
+        /// The capture to trust: selected, then reconciled against the mark.
+        public let capture: RateLimitCapture?
+        /// The mark to persist.
+        public let highWater: RateLimitHighWater
+        /// Set only when `onDisk` and `capture` disagree.
+        public let rejected: RateLimitHighWater.RejectedReading?
+    }
+
+    /// Select, then reconcile, then report — in that order, once.
+    ///
+    /// 🔴 **The order is the feature, and it is written here rather than at the
+    /// call site because `UsageStore` lives in an executable target with no
+    /// tests of its own.** Composed inline there, both of the following would
+    /// pass the entire suite:
+    ///
+    /// - *Filtering after reconciliation.* `reconcile` is handed the unfiltered
+    ///   freshest, an ineligible replay reaches `best()`, and both bypasses
+    ///   documented at the top of this file are back — the filter then discards
+    ///   a mark that has already been corrupted.
+    /// - *Reporting the rejection from the selected capture.* With a stand-in,
+    ///   `onDisk` and `resolved` are the same object and `rejection` is `nil`.
+    ///   The terminal shows 51%, the app shows 7%, and the row that exists to
+    ///   explain exactly that disagreement never fires — the "looks like a
+    ///   broken app" failure, reintroduced by its own fix.
+    ///
+    /// Pure, and it persists nothing: the caller writes `highWater` (and
+    /// `BurnlineProbe` deliberately does not, so a diagnostic run never mints a
+    /// mark).
+    public static func resolve(_ candidates: [RateLimitCapture],
+                               against highWater: RateLimitHighWater) -> Resolution {
+        // Unfiltered, deliberately: this is the file's own claim, and it is
+        // needed whether or not the file's claim survives selection.
+        let onDisk = CaptureDirectory.freshest(of: candidates)
+
+        guard let incoming = select(candidates, mark: highWater) else {
+            return Resolution(onDisk: onDisk, capture: nil,
+                              highWater: highWater, rejected: nil)
+        }
+        let (resolved, mark) = RateLimitHighWater.reconcile(incoming, against: highWater)
+        return Resolution(onDisk: onDisk, capture: resolved, highWater: mark,
+                          rejected: onDisk.flatMap {
+                              RateLimitHighWater.rejection(onDisk: $0, resolved: resolved)
+                          })
+    }
+
     /// The mark, reconstituted as a capture, for when nothing survives.
     ///
     /// 🔴 Returning nil here is a worse regression than the bug being fixed.

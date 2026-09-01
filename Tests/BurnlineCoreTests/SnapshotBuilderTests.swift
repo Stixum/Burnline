@@ -147,3 +147,75 @@ private func capture(percent: Double, at captured: Date, resetsAt: Date) -> Rate
     #expect(snapshot.source == .paceOnly)
     #expect(snapshot.capturedPercent == nil)
 }
+
+// MARK: - The allowance epoch
+
+// Anthropic re-issues the weekly allowance INSIDE a window without moving
+// `resets_at` (observed 2026-09-01: 51% → 0%). `RateLimitHighWater` records that
+// as a `Regrant` on the mark; the snapshot is the single immutable value every
+// reader gets, so it has to carry the epoch or each reader recomputes it.
+
+/// 🔴 The epoch-seconds → `Date` boundary is here, and every fixture value is
+/// deliberately distinct. `Regrant.startedAt`, the capture's `capturedAt` and
+/// `window.start` are three same-typed instants; wiring any of the other two
+/// compiles silently. `startPercent` is likewise neither 0 (the value a
+/// hardcode would produce, and the value the real 2026-09-01 event re-granted
+/// to) nor the capture's own percentage.
+@Test func theSnapshotCarriesTheOpenAllowanceEpoch() {
+    let captured = capturedBucketStart
+    let now = capturedBucketStart.addingTimeInterval(1_000)
+    let resetsAt = capturedBucketStart.addingTimeInterval(2 * 86_400)
+    let startedAt = capturedBucketStart.addingTimeInterval(-3_600)
+
+    let snapshot = SnapshotBuilder.build(
+        cache: cache([(captured, 9_000)]),
+        settings: settings(),
+        rateLimit: capture(percent: 3, at: captured, resetsAt: resetsAt),
+        now: now, isScanning: false,
+        regrant: .init(startedAt: startedAt.timeIntervalSince1970, startPercent: 4))
+
+    #expect(snapshot.regrant?.startedAt == startedAt)
+    #expect(snapshot.regrant?.startPercent == 4)
+    #expect(snapshot.regrant?.startedAt != snapshot.window.start)
+    #expect(snapshot.regrant?.startedAt != captured)
+}
+
+/// The ordinary case: no epoch has ever opened, so nothing is claimed.
+@Test func aSnapshotWithNoEpochCarriesNoRegrant() {
+    let captured = capturedBucketStart
+    let now = capturedBucketStart.addingTimeInterval(1_000)
+
+    let snapshot = SnapshotBuilder.build(
+        cache: cache([(captured, 9_000)]),
+        settings: settings(),
+        rateLimit: capture(percent: 3, at: captured,
+                           resetsAt: capturedBucketStart.addingTimeInterval(2 * 86_400)),
+        now: now, isScanning: false)
+
+    #expect(snapshot.regrant == nil)
+}
+
+/// 🔴 A mark outlives its own window. `reconcile` only clears it when a capture
+/// for a DIFFERENT window arrives, and in the gap `CaptureSelection` hands back
+/// that dead mark as a stand-in — so an epoch from the previous window is a
+/// reachable state, not a hypothetical. Carrying it forward would date the new
+/// window's extrapolation (Task 8) from an instant that is not in it.
+///
+/// Same guard shape as `capturedPercent` above, and for the same reason.
+@Test func anEpochFromAWindowThatHasSinceResetIsNotCarried() {
+    let captured = capturedBucketStart
+    let resetsAt = capturedBucketStart.addingTimeInterval(60)
+    let now = capturedBucketStart.addingTimeInterval(3 * 86_400)
+
+    let snapshot = SnapshotBuilder.build(
+        cache: cache([(captured, 9_000)]),
+        settings: settings(),
+        rateLimit: capture(percent: 3, at: captured, resetsAt: resetsAt),
+        now: now, isScanning: false,
+        regrant: .init(startedAt: captured.addingTimeInterval(-86_400).timeIntervalSince1970,
+                       startPercent: 4))
+
+    // `windowFromReset` rolled the window forward past the epoch's start.
+    #expect(snapshot.source == .paceOnly)
+    #expect(snapshot.regrant == nil)
+}

@@ -244,3 +244,118 @@ private func markWithoutRegrant(usedPercent: Double = 51) -> RateLimitHighWater 
     #expect(CaptureDirectory.freshest(of: [high, low])?.sevenDay.usedPercent == 10,
             "proven beats magnitude at an equal instant")
 }
+
+// MARK: - Resolution: selection, then reconciliation, then reporting
+
+// 🔴 `UsageStore` is an executable target with no test target of its own, so a
+// composition written inline there is unverifiable — and the ORDER of these
+// three steps is the entire point of the feature. `resolve` is that composition,
+// lifted into `BurnlineCore` where the ordering can be pinned.
+
+private func replay(_ percent: Double, at captured: TimeInterval,
+                    provenAt: TimeInterval) -> RateLimitCapture {
+    proven(percent, at: captured, provenAt: provenAt)
+}
+
+/// 🔴 Constraint A, pinned. Filtering must happen BEFORE `reconcile`, never
+/// after: a proven-but-pre-re-grant replay arriving at `best()` takes the
+/// *higher* branch, which carries no proof requirement at all, and is simply
+/// accepted — restoring the frozen 51% with the epoch still open underneath it.
+///
+/// Reconcile the unfiltered freshest here and the mark comes back 51.
+@Test func theEpochFilterRunsBeforeReconciliationNotAfter() {
+    let mark = markWithRegrant(startedAt: 2_000, startPercent: 0, usedPercent: 7)
+    let stale = replay(51, at: 9_999, provenAt: 1_000)
+
+    let resolution = CaptureSelection.resolve([stale], against: mark)
+
+    #expect(resolution.capture?.sevenDay.usedPercent == 7)
+    #expect(resolution.highWater.sevenDay?.usedPercent == 7,
+            "the refused replay must never reach best()'s higher branch")
+    #expect(resolution.highWater.sevenDay?.regrant != nil, "the epoch is still open")
+}
+
+/// 🔴 Constraint B, pinned. The refusal is exactly the moment the app disagrees
+/// with the user's own terminal, so it is exactly the moment the row has to
+/// fire. Computing the rejection from the SELECTED capture makes both sides the
+/// same object and yields nil — the "looks like a broken app" failure the row
+/// was built for, reintroduced by its own fix.
+@Test func aReadingRefusedByTheEpochFilterIsStillReportedAsARejection() {
+    let mark = markWithRegrant(startedAt: 1_000, startPercent: 0, usedPercent: 7)
+    let stale = capture(51, at: 9_999)                  // undated: what the terminal shows
+    let truth = proven(7, at: 1_500, provenAt: 1_500)
+
+    let resolution = CaptureSelection.resolve([stale, truth], against: mark)
+
+    #expect(resolution.capture?.sevenDay.usedPercent == 7)
+    #expect(resolution.rejected?.reportedPercent == 51)
+    #expect(resolution.rejected?.usingPercent == 7)
+}
+
+/// The same, through the stand-in rather than a surviving candidate: nothing on
+/// disk is eligible, so what the app shows was never in a file at all. `onDisk`
+/// still has to name the file's figure.
+@Test func theStandInStillReportsWhatTheFileSaid() {
+    let mark = markWithRegrant(startedAt: 1_000, startPercent: 0, usedPercent: 7)
+
+    let resolution = CaptureSelection.resolve([capture(51, at: 9_999)], against: mark)
+
+    #expect(resolution.onDisk?.sevenDay.usedPercent == 51)
+    #expect(resolution.capture?.sevenDay.usedPercent == 7)
+    #expect(resolution.rejected?.rowValue == "said 51%, kept 7%")
+}
+
+/// The pre-existing stale-session case, unchanged: no epoch, a lower reading on
+/// disk, the mark holds the higher figure. This is the direction the row has
+/// always reported and it must keep reporting it.
+@Test func theOrdinaryStaleSessionRejectionSurvivesTheNewComposition() {
+    let mark = markWithoutRegrant(usedPercent: 74)
+    let resolution = CaptureSelection.resolve([capture(69, at: 2_000)], against: mark)
+
+    #expect(resolution.capture?.sevenDay.usedPercent == 74)
+    #expect(resolution.rejected?.reportedPercent == 69)
+    #expect(resolution.rejected?.usingPercent == 74)
+}
+
+/// Agreement is the overwhelmingly common case and must stay silent — the row
+/// is exceptions-only, per the portfolio status-chip standard.
+@Test func agreementBetweenDiskAndMarkReportsNothing() {
+    let resolution = CaptureSelection.resolve([capture(51, at: 9_999)],
+                                              against: markWithoutRegrant(usedPercent: 51))
+    #expect(resolution.rejected == nil)
+}
+
+/// 🔴 Constraint C, pinned at the composition level: with nothing on disk the
+/// mark still stands in, so the window boundary survives — but there is no file
+/// to disagree with, so nothing is reported as rejected. Reporting one here
+/// would accuse a file that does not exist.
+@Test func aStandInWithNothingOnDiskKeepsTheWindowAndAccusesNobody() {
+    let mark = markWithRegrant(startedAt: 1_000, startPercent: 0, usedPercent: 7)
+    let resolution = CaptureSelection.resolve([], against: mark)
+
+    #expect(resolution.onDisk == nil)
+    #expect(resolution.rejected == nil)
+    #expect(resolution.capture?.sevenDay.usedPercent == 7)
+    #expect(resolution.capture?.sevenDay.resetsAt == windowReset,
+            "the window boundary is what the stand-in exists to preserve")
+}
+
+/// No mark and no files: nothing to resolve, and the caller must not be handed
+/// a mark to persist that it did not have before.
+@Test func resolvingNothingAtAllChangesNothing() {
+    let resolution = CaptureSelection.resolve([], against: .empty)
+
+    #expect(resolution.capture == nil)
+    #expect(resolution.onDisk == nil)
+    #expect(resolution.rejected == nil)
+    #expect(resolution.highWater == .empty)
+}
+
+/// The mark to persist comes back on the result, so the caller writes what this
+/// unit decided rather than recomputing it.
+@Test func resolveReturnsTheMarkToPersist() {
+    let resolution = CaptureSelection.resolve([capture(51, at: 9_999)], against: .empty)
+
+    #expect(resolution.highWater.sevenDay?.usedPercent == 51)
+    #expect(resolution.highWater.sevenDay?.capturedAt == 9_999)
+}

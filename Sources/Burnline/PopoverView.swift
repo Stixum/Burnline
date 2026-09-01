@@ -150,6 +150,11 @@ struct PopoverView: View {
     /// app just quietly shows a different number than the terminal does, which
     /// is what made the 2026-08-11 investigation start from "the app is stuck".
     ///
+    /// ⚠️ The reason lives on `RejectedReading.explanation`, not here: since the
+    /// allowance can be re-issued inside a window, the stale reading is
+    /// sometimes the HIGHER one, and the wording has to follow the direction.
+    /// Branching in a view body would put that rule outside the tests.
+    ///
     /// Symbol + word + colour. Never colour alone.
     private func rejectionRow(_ rejected: RateLimitHighWater.RejectedReading) -> some View {
         HStack(spacing: 5) {
@@ -160,13 +165,7 @@ struct PopoverView: View {
         }
         .font(.system(size: 11.5))
         .foregroundStyle(Theme.warning)
-        .help("""
-              Another Claude Code session reported \
-              \(DisplayValue.whole(rejected.reportedPercent))%, which is lower than the \
-              \(DisplayValue.whole(rejected.usingPercent))% already seen this window, so it was \
-              ignored. Usage inside a window cannot go down, so the lower reading is \
-              always the older one — an idle session republishing what it cached.
-              """)
+        .help(rejected.explanation)
     }
 
     private func row(_ label: String, _ value: String,

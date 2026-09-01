@@ -13,7 +13,8 @@ public enum SnapshotBuilder {
                              now: Date,
                              isScanning: Bool,
                              rejected: RateLimitHighWater.RejectedReading? = nil,
-                             scopedWeekly: UsageUtilization.ScopedLimit? = nil) -> Snapshot {
+                             scopedWeekly: UsageUtilization.ScopedLimit? = nil,
+                             regrant: RateLimitHighWater.Regrant? = nil) -> Snapshot {
 
         // A capture pins the window exactly: its resets_at IS the boundary, so
         // no user-configured schedule is involved.
@@ -70,6 +71,23 @@ public enum SnapshotBuilder {
                                   timeRemaining: remaining)
         }
 
+        // An epoch belongs to the window it opened in. A mark outlives its own
+        // window — `reconcile` clears it only once a capture for a *different*
+        // window arrives, and in the gap `CaptureSelection` hands back that dead
+        // mark as a stand-in — so a `Regrant` from the previous window is a
+        // reachable state, not a hypothetical.
+        //
+        // Same shape as the `capturedPercent` guard above, and for the same
+        // reason: `windowFromReset` rolls a window forward from a dead capture,
+        // and anything keyed to the old one is then silently wrong about the new
+        // one. Here that would date the extrapolation's epoch re-base from an
+        // instant that is not in the window being re-based.
+        let epoch = regrant.flatMap { regrant -> Snapshot.Regrant? in
+            let startedAt = Date(timeIntervalSince1970: regrant.startedAt)
+            guard startedAt >= window.start, startedAt < window.end else { return nil }
+            return Snapshot.Regrant(startedAt: startedAt, startPercent: regrant.startPercent)
+        }
+
         return Snapshot(
             window: window,
             targetPercent: window.targetPercent,
@@ -86,7 +104,8 @@ public enum SnapshotBuilder {
             dayTimeZoneIdentifier: settings.resetSchedule.timeZoneIdentifier,
             fiveHour: fiveHour,
             rejectedReading: rejected,
-            scopedWeekly: scopedWeekly
+            scopedWeekly: scopedWeekly,
+            regrant: epoch
         )
     }
 
