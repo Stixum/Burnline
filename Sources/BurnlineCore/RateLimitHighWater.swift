@@ -12,9 +12,10 @@ import Foundation
 /// twice a minute. Observed 2026-08-11 with five sessions open, two of them
 /// ~5 hours old.
 ///
-/// **Why taking the maximum is sound.** Usage inside a fixed window is
-/// cumulative. It cannot go down. So a reading lower than one already observed
-/// in the same window is *presumed* staler rather than a correction.
+/// **Why the maximum is the default.** Usage inside a fixed window is
+/// cumulative: it cannot go down *by consumption*. So a reading lower than one
+/// already observed in the same window is *presumed* staler rather than a
+/// correction.
 ///
 /// ⚠️ **That presumption is defeasible, and it was defeated on 2026-09-01.**
 /// This comment used to call a mid-window downward revision "not a thing
@@ -259,10 +260,19 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         let confirmedAt = reading.usedPercent == mark.usedPercent
             ? max(capturedAt, mark.capturedAt)
             : capturedAt
-        // Equal re-confirms the mark's own reading, so the two proofs describe
-        // the same value and the later one wins. A strictly higher reading
-        // REPLACES that value, so it brings its own proof — or none, in which
-        // case the fallback is its own `capturedAt` upper bound.
+        // `provenAt` is evidence about the value the mark HOLDS. An equal
+        // reading re-confirms that same value, so the two proofs describe one
+        // thing and the later one wins. A higher reading replaces the value, so
+        // the evidence for it is that reading's own — or none. Carrying the old
+        // proof forward instead would block a genuinely newer proof using
+        // evidence about a value the mark no longer holds.
+        //
+        // 🔴 Deliberately NOT clamped up to `mark.capturedAt` when the mark is
+        // unproven. A clamp would make such a mark harder to demote, but
+        // `Mark.provenAt` is PERSISTED, is reconstituted into a stand-in
+        // capture, and is printed by the probe — so a clamped value is a
+        // fabricated proof written to disk. It would also make the result
+        // order-dependent. Honest and defeasible beats conservative and false.
         let confirmedProof = reading.usedPercent == mark.usedPercent
             ? laterProof(mark.provenAt, provenAt)
             : provenAt

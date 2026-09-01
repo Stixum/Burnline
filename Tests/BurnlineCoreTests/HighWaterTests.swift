@@ -81,14 +81,24 @@ private func proven(_ percent: Double, at t: TimeInterval,
 
 // MARK: - Demotion, when the lower reading can be PROVEN to be the later one
 
-/// The 2026-09-01 event: Anthropic re-issued the allowance mid-window and
-/// the app rejected the truth as a stale session for three days.
+/// The 2026-09-01 event: Anthropic re-issued the allowance mid-window and the
+/// app rejected the truth as a stale session — a rejection that would have
+/// stood for three days, to the end of the window, had it not been caught the
+/// same day.
+///
+/// The MARK coming down is load-bearing, not just the returned reading:
+/// `WindowLedger` reads the reconciled value to spot the drop, and an
+/// implementation that demotes one without the other looks correct for exactly
+/// one rebuild.
 @Test func aProvenLaterLowerReadingDemotesTheMark() {
     let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
                                                  against: .empty)
-    let (result, _) = RateLimitHighWater.reconcile(proven(0, at: 2_000, provenAt: 2_000),
-                                                   against: mark)
+    let (result, after) = RateLimitHighWater.reconcile(proven(0, at: 2_000, provenAt: 2_000),
+                                                       against: mark)
     #expect(result.sevenDay.usedPercent == 0)
+    #expect(after.sevenDay?.usedPercent == 0)
+    #expect(after.sevenDay?.provenAt == 2_000)
+    #expect(after.sevenDay?.capturedAt == 2_000)
 }
 
 /// POSITIVE CONTROL for the test above: the identical fixture with an
@@ -109,6 +119,115 @@ private func proven(_ percent: Double, at t: TimeInterval,
     let (_, after) = RateLimitHighWater.reconcile(capture(51, at: 9_000), against: mark)
     #expect(after.sevenDay?.provenAt == 1_000)
     #expect(after.sevenDay?.capturedAt == 9_000, "display age still moves")
+}
+
+/// The boundary, and it is not academic: `mintedAt` and `fetchedAtMs` are real
+/// instants that can coincide at second scale. A proof no LATER than the mark's
+/// evidence says nothing about which came first, so `>=` here would demote on a
+/// coin toss.
+@Test func aProofMintedAtExactlyTheBasisDoesNotDemote() {
+    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
+                                                 against: .empty)
+    let (result, after) = RateLimitHighWater.reconcile(proven(0, at: 2_000, provenAt: 1_000),
+                                                       against: mark)
+    #expect(result.sevenDay.usedPercent == 51)
+    #expect(after.sevenDay?.usedPercent == 51)
+}
+
+/// The positive half of the reconfirmation rule.
+/// `anUndatedReconfirmationDoesNotAdvanceTheProvenDate` pins the freeze; on its
+/// own it is also satisfied by a `provenAt` that never advances at all, which
+/// leaves the demotion basis frozen at the first proof forever.
+@Test func aProvenReconfirmationDoesAdvanceTheProvenDate() {
+    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
+                                                 against: .empty)
+    let (_, after) = RateLimitHighWater.reconcile(proven(51, at: 3_000, provenAt: 3_000),
+                                                  against: mark)
+    #expect(after.sevenDay?.provenAt == 3_000)
+}
+
+/// `provenAt` is evidence about the value the mark HOLDS. A higher reading
+/// replaces that value, so it brings its own evidence — none at all, here.
+/// Merging the mark's older proof forward instead would block a genuinely newer
+/// proof using evidence about a value no longer held. The reading is
+/// deliberately older than the mark: that is the case
+/// `aHigherReadingKeepsItsOwnDateEvenWhenOlderThanTheMark` pins for
+/// `capturedAt`, and the one where the two rules visibly differ.
+@Test func aHigherReadingBringsItsOwnEvidenceRatherThanInheritingTheMarks() {
+    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
+                                                 against: .empty)
+    let (_, after) = RateLimitHighWater.reconcile(capture(60, at: 500), against: mark)
+
+    #expect(after.sevenDay?.usedPercent == 60, "the higher branch ran")
+    #expect(after.sevenDay?.provenAt == nil)
+}
+
+/// A proven confirmation can move the basis DOWN — from `capturedAt`, an
+/// inferred upper bound, to the earlier instant actually proven. That is
+/// acceptable because it is order-independent: the mark does not depend on
+/// which session's writer happened to land first. Clamping the proof up to the
+/// inferred bound would buy conservatism with a fabricated date AND lose this.
+@Test func aProvenAndAnUndatedConfirmationCommute() {
+    func fold(_ captures: [RateLimitCapture]) -> RateLimitHighWater {
+        captures.reduce(RateLimitHighWater.empty) {
+            RateLimitHighWater.reconcile($1, against: $0).highWater
+        }
+    }
+    let provenReading = proven(51, at: 3_000, provenAt: 3_000)
+    let undated = capture(51, at: 5_000)
+
+    let provenFirst = fold([provenReading, undated])
+    let undatedFirst = fold([undated, provenReading])
+
+    #expect(provenFirst.sevenDay == undatedFirst.sevenDay)
+    #expect(provenFirst.sevenDay?.capturedAt == 5_000)
+    #expect(provenFirst.sevenDay?.provenAt == 3_000)
+}
+
+// MARK: - An open re-grant survives every branch
+
+// `Mark.regrant` stays nil until an epoch is opened on a material drop, so
+// dropping it inside `best()` breaks nothing today and breaks the epoch feature
+// later — invisibly to that feature's own tests, which never reach this file.
+// One test per branch that rebuilds a mark from an existing one, each also
+// asserting the branch it targets actually ran.
+
+private let openRegrant = RateLimitHighWater.Regrant(startedAt: 2_000, startPercent: 0)
+
+private func markInARegrant(_ percent: Double, capturedAt: TimeInterval,
+                            provenAt: TimeInterval? = nil) -> RateLimitHighWater {
+    RateLimitHighWater(sevenDay: .init(resetsAt: reset, usedPercent: percent,
+                                       capturedAt: capturedAt, provenAt: provenAt,
+                                       regrant: openRegrant))
+}
+
+@Test func aHigherReadingKeepsAnOpenRegrant() {
+    let (_, after) = RateLimitHighWater.reconcile(capture(9, at: 3_000),
+                                                  against: markInARegrant(4, capturedAt: 2_500))
+    #expect(after.sevenDay?.usedPercent == 9, "the higher branch ran")
+    #expect(after.sevenDay?.regrant == openRegrant)
+}
+
+@Test func anEqualReadingKeepsAnOpenRegrant() {
+    let (_, after) = RateLimitHighWater.reconcile(capture(4, at: 3_000),
+                                                  against: markInARegrant(4, capturedAt: 2_500))
+    #expect(after.sevenDay?.capturedAt == 3_000, "the equal branch ran")
+    #expect(after.sevenDay?.regrant == openRegrant)
+}
+
+@Test func aDemotionInsideARegrantKeepsIt() {
+    let (_, after) = RateLimitHighWater.reconcile(
+        proven(1, at: 3_000, provenAt: 3_000),
+        against: markInARegrant(4, capturedAt: 2_500, provenAt: 2_500))
+    #expect(after.sevenDay?.usedPercent == 1, "the demotion branch ran")
+    #expect(after.sevenDay?.regrant == openRegrant)
+}
+
+@Test func aRejectedLowerReadingKeepsAnOpenRegrant() {
+    let (_, after) = RateLimitHighWater.reconcile(capture(1, at: 3_000),
+                                                  against: markInARegrant(4, capturedAt: 2_500))
+    #expect(after.sevenDay?.usedPercent == 4, "the lower reading was rejected")
+    #expect(after.sevenDay?.regrant == openRegrant)
 }
 
 // MARK: - The 5-hour reading has the same problem and its own window
