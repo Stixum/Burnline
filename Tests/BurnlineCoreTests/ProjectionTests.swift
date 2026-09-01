@@ -1,10 +1,14 @@
 import Testing
 @testable import BurnlineCore
 
-@Test func extrapolatesCurrentBurnToEndOfWindow() {
+@Test func extrapolatesCurrentBurnToEndOfWindow() throws {
     // 40% consumed at 71.4% elapsed lands at ~56%.
-    let projected = Projection.projectedPercent(estimatedPercent: 40, elapsedFraction: 5.0 / 7.0)
-    #expect(abs(projected! - 56) < 0.01)
+    // `#require`, not `!`: a relational mutation of the guard one file over
+    // (`>=` to `<`) nils this, and a force unwrap turns that into a process
+    // trap that takes every later test's result down with it.
+    let projected = try #require(
+        Projection.projectedPercent(estimatedPercent: 40, elapsedFraction: 5.0 / 7.0))
+    #expect(abs(projected - 56) < 0.01)
 }
 
 @Test func suppressedTooEarlyInTheWindow() {

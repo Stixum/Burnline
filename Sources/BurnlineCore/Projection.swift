@@ -24,6 +24,16 @@ public enum Projection {
     /// 0, which reduces to `estimate / elapsedFraction` exactly — `x - 0` and
     /// `0 + y` are both exact in binary floating point, so every ordinary
     /// window is untouched to the last bit.
+    ///
+    /// - Parameter epochStartPercent: Where the open allowance epoch began, or
+    ///   `0` when none is. ⚠️ **The default is a convenience for the no-epoch
+    ///   case, not a value to fall back on.** This type is public in a library
+    ///   target, so a second caller that simply omits the argument compiles
+    ///   clean and silently gets pre-re-grant behaviour — no error, and a
+    ///   figure that looks plausible. Pair it with the matching fraction: the
+    ///   epoch's start percentage belongs only with the epoch's own elapsed
+    ///   fraction, and either one alone is wrong. `SnapshotBuilder` passes both
+    ///   explicitly for that reason, and so should anything else.
     public static func projectedPercent(estimatedPercent: Double?,
                                         elapsedFraction: Double,
                                         epochStartPercent: Double = 0) -> Double? {

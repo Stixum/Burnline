@@ -155,12 +155,27 @@ public enum SnapshotBuilder {
     /// minutes-old epoch sits right on it, and the epoch is what the rate is
     /// being measured over. Read from `epoch` on every call, like
     /// `extrapolate` — a second re-grant re-bases the epoch wholesale.
+    ///
+    /// ⚠️ **A relative floor on a variable-length epoch is a variable absolute
+    /// floor, and the spread is large.** Suppression lasts the first 2% of the
+    /// epoch's run to the reset, which is fixed when the re-grant lands: ~2.9h
+    /// if it opens six days out, ~72 min at two and a half days, and **~72
+    /// seconds if it opens an hour before the reset**. That is the intended
+    /// behaviour — a short epoch has proportionally less to be noisy about —
+    /// but a re-grant near the reset is projected on almost immediately, so
+    /// don't read the floor as a fixed few hours the way the window's is.
+    ///
+    /// Expressed as a `Window` rather than open-coded: the epoch's own start to
+    /// the same finish line *is* a window in every respect this needs, so the
+    /// zero-duration guard and the 0...1 clamp are `Window`'s — already covered
+    /// by `fractionClampsBelowZeroAndAboveOne` and
+    /// `zeroDurationWindowDoesNotDivideByZero` — instead of a second copy that
+    /// has to be kept in step with them by hand.
     private static func epochElapsedFraction(_ epoch: Snapshot.Regrant?,
                                              in window: Window) -> Double {
         guard let epoch else { return window.elapsedFraction }
-        let span = window.end.timeIntervalSince(epoch.startedAt)
-        guard span > 0 else { return 0 }
-        return min(max(window.now.timeIntervalSince(epoch.startedAt) / span, 0), 1)
+        return Window(start: epoch.startedAt, end: window.end, now: window.now)
+            .elapsedFraction
     }
 
     /// The window ending at `reset`, rolled forward in 7-day steps if that

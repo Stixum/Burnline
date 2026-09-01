@@ -36,7 +36,7 @@ private func cache(units: Int, at date: Date) -> ScanCache {
     #expect(snapshot.isPaceOnly)
 }
 
-@Test func calibratedSnapshotProducesEstimateAndDelta() {
+@Test func calibratedSnapshotProducesEstimateAndDelta() throws {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
     let window = WindowMath.window(for: settings().resetSchedule, now: now)
     let anchors = [CalibrationAnchor(timestamp: now.addingTimeInterval(-86_400),
@@ -45,10 +45,12 @@ private func cache(units: Int, at date: Date) -> ScanCache {
         cache: cache(units: 4_000, at: window.start.addingTimeInterval(60)),
         settings: settings(anchors: anchors), now: now, isScanning: false)
 
-    #expect(abs(snapshot.estimatedPercent! - 40) < 1e-6)
+    // `#require`, not `!`: Calibration's own rejection rules (below 5%, older
+    // than 60 days) are live mutation targets, and each one nils this.
+    #expect(abs(try #require(snapshot.estimatedPercent) - 40) < 1e-6)
     #expect(snapshot.isPaceOnly == false)
     // delta is target - estimate: positive means under budget
-    #expect(abs(snapshot.deltaPercent! - (snapshot.targetPercent - 40)) < 1e-6)
+    #expect(abs(try #require(snapshot.deltaPercent) - (snapshot.targetPercent - 40)) < 1e-6)
 }
 
 @Test func unitsOutsideTheWindowDoNotCount() {
@@ -105,7 +107,7 @@ private func capture(percent: Double, at captured: Date, resetsAt: Date) -> Rate
                      fiveHour: nil)
 }
 
-@Test func capturedPercentIsTheCapturedFigureNotTheExtrapolation() {
+@Test func capturedPercentIsTheCapturedFigureNotTheExtrapolation() throws {
     // estimatedPercent under .live is the captured figure carried FORWARD by
     // local token counts. Archiving that as a week's final percentage would
     // write an estimate into the one artifact that can never be recomputed.
@@ -124,7 +126,9 @@ private func capture(percent: Double, at captured: Date, resetsAt: Date) -> Rate
 
     // 9,000 units bought 64% -> 140.625 units per point; 1,000 more -> +7.11.
     #expect(snapshot.capturedPercent == 64)
-    #expect(abs(snapshot.estimatedPercent! - 71.111) < 0.01)
+    // `#require`, not `!`: mutating the capture-liveness gate drops this to
+    // `.paceOnly`, which nils the estimate.
+    #expect(abs(try #require(snapshot.estimatedPercent) - 71.111) < 0.01)
     #expect(snapshot.estimatedPercent != snapshot.capturedPercent)
 }
 
@@ -256,7 +260,7 @@ private let afterTheCapture = capturedBucketStart.addingTimeInterval(950)
         regrant: .init(startedAt: epochStartedAt.timeIntervalSince1970, startPercent: 2))
 
     // The epoch bought 5 points with 1,000 units -> 200/point; 400 more -> 9.
-    #expect(abs(snapshot.estimatedPercent! - 9) < 1e-9)
+    #expect(abs(try #require(snapshot.estimatedPercent) - 9) < 1e-9)
 
     // `#require`, not `!`: measuring the epoch's age against the seven days
     // rather than its own run to the reset drops the fraction under the noise
@@ -333,10 +337,11 @@ private let afterTheCapture = capturedBucketStart.addingTimeInterval(950)
 
     // The whole window bought the whole 7%: 17,000 units -> 2,428.57/point, and
     // 400 more -> 7.165. Over 0.6419 of the window that lands at ~11.16.
-    #expect(abs(snapshot.estimatedPercent! - 7.1647) < 0.001)
+    #expect(abs(try #require(snapshot.estimatedPercent) - 7.1647) < 0.001)
     #expect(projected > 11 && projected < 12)
 
     // Said definitionally, so the claim is about the wiring and not the digits:
     // estimate over the window's own fraction, no offset anywhere.
-    #expect(abs(projected - snapshot.estimatedPercent! / snapshot.window.elapsedFraction) < 1e-9)
+    let estimate = try #require(snapshot.estimatedPercent)
+    #expect(abs(projected - estimate / snapshot.window.elapsedFraction) < 1e-9)
 }
