@@ -47,14 +47,27 @@ public enum CaptureSelection {
 
     /// The eligible winner, or nil when nothing on disk survives the filter.
     ///
-    /// `select`'s first half, split out because `resolve` needs to tell the two
-    /// outcomes APART and `select` deliberately hides which happened: a real
-    /// candidate must be reconciled against the mark, while the stand-in must
-    /// not be — it IS the mark, and reconciling it fabricates dates. See
-    /// `resolve`.
+    /// `select`'s first half, split out because the two outcomes have to be told
+    /// APART and `select` deliberately hides which happened: a real candidate
+    /// must be reconciled against the mark, while the stand-in must not be — it
+    /// IS the mark, and reconciling it fabricates dates. See `resolve`, which
+    /// makes the same distinction on the winner's POSITION rather than its
+    /// value, because it also has to say which candidate that was.
     static func picked(_ candidates: [RateLimitCapture],
                        mark: RateLimitHighWater) -> RateLimitCapture? {
-        CaptureDirectory.freshest(of: eligible(candidates, mark: mark))
+        CaptureDirectory.freshestIndex(of: candidates,
+                                       among: admissible(candidates, mark: mark))
+            .map { candidates[$0] }
+    }
+
+    /// The positions `eligible` admits, in the order given.
+    ///
+    /// Indices rather than captures, because `resolve` has to say WHICH
+    /// candidate won and the answer cannot be recovered from the winner's
+    /// contents — see `CaptureDirectory.freshestIndex`.
+    static func admissible(_ candidates: [RateLimitCapture],
+                           mark: RateLimitHighWater) -> [Int] {
+        candidates.indices.filter { eligible(candidates[$0], mark: mark) }
     }
 
     /// 🔴 The filter applies only while an epoch is open, and the discriminator
@@ -68,56 +81,84 @@ public enum CaptureSelection {
     /// a transcript happened to date them, so an unconditional proof requirement
     /// would silently blind every machine that has never seen a re-grant, which
     /// is the overwhelming majority of the time.
-    static func eligible(_ candidates: [RateLimitCapture],
-                         mark: RateLimitHighWater) -> [RateLimitCapture] {
+    ///
+    /// A predicate over ONE candidate rather than a filter over the array: the
+    /// same rule, asked per position, so `resolve` can report each candidate's
+    /// verdict alongside the winner without evaluating eligibility twice.
+    static func eligible(_ candidate: RateLimitCapture,
+                         mark: RateLimitHighWater) -> Bool {
         guard let sevenDay = mark.sevenDay, let regrant = sevenDay.regrant else {
-            return candidates
+            return true
         }
-        return candidates.filter { candidate in
-            // An epoch belongs to one window, and this rule exists to refuse
-            // REPLAYS of that window's pre-re-grant reading. A candidate
-            // describing a different window cannot be one, so refusing it would
-            // discard live information — and, since the stand-in is the mark
-            // from the window that just ended, freeze the app on a dead window
-            // until some proven source happens to report. An all-undated machine
-            // — the "older build still in someone's bundle" — would never
-            // recover at all.
-            //
-            // ⚠️ **This is the one comparison in this type where the 60s
-            // tolerance belongs.** Window identity is exactly what it was
-            // introduced for: the statusline reports whole epoch seconds
-            // (`1786690800`) while `cachedUsageUtilization` reports
-            // `…06:59:59.424563Z` for the same boundary, 0.58s apart, and exact
-            // equality silently gives each source its own view. It would be
-            // wrong on `provenAt` below: those are instants of two different API
-            // calls, not two spellings of one instant, and slack there is slack
-            // in the bar a replay has to clear.
-            guard abs(candidate.sevenDay.resetsAt - sevenDay.resetsAt)
-                    <= RateLimitHighWater.sameWindowTolerance
-            else { return true }
-            // An inferred date cannot clear this bar. `capturedAt` is an upper
-            // bound on when a reading was minted, so "it was seen after the
-            // re-grant" is not evidence that it was *produced* after it — which
-            // is the only thing that makes a reading able to describe the new
-            // allowance.
-            guard let provenAt = candidate.provenAt else { return false }
-            // 🔴 `>=` against `regrant.startedAt`, and all three parts matter.
-            //
-            // `>=` and not `>`: the epoch is dated by the `provenAt` of the very
-            // reading that opened it (see `RateLimitHighWater.best`), so a
-            // strict comparison would make that reading instantly ineligible —
-            // refusing the one capture that reported the re-grant.
-            //
-            // `startedAt` and not `sevenDay.capturedAt` or `sevenDay.provenAt`,
-            // which are same-typed siblings that compile just as happily. This
-            // is the hazard `RateLimitHighWater.best` documents for its own
-            // parameters, one level up. Those two advance on every equal-or-
-            // higher confirmation while `startedAt` stays fixed for the life of
-            // the epoch, so either substitution silently ratchets the bar up
-            // behind the readings that have to clear it. The fixtures make all
-            // three differ for exactly this reason.
-            return provenAt >= regrant.startedAt
-        }
+        // An epoch belongs to one window, and this rule exists to refuse
+        // REPLAYS of that window's pre-re-grant reading. A candidate
+        // describing a different window cannot be one, so refusing it would
+        // discard live information — and, since the stand-in is the mark
+        // from the window that just ended, freeze the app on a dead window
+        // until some proven source happens to report. An all-undated machine
+        // — the "older build still in someone's bundle" — would never
+        // recover at all.
+        //
+        // ⚠️ **This is the one comparison in this type where the 60s
+        // tolerance belongs.** Window identity is exactly what it was
+        // introduced for: the statusline reports whole epoch seconds
+        // (`1786690800`) while `cachedUsageUtilization` reports
+        // `…06:59:59.424563Z` for the same boundary, 0.58s apart, and exact
+        // equality silently gives each source its own view. It would be
+        // wrong on `provenAt` below: those are instants of two different API
+        // calls, not two spellings of one instant, and slack there is slack
+        // in the bar a replay has to clear.
+        guard abs(candidate.sevenDay.resetsAt - sevenDay.resetsAt)
+                <= RateLimitHighWater.sameWindowTolerance
+        else { return true }
+        // An inferred date cannot clear this bar. `capturedAt` is an upper
+        // bound on when a reading was minted, so "it was seen after the
+        // re-grant" is not evidence that it was *produced* after it — which
+        // is the only thing that makes a reading able to describe the new
+        // allowance.
+        guard let provenAt = candidate.provenAt else { return false }
+        // 🔴 `>=` against `regrant.startedAt`, and all three parts matter.
+        //
+        // `>=` and not `>`: the epoch is dated by the `provenAt` of the very
+        // reading that opened it (see `RateLimitHighWater.best`), so a
+        // strict comparison would make that reading instantly ineligible —
+        // refusing the one capture that reported the re-grant.
+        //
+        // `startedAt` and not `sevenDay.capturedAt` or `sevenDay.provenAt`,
+        // which are same-typed siblings that compile just as happily. This
+        // is the hazard `RateLimitHighWater.best` documents for its own
+        // parameters, one level up. Those two advance on every equal-or-
+        // higher confirmation while `startedAt` stays fixed for the life of
+        // the epoch, so either substitution silently ratchets the bar up
+        // behind the readings that have to clear it. The fixtures make all
+        // three differ for exactly this reason.
+        return provenAt >= regrant.startedAt
+    }
+
+    /// One candidate as selection saw it, so a caller can *report* the
+    /// resolution instead of re-deriving it.
+    ///
+    /// 🔴 **Correlate by POSITION.** `Resolution.candidates` is index-parallel
+    /// to the array handed to `resolve`, and that is the only sound way back to
+    /// the file a reading came from. `sessionId` is `nil` on the shared
+    /// `rate-limits.json` (whenever the payload that wrote it carried no
+    /// `session_id`), on the `cachedUsageUtilization` capture *and* on the
+    /// stand-in, so `first { $0.sessionId == winner.sessionId }` silently
+    /// returns whichever of them was loaded first. `BurnlineProbe` did exactly
+    /// that and would name the wrong source for the reading it reports — the
+    /// one failure a diagnostic may not have, because it is believed.
+    public struct Candidate: Equatable, Sendable {
+        public let capture: RateLimitCapture
+        /// Admitted by the allowance-epoch filter. Always true while no epoch
+        /// is open, which is the overwhelming majority of the time.
+        public let isEligible: Bool
+        /// The freshest of ALL candidates, eligible or not — what `onDisk`
+        /// names, and what the user's own terminal status line is showing.
+        public let isFreshestOnDisk: Bool
+        /// The eligible winner, the one handed to `reconcile`. At most one is
+        /// true, and none is when the mark stood in. `isFreshestOnDisk &&
+        /// !isSelected` is the whole re-grant story in two flags.
+        public let isSelected: Bool
     }
 
     /// Everything one rebuild needs out of the captures on disk.
@@ -138,6 +179,14 @@ public enum CaptureSelection {
         public let highWater: RateLimitHighWater
         /// Set only when `onDisk` and `trusted` disagree.
         public let rejected: RateLimitHighWater.RejectedReading?
+        /// Every candidate that was considered, in the order supplied and
+        /// index-parallel to it — including the ones that were refused.
+        ///
+        /// Exists for `BurnlineProbe`, which has no test target and so must not
+        /// contain rules: showing *what was refused and why it lost* is the
+        /// whole job of the diagnostic, and every fact it needs to do that is
+        /// decided here, once, by the same call the app makes.
+        public let candidates: [Candidate]
 
         /// The open allowance epoch, if any. Both call sites reach through the
         /// same two levels; this is the one place that spelling lives.
@@ -168,7 +217,20 @@ public enum CaptureSelection {
                                against highWater: RateLimitHighWater) -> Resolution {
         // Unfiltered, deliberately: this is the file's own claim, and it is
         // needed whether or not the file's claim survives selection.
-        let onDisk = CaptureDirectory.freshest(of: candidates)
+        let onDiskIndex = CaptureDirectory.freshestIndex(of: candidates,
+                                                         among: Array(candidates.indices))
+        let onDisk = onDiskIndex.map { candidates[$0] }
+        // Eligibility is asked once, per position, and both the pick and the
+        // per-candidate report are read off that one answer — so the row a
+        // reader sees can never describe a filter the winner didn't go through.
+        let admitted = admissible(candidates, mark: highWater)
+        let selectedIndex = CaptureDirectory.freshestIndex(of: candidates, among: admitted)
+        let considered = candidates.indices.map { index in
+            Candidate(capture: candidates[index],
+                      isEligible: admitted.contains(index),
+                      isFreshestOnDisk: index == onDiskIndex,
+                      isSelected: index == selectedIndex)
+        }
 
         func reported(_ trusted: RateLimitCapture?) -> RateLimitHighWater.RejectedReading? {
             guard let trusted, let onDisk else { return nil }
@@ -192,14 +254,16 @@ public enum CaptureSelection {
         //
         // There is also nothing to reconcile. The stand-in IS the mark; passing
         // the mark through untouched is the whole of the correct answer.
-        guard let incoming = picked(candidates, mark: highWater) else {
+        guard let selectedIndex else {
             let standIn = standIn(for: highWater)
             return Resolution(onDisk: onDisk, trusted: standIn,
-                              highWater: highWater, rejected: reported(standIn))
+                              highWater: highWater, rejected: reported(standIn),
+                              candidates: considered)
         }
-        let (resolved, mark) = RateLimitHighWater.reconcile(incoming, against: highWater)
+        let (resolved, mark) = RateLimitHighWater.reconcile(candidates[selectedIndex],
+                                                            against: highWater)
         return Resolution(onDisk: onDisk, trusted: resolved, highWater: mark,
-                          rejected: reported(resolved))
+                          rejected: reported(resolved), candidates: considered)
     }
 
     /// The mark, reconstituted as a capture, for when nothing survives.

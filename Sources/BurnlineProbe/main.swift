@@ -42,22 +42,68 @@ func date(_ loaded: RateLimitCapture) -> RateLimitCapture {
         TranscriptDating.mintedAt(transcriptPath: $0, observedAt: loaded.capturedAt)
     })
 }
+
+// One formatter for every instant this probe prints, so two sections can never
+// disagree about what a timestamp looks like.
+let clock = DateFormatter()
+clock.dateFormat = "yyyy-MM-dd HH:mm:ss"
+func instant(_ date: Date) -> String { clock.string(from: date) }
+func instant(_ seconds: TimeInterval) -> String { instant(Date(timeIntervalSince1970: seconds)) }
+
+/// A loaded capture kept next to the file it came from — and next to its own
+/// UNDATED self.
+///
+/// The undated copy is what the `dated by` line needs: `isRepublishedCache` is a
+/// strict `<`, so a capture that has already been corrected reports `false` and
+/// the replay rule would look like it never fired.
+struct Loaded {
+    enum Kind { case session, shared, utilization }
+    let kind: Kind
+    let label: String
+    let raw: RateLimitCapture
+}
+func shortSession(_ id: String?) -> String { id.map { String($0.prefix(8)) } ?? "unknown" }
+
 let sessionCaptures = CaptureDirectory().load()
 let sharedCapture = RateLimitStore().load()
 let utilization = UtilizationStore().load()
-let allCandidates = sessionCaptures
-    + [sharedCapture].compactMap { $0 }
-    + [utilization?.asCapture()].compactMap { $0 }
+// ⚠️ The SAME order `UsageStore` assembles these in. Ranking breaks a complete
+// tie on first-listed, so a different order here is a different winner there.
+let loaded = sessionCaptures.map {
+        Loaded(kind: .session, label: "session \(shortSession($0.sessionId))", raw: $0)
+    }
+    + [sharedCapture].compactMap { $0 }.map {
+        Loaded(kind: .shared, label: "shared file", raw: $0)
+    }
+    + [utilization?.asCapture()].compactMap { $0 }.map {
+        Loaded(kind: .utilization, label: "utilization", raw: $0)
+    }
 // ⚠️ Resolution goes through `CaptureSelection.resolve`, exactly as the app
 // does. Wiring only `UsageStore` once left the probe disagreeing with the app in
 // precisely the case the per-session files existed for; the same trap applies to
 // the allowance-epoch filter, which changes which capture wins.
+//
+// `CaptureDirectory.freshest` is `internal` to `BurnlineCore` so that this file
+// CANNOT rank the candidates for itself. That reminder is a compile error now
+// rather than a comment someone has to read.
 let storedMark = HighWaterStore().load()
-let resolution = CaptureSelection.resolve(allCandidates.map(date), against: storedMark)
+let resolution = CaptureSelection.resolve(loaded.map { date($0.raw) }, against: storedMark)
 let onDisk = resolution.onDisk
-let rawOnDisk = onDisk.flatMap { resolved in
-    allCandidates.first { $0.sessionId == resolved.sessionId }
+// 🔴 Correlation back to the file is by POSITION: `resolution.candidates` is
+// index-parallel to what was handed in. This used to match on `sessionId`, and
+// `sessionId` does not identify a candidate: it is nil on the
+// `cachedUsageUtilization` capture always, and nil on the shared
+// `rate-limits.json` whenever the payload that wrote it carried no `session_id`
+// — the rollback script, or an older build still in someone's bundle. With both
+// of those present, `first { $0.sessionId == winner.sessionId }` returns the
+// shared file no matter which of the two actually won, and the `dated by` line
+// then describes the wrong source. A diagnostic that names the wrong source is
+// worse than none, because it is believed.
+let sources = resolution.candidates.indices.map {
+    (source: loaded[$0], candidate: resolution.candidates[$0])
 }
+let onDiskSource = sources.first { $0.candidate.isFreshestOnDisk }
+let chosenSource = sources.first { $0.candidate.isSelected }
 let capture = resolution.trusted
 
 // Which evidence dated the reading. "wall clock" means neither rule applied and
@@ -79,22 +125,27 @@ if let utilization {
 }
 
 var datingNote = "no capture"
-if let raw = rawOnDisk, raw == utilization?.asCapture() {
-    // Not a heuristic at all — this source states its own fetch time.
-    datingNote = "explicit fetchedAtMs (~/.claude.json)"
-} else if let raw = rawOnDisk {
-    let minted = raw.transcriptPath.flatMap {
-        TranscriptDating.mintedAt(transcriptPath: $0, observedAt: raw.capturedAt)
-    }
-    let session = raw.sessionId.map { String($0.prefix(8)) } ?? "unknown"
-    if minted != nil {
-        datingNote = "transcript, session \(session)"
-    } else if raw.isRepublishedCache {
-        datingNote = "five-hour replay rule (no transcript evidence)"
-    } else {
-        datingNote = raw.sessionId == nil
-            ? "wall clock — payload carried no session_id"
-            : "wall clock — session \(session) transcript unreadable"
+if let onDiskSource {
+    let raw = onDiskSource.source.raw
+    let session = shortSession(raw.sessionId)
+    switch onDiskSource.source.kind {
+    case .utilization:
+        // Not a heuristic at all — this source states its own fetch time.
+        datingNote = "explicit fetchedAtMs (~/.claude.json)"
+    case .session, .shared:
+        // `dated(mintedAt:)` stamps `provenAt` from an exact
+        // `TranscriptDating.mintedAt` and from nothing else, so its presence on
+        // a statusline capture IS the transcript rule having fired. Asking the
+        // capture beats re-reading the transcript to ask the question twice.
+        if onDiskSource.candidate.capture.provenAt != nil {
+            datingNote = "transcript, session \(session)"
+        } else if raw.isRepublishedCache {
+            datingNote = "five-hour replay rule (no transcript evidence)"
+        } else {
+            datingNote = raw.sessionId == nil
+                ? "wall clock — payload carried no session_id"
+                : "wall clock — session \(session) transcript unreadable"
+        }
     }
 }
 let snapshot = SnapshotBuilder.build(cache: cache, settings: settings,
@@ -141,9 +192,23 @@ if let onDisk {
 // The allowance re-issued mid-window. Absent almost always; when present it is
 // what the extrapolation must measure from, so a disagreement between this and
 // the window start is the thing to look at first.
-let epochNote = snapshot.regrant.map {
-    "opened \($0.startedAt) at \(percent($0.startPercent))"
-} ?? "none open"
+//
+// Both spellings are reported, because they can differ and the difference is
+// itself the diagnosis. A mark outlives its own window — `reconcile` clears it
+// only once a capture for a *different* window arrives — so `SnapshotBuilder`
+// drops an epoch that started outside the window now on screen rather than
+// measuring the extrapolation from an instant that is not in it. Printing only
+// `snapshot.regrant` would show "none open" while the mark on disk plainly
+// holds one, which reads as the epoch having been lost.
+let epochNote: String
+if let epoch = snapshot.regrant {
+    epochNote = "opened \(instant(epoch.startedAt)) at \(percent(epoch.startPercent))"
+} else if let held = resolution.regrant {
+    epochNote = "none open — the mark holds one from \(instant(held.startedAt)) at "
+        + "\(percent(held.startPercent)), outside the current window, so it is not applied"
+} else {
+    epochNote = "none open"
+}
 
 // First line, before anything else: which directory this run is reading and
 // writing. `BURNLINE_DATA_DIR` is what makes the statusline helper safe to
@@ -182,6 +247,55 @@ menu bar, every format (against \(settings.targetMode.title.lowercased()))
     "  \(mode.title.padding(toLength: 16, withPad: " ", startingAt: 0))"
         + MenuBarFormatter.text(for: snapshot, target: settings.targetMode, display: mode)
 }.joined(separator: "\n"))
+""")
+
+// MARK: - Capture resolution
+
+// Which sources reported what, which one was trusted, and why — including what
+// was refused, which is the half a "winner only" line cannot show. Every fact
+// below is a field on a `CaptureSelection.Candidate`, decided by the same
+// `resolve` call `UsageStore` makes. This target has no tests, so a rule written
+// here would be a rule nothing can check; the formatting is all it may own.
+func candidateRow(_ source: Loaded, _ candidate: CaptureSelection.Candidate) -> String {
+    let notes = [candidate.isSelected ? "chosen" : nil,
+                 candidate.isFreshestOnDisk ? "freshest on disk" : nil,
+                 candidate.isEligible ? nil : "refused by the open epoch"]
+        .compactMap { $0 }
+    // Provenance, not age: `proven` is an explicit `fetchedAtMs` or an exact
+    // transcript mint time, and only a proven date can demote a high-water mark
+    // or clear the epoch bar. `inferred` means `capturedAt` is an upper bound
+    // and nothing more.
+    let dating = candidate.capture.provenAt.map { "proven \(instant($0))" } ?? "inferred"
+    let tail = notes.joined(separator: " · ")
+    return source.label.padding(toLength: 20, withPad: " ", startingAt: 0)
+        + String(format: "%6.1f%%  ", candidate.capture.sevenDay.usedPercent)
+        // Padded only when something follows it, so an unremarkable row does not
+        // trail twenty spaces into a terminal.
+        + (tail.isEmpty ? dating : dating.padding(toLength: 28, withPad: " ", startingAt: 0) + tail)
+}
+
+let eligibleCount = resolution.candidates.filter(\.isEligible).count
+let chosenNote: String
+if let chosenSource {
+    chosenNote = "\(chosenSource.source.label) — freshest of \(eligibleCount) eligible candidate(s)"
+} else if resolution.trusted != nil {
+    chosenNote = sources.isEmpty
+        ? "the high-water mark, standing in — nothing on disk to choose from"
+        : "the high-water mark, standing in — none of \(sources.count) candidate(s) "
+            + "could be shown to postdate the open epoch"
+} else {
+    chosenNote = "nothing — no capture on disk and no mark to stand in"
+}
+
+print("""
+
+capture resolution
+  candidates       \(sources.count) loaded, \(eligibleCount) eligible
+\(sources.isEmpty
+    ? "                     (none — no session file, no shared file, no utilization block)"
+    : sources.map { "                     " + candidateRow($0.source, $0.candidate) }
+        .joined(separator: "\n"))
+  chose            \(chosenNote)
 """)
 
 // MARK: - Threshold notifications

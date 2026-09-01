@@ -101,10 +101,37 @@ public struct CaptureDirectory: Sendable {
     ///
     /// Note that eligibility is decided upstream in `CaptureSelection` — this
     /// only ranks what it is given.
-    public static func freshest(of captures: [RateLimitCapture]) -> RateLimitCapture? {
-        captures.max {
-            ($0.capturedAt, $0.provenAt != nil ? 1 : 0)
-                < ($1.capturedAt, $1.provenAt != nil ? 1 : 0)
+    ///
+    /// 🔴 **`internal`, and the narrowing is the point.** `BurnlineProbe` is a
+    /// separate target, so it cannot reach this and must go through
+    /// `CaptureSelection.resolve` like the app does. Wiring only `UsageStore`
+    /// when the per-session capture files landed left the probe disagreeing
+    /// with the app in exactly the case the feature existed for, and a
+    /// diagnostic that reports something other than the app is worse than no
+    /// diagnostic because it is trusted. Making it `public` again turns that
+    /// compile error back into a comment someone has to read.
+    static func freshest(of captures: [RateLimitCapture]) -> RateLimitCapture? {
+        freshestIndex(of: captures, among: Array(captures.indices)).map { captures[$0] }
+    }
+
+    /// `freshest` as a POSITION rather than a value, restricted to `admissible`.
+    ///
+    /// 🔴 The index is what lets a caller correlate the winner back to the file
+    /// it was loaded from. Correlating by content cannot work: `sessionId` is
+    /// `nil` on the shared `rate-limits.json`, on the `cachedUsageUtilization`
+    /// capture and on `CaptureSelection`'s stand-in, so `first { $0.sessionId ==
+    /// winner.sessionId }` returns whichever of those was loaded first.
+    /// `BurnlineProbe` did precisely that and named the wrong source.
+    ///
+    /// Ranking is written once, here, so `freshest` and the filtered pick can
+    /// never rank differently. `max(by:)` replaces only on a strict increase and
+    /// `admissible` is ascending, so the FIRST of the equals still wins — the
+    /// caller's order decides, exactly as before.
+    static func freshestIndex(of captures: [RateLimitCapture],
+                              among admissible: [Int]) -> Int? {
+        admissible.max {
+            (captures[$0].capturedAt, captures[$0].provenAt != nil ? 1 : 0)
+                < (captures[$1].capturedAt, captures[$1].provenAt != nil ? 1 : 0)
         }
     }
 }

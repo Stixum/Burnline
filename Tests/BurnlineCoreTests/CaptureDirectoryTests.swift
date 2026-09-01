@@ -120,3 +120,21 @@ private func sessionCapture(_ id: String?, percent: Double = 50,
 
     #expect(CaptureDirectory.freshest(of: [a, b])?.sevenDay.usedPercent == 70)
 }
+
+/// The last clause of the ranking, and the one `CaptureSelection.select`
+/// documents as the caller's contract: at an equal instant with equal
+/// provenance, the FIRST of the equals wins, so a deterministic input order
+/// gives a deterministic winner.
+///
+/// Pinned because `freshest` is now `freshestIndex` plus a lookup. `max(by:)`
+/// replaces only on a strict increase and `admissible` is ascending, so the
+/// behaviour is unchanged — but "unchanged" was worth checking rather than
+/// asserting, since the reimplementation could have kept the LAST of the equals
+/// without any other test noticing.
+@Test func freshestKeepsTheFirstOfTwoEquallyRankedCaptures() {
+    let first = sessionCapture("a", percent: 70, capturedAt: 5_000)
+    let second = sessionCapture("b", percent: 75, capturedAt: 5_000)
+
+    #expect(CaptureDirectory.freshest(of: [first, second])?.sevenDay.usedPercent == 70)
+    #expect(CaptureDirectory.freshest(of: [second, first])?.sevenDay.usedPercent == 75)
+}

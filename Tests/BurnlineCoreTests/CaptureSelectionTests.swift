@@ -396,3 +396,85 @@ private func replay(_ percent: Double, at captured: TimeInterval,
     #expect(CaptureSelection.resolve([], against: mark).regrant?.startedAt == 1_000)
     #expect(CaptureSelection.resolve([], against: .empty).regrant == nil)
 }
+
+// MARK: - Reporting the resolution
+
+// 🔴 `BurnlineProbe` has no test target, so anything it works out for itself is
+// unverifiable — and it is the tool this whole feature will be verified with
+// against real data. The facts a reader needs (what was loaded, what was
+// refused, which one won) are therefore decided HERE, by the same call the app
+// makes, and the probe only formats them.
+//
+// The correlation is by POSITION and this is not a style preference. The probe
+// used to find the winning source with `first { $0.sessionId == winner.sessionId
+// }`; `sessionId` is nil on the shared `rate-limits.json`, nil on the
+// `cachedUsageUtilization` capture and nil on the stand-in, so that matched the
+// first nil-id candidate loaded and named the wrong file.
+
+@Test func candidatesAreReportedInTheOrderTheyWereSupplied() {
+    let a = capture(10, at: 1_000)
+    let b = capture(20, at: 2_000)
+    let c = capture(30, at: 3_000)
+
+    let resolution = CaptureSelection.resolve([a, b, c], against: .empty)
+
+    #expect(resolution.candidates.map(\.capture) == [a, b, c],
+            "index-parallel to the input: correlation back to the source file depends on it")
+}
+
+@Test func everyCandidateIsEligibleWhileNoEpochIsOpen() {
+    let resolution = CaptureSelection.resolve([capture(51, at: 9_999),
+                                               proven(3, at: 1_500, provenAt: 1_500)],
+                                              against: markWithoutRegrant(usedPercent: 33))
+
+    #expect(resolution.candidates.map(\.isEligible) == [true, true])
+    #expect(resolution.candidates.map(\.isSelected) == [true, false])
+    #expect(resolution.candidates.map(\.isFreshestOnDisk) == [true, false])
+}
+
+/// The whole re-grant story in two flags, and the reason both exist: the
+/// candidate the terminal is showing is the freshest thing on disk AND the one
+/// selection refused. A report that only named the winner could not show that a
+/// refusal had happened at all.
+@Test func theRefusedReplayIsStillNamedAsTheFreshestOnDisk() {
+    let mark = markWithRegrant(startedAt: 1_000, startPercent: 0, usedPercent: 7)
+    let stale = capture(51, at: 9_999)                  // undated: what the terminal shows
+    let truth = proven(7, at: 1_500, provenAt: 1_500)
+
+    let resolution = CaptureSelection.resolve([stale, truth], against: mark)
+
+    #expect(resolution.candidates.map(\.isEligible) == [false, true])
+    #expect(resolution.candidates.map(\.isFreshestOnDisk) == [true, false])
+    #expect(resolution.candidates.map(\.isSelected) == [false, true],
+            "freshest on disk and not selected — the case the feature exists for")
+}
+
+/// The stand-in is not a candidate and must never be reported as one. Marking
+/// anything selected here would have the probe name a file for a reading that
+/// was never in one.
+@Test func nothingIsSelectedWhenTheMarkStandsIn() {
+    let mark = markWithRegrant(startedAt: 1_000, startPercent: 0, usedPercent: 7)
+
+    let resolution = CaptureSelection.resolve([capture(51, at: 9_999)], against: mark)
+
+    #expect(resolution.trusted?.sevenDay.usedPercent == 7, "the mark stood in")
+    #expect(resolution.candidates.count == 1)
+    #expect(resolution.candidates.map(\.isSelected) == [false])
+    #expect(resolution.candidates[0].isFreshestOnDisk, "it is still what the file says")
+}
+
+/// `isSelected` names the CANDIDATE that went into `reconcile`, not the figure
+/// that came out. The ordinary stale-session case separates the two: the single
+/// candidate is selected, and the mark still overrides its value.
+@Test func selectionNamesTheCandidateNotTheFigureFinallyShown() {
+    let resolution = CaptureSelection.resolve([capture(69, at: 2_000)],
+                                              against: markWithoutRegrant(usedPercent: 74))
+
+    #expect(resolution.candidates.map(\.isSelected) == [true])
+    #expect(resolution.candidates[0].capture.sevenDay.usedPercent == 69)
+    #expect(resolution.trusted?.sevenDay.usedPercent == 74)
+}
+
+@Test func resolvingNothingReportsNoCandidates() {
+    #expect(CaptureSelection.resolve([], against: .empty).candidates.isEmpty)
+}
