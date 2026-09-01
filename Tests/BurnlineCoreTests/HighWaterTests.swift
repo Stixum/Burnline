@@ -20,8 +20,9 @@ private func capture(_ percent: Double, at captured: TimeInterval,
 }
 
 private func proven(_ percent: Double, at t: TimeInterval,
-                    provenAt: TimeInterval) -> RateLimitCapture {
-    var c = capture(percent, at: t); c.provenAt = provenAt; return c
+                    provenAt: TimeInterval,
+                    fiveHour: RateLimitCapture.Reading? = nil) -> RateLimitCapture {
+    var c = capture(percent, at: t, fiveHour: fiveHour); c.provenAt = provenAt; return c
 }
 
 /// Several Claude Code sessions run the statusline script concurrently, each on
@@ -215,11 +216,20 @@ private func markInARegrant(_ percent: Double, capturedAt: TimeInterval,
     #expect(after.sevenDay?.regrant == openRegrant)
 }
 
+/// ⚠️ FIXTURE CORRECTED when Task 5 landed; the assertion is untouched. The
+/// drop must be SUB-MATERIAL (4 → 3, one point). It was written as 4 → 1 when
+/// nothing could open an epoch yet, which made the size of the drop arbitrary —
+/// and Task 5 then turned that arbitrary 3-point gap into a material one, where
+/// carrying the old epoch forward is the WRONG behaviour. A material drop
+/// inside an open epoch legitimately re-bases it; see
+/// `aMaterialDropInsideAnOpenEpochRebasesIt`. Do not "restore" 4 → 1: the two
+/// tests would then pin contradictory rules and this one would lose the
+/// carry-forward coverage it exists for.
 @Test func aDemotionInsideARegrantKeepsIt() {
     let (_, after) = RateLimitHighWater.reconcile(
-        proven(1, at: 3_000, provenAt: 3_000),
+        proven(3, at: 3_000, provenAt: 3_000),
         against: markInARegrant(4, capturedAt: 2_500, provenAt: 2_500))
-    #expect(after.sevenDay?.usedPercent == 1, "the demotion branch ran")
+    #expect(after.sevenDay?.usedPercent == 3, "the demotion branch ran")
     #expect(after.sevenDay?.regrant == openRegrant)
 }
 
@@ -228,6 +238,152 @@ private func markInARegrant(_ percent: Double, capturedAt: TimeInterval,
                                                   against: markInARegrant(4, capturedAt: 2_500))
     #expect(after.sevenDay?.usedPercent == 4, "the lower reading was rejected")
     #expect(after.sevenDay?.regrant == openRegrant)
+}
+
+// MARK: - A material drop opens an allowance epoch
+
+/// The mark reconciled from a single proven 51% reading — the state the
+/// 2026-09-01 event dropped from.
+private func markAt51() -> RateLimitHighWater {
+    RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000), against: .empty).highWater
+}
+
+/// A 51 -> 50 flicker between two sources rounding differently is not a
+/// re-grant, and opening an epoch for it corrupts the extrapolation
+/// denominator. The value is still accepted; only the epoch is withheld.
+@Test func aSubMaterialDropIsAcceptedButOpensNoEpoch() {
+    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
+                                                 against: .empty)
+    let (result, after) = RateLimitHighWater.reconcile(proven(50, at: 2_000, provenAt: 2_000),
+                                                       against: mark)
+    #expect(result.sevenDay.usedPercent == 50, "the mark stops lying")
+    #expect(after.sevenDay?.usedPercent == 50, "and the MARK itself comes down")
+    #expect(after.sevenDay?.regrant == nil, "but no epoch opens")
+}
+
+/// BOUNDARY-EXACT, so a `>=` mutated to `>` dies here. Exactly 2 points.
+@Test func aTwoPointDropOpensAnEpoch() {
+    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
+                                                 against: .empty)
+    let (_, after) = RateLimitHighWater.reconcile(proven(49, at: 2_000, provenAt: 2_000),
+                                                  against: mark)
+    #expect(after.sevenDay?.regrant?.startPercent == 49)
+    #expect(after.sevenDay?.regrant?.startedAt == 2_000, "the OPENING READING's provenAt")
+}
+
+/// 🔴 Pins the rule the spec states in prose. Every other fixture here has
+/// capturedAt == provenAt, so `startedAt == 2_000` cannot tell the two apart —
+/// it only rules out a `Date()` implementation. Split them and the rule becomes
+/// testable.
+@Test func theEpochStartsAtTheOpeningReadingsProvenDateNotItsCapturedAt() {
+    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
+                                                 against: .empty)
+    let (_, after) = RateLimitHighWater.reconcile(proven(49, at: 2_500, provenAt: 2_400),
+                                                  against: mark)
+    #expect(after.sevenDay?.regrant?.startedAt == 2_400, "provenAt, not capturedAt (2_500)")
+}
+
+/// THE FLAGSHIP CASE. A re-grant to 0% is indistinguishable from a window-start
+/// epoch by percentage alone — this is why the optional is the discriminator. A
+/// `startPercent > 0` implementation passes every other test in this file and
+/// fails this one.
+@Test func aRegrantToZeroOpensAnEpoch() {
+    let (_, mark) = RateLimitHighWater.reconcile(proven(51, at: 1_000, provenAt: 1_000),
+                                                 against: .empty)
+    let (_, after) = RateLimitHighWater.reconcile(proven(0, at: 2_000, provenAt: 2_000),
+                                                  against: mark)
+    #expect(after.sevenDay?.regrant != nil)
+    #expect(after.sevenDay?.regrant?.startPercent == 0)
+}
+
+/// Five-hour readings share the `Mark` type and share nothing else. No
+/// five-hour figure is ever extrapolated, so there is nothing for an epoch to
+/// re-base — and a populated field there would be read by consumers that only
+/// ever mean the weekly one.
+@Test func aFiveHourDropNeverOpensAnEpoch() {
+    let fiveReset: TimeInterval = 1_786_491_600
+    let (_, mark) = RateLimitHighWater.reconcile(
+        proven(51, at: 1_000, provenAt: 1_000,
+               fiveHour: .init(usedPercent: 30, resetsAt: fiveReset)),
+        against: .empty)
+    let (_, after) = RateLimitHighWater.reconcile(
+        proven(51, at: 2_000, provenAt: 2_000,
+               fiveHour: .init(usedPercent: 10, resetsAt: fiveReset)),
+        against: mark)
+    #expect(after.fiveHour?.usedPercent == 10, "the drop was material, and accepted")
+    #expect(after.fiveHour?.regrant == nil)
+}
+
+/// The demotion rule applies to five_hour too; only the epoch machinery is
+/// withheld. Without this, "no epoch on five-hour" is satisfiable by never
+/// letting a five-hour reading come down at all.
+@Test func aFiveHourMarkStillDemotesOnProvenEvidence() {
+    let fiveReset: TimeInterval = 1_786_491_600
+    let (_, mark) = RateLimitHighWater.reconcile(
+        proven(51, at: 1_000, provenAt: 1_000,
+               fiveHour: .init(usedPercent: 30, resetsAt: fiveReset)),
+        against: .empty)
+    let (result, after) = RateLimitHighWater.reconcile(
+        proven(51, at: 2_000, provenAt: 2_000,
+               fiveHour: .init(usedPercent: 4, resetsAt: fiveReset)),
+        against: mark)
+    #expect(result.fiveHour?.usedPercent == 4)
+    #expect(after.fiveHour?.usedPercent == 4)
+}
+
+/// A re-grant ends an epoch exactly as a window reset does, so a second one
+/// inside an open epoch must RE-BASE rather than be swallowed. Carry the first
+/// epoch forward and `unitsAtEpochStart` stays stale by the whole first epoch's
+/// consumption — the same denominator error this feature exists to fix, just
+/// relocated.
+///
+/// 🔴 `startPercent` goes 0 → 0 here, so it discriminates nothing: `startedAt`
+/// is the only field that can show the re-base happened. Same lesson as the
+/// flagship case, one level down.
+@Test func aMaterialDropInsideAnOpenEpochRebasesIt() {
+    let (_, after) = RateLimitHighWater.reconcile(
+        proven(0, at: 5_500, provenAt: 5_000),
+        against: markInARegrant(20, capturedAt: 2_500, provenAt: 2_500))
+    #expect(after.sevenDay?.usedPercent == 0, "the demotion branch ran")
+    #expect(after.sevenDay?.regrant?.startedAt == 5_000,
+            "re-based to the new opening reading's provenAt, not capturedAt (5_500)")
+    #expect(after.sevenDay?.regrant?.startPercent == 0)
+    #expect(after.sevenDay?.provenAt == 5_000,
+            "the mark's proof moves with the epoch it now describes")
+}
+
+/// 🔴 Every branch of the real `best()` builds a FRESH `Mark(...)`. Mirror that
+/// structure naively and `regrant` is dropped by the very next capture — which
+/// in the flagship case (re-grant to 0%, usage back to 3% within minutes)
+/// closes the epoch almost immediately. Extrapolation, projection, eligibility
+/// and notification identity all silently revert to the window.
+///
+/// The sibling `aHigherReadingKeepsAnOpenRegrant` pins the same branch from a
+/// directly-constructed mark; this one opens the epoch through `reconcile`, so
+/// it also covers a carry that is correct only for a hand-built `Regrant`.
+@Test func anOpenEpochSurvivesASubsequentHigherReading() {
+    let (_, opened) = RateLimitHighWater.reconcile(proven(0, at: 2_000, provenAt: 2_000),
+                                                   against: markAt51())
+    let (_, after) = RateLimitHighWater.reconcile(proven(3, at: 3_000, provenAt: 3_000),
+                                                  against: opened)
+    #expect(after.sevenDay?.regrant?.startedAt == 2_000)
+    #expect(after.sevenDay?.regrant?.startPercent == 0)
+    #expect(after.sevenDay?.usedPercent == 3, "the high-water still tracks upward")
+}
+
+/// Same trap, same cause: `provenAt` must not be dropped either, or the
+/// demotion basis silently falls back to `capturedAt`.
+///
+/// ⚠️ The confirming reading must be UNDATED. With a proven confirm, a dropped
+/// provenAt re-set from the incoming date is indistinguishable from a correct
+/// carry — the test could not fail. It would also contradict Task 4's rule that
+/// a proven confirmation legitimately ADVANCES provenAt.
+@Test func anUndatedEqualReadingPreservesTheEpochsProvenDate() {
+    let (_, opened) = RateLimitHighWater.reconcile(proven(0, at: 2_000, provenAt: 2_000),
+                                                   against: markAt51())
+    let (_, after) = RateLimitHighWater.reconcile(capture(0, at: 8_000), against: opened)
+    #expect(after.sevenDay?.provenAt == 2_000)
+    #expect(after.sevenDay?.regrant?.startedAt == 2_000)
 }
 
 // MARK: - The 5-hour reading has the same problem and its own window

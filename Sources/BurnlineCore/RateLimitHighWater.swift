@@ -160,14 +160,16 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         let (sevenDay, sevenMark) = best(capture.sevenDay,
                                          capturedAt: capture.capturedAt,
                                          provenAt: capture.provenAt,
-                                         against: highWater.sevenDay)
+                                         against: highWater.sevenDay,
+                                         opensEpochs: true)
 
         var fiveHour: RateLimitCapture.Reading?
         var fiveMark: Mark?
         if let reading = capture.fiveHour {
             let (resolved, mark) = best(reading, capturedAt: capture.capturedAt,
                                         provenAt: capture.provenAt,
-                                        against: highWater.fiveHour)
+                                        against: highWater.fiveHour,
+                                        opensEpochs: false)
             fiveHour = resolved
             fiveMark = mark
         }
@@ -210,6 +212,20 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         abs(a - b) <= sameWindowTolerance
     }
 
+    /// How far a reading must fall, in percentage points, before the drop is
+    /// read as a re-grant rather than as noise.
+    ///
+    /// "The mark is falsifiable" and "a re-grant happened" are different claims
+    /// and are decided separately. A 51 → 50 flicker is far more likely a
+    /// rounding difference between two sources than a re-issued allowance, and
+    /// a spuriously opened epoch corrupts the extrapolation denominator — it
+    /// divides by a tiny `(unitsAtCapture − unitsAtEpochStart)`. So any
+    /// qualifying lower reading is still ACCEPTED; only the epoch is withheld.
+    ///
+    /// A property of the data source rather than a preference, so it is a
+    /// constant and not a setting.
+    public static let materialDropPoints: Double = 2
+
     /// The later of two proofs, where either may be absent.
     ///
     /// 🔴 An absent incoming proof leaves the existing one alone. `capturedAt`
@@ -224,10 +240,16 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         return max(existing, incoming)
     }
 
+    /// - Parameter opensEpochs: whether a material drop here may open a
+    ///   `Regrant`. False for the five-hour reading: no five-hour figure is
+    ///   ever extrapolated, so there is nothing for an epoch to re-base, and a
+    ///   populated field would be read by consumers that only ever mean the
+    ///   weekly window. The demotion rule itself still applies to both.
     private static func best(_ reading: RateLimitCapture.Reading,
                              capturedAt: TimeInterval,
                              provenAt: TimeInterval?,
-                             against mark: Mark?) -> (RateLimitCapture.Reading, Mark) {
+                             against mark: Mark?,
+                             opensEpochs: Bool) -> (RateLimitCapture.Reading, Mark) {
         guard let mark, isSameWindow(mark.resetsAt, reading.resetsAt) else {
             return (reading, Mark(resetsAt: reading.resetsAt,
                                   usedPercent: reading.usedPercent,
@@ -241,8 +263,14 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
             // `capturedAt`, an UPPER bound on when it was minted — so an
             // unproven mark is HARDER to demote, never easier. A reading with
             // no proof of its own cannot demote at all.
+            //
+            // 🔴 Binding `provenAt` here rather than testing `?? -.infinity` is
+            // load-bearing below: it makes "only a proven reading can open an
+            // epoch" structural. `Regrant.startedAt` is non-optional, and the
+            // one thing it must never hold is an INFERRED date dressed up as a
+            // proven one — so there must be no `?? capturedAt` to reach for.
             let basis = mark.provenAt ?? mark.capturedAt
-            guard (provenAt ?? -.infinity) > basis else {
+            guard let provenAt, provenAt > basis else {
                 return (RateLimitCapture.Reading(usedPercent: mark.usedPercent,
                                                  resetsAt: mark.resetsAt),
                         mark)
@@ -250,11 +278,24 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
             // Proven to have been minted after everything backing the mark, so
             // it is a correction rather than a replay. `provenAt` is already
             // later than the mark's, by the guard above.
+            //
+            // A material drop re-issued the allowance: open an epoch dated by
+            // the instant this reading was PROVEN minted, not by detection
+            // wall-clock and not by `capturedAt`. Both wrong answers put the
+            // epoch start after the reading that opened it, which makes the
+            // opening capture instantly ineligible under the selection rule and
+            // leaves `unitsAtEpochStart` measured at the wrong instant. Below
+            // the threshold the value still comes down; only the epoch is
+            // withheld, and any epoch already open is carried.
+            let isMaterial = mark.usedPercent - reading.usedPercent >= materialDropPoints
             return (reading, Mark(resetsAt: reading.resetsAt,
                                   usedPercent: reading.usedPercent,
                                   capturedAt: capturedAt,
                                   provenAt: provenAt,
-                                  regrant: mark.regrant))
+                                  regrant: opensEpochs && isMaterial
+                                      ? Regrant(startedAt: provenAt,
+                                                startPercent: reading.usedPercent)
+                                      : mark.regrant))
         }
 
         let confirmedAt = reading.usedPercent == mark.usedPercent
