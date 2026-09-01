@@ -47,6 +47,23 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
     /// assistant turn; the helper never touches it.
     public var transcriptPath: String?
 
+    /// The instant at which this reading can be PROVEN to have been minted —
+    /// an explicit `fetchedAtMs`, or an exact `TranscriptDating.mintedAt`.
+    ///
+    /// Distinct from `capturedAt`, which is a conservative upper bound. Only a
+    /// proven date may demote a high-water mark: an inferred one can overstate
+    /// freshness, and overstating freshness is the failure that matters.
+    ///
+    /// 🔴 Excluded from `CodingKeys` and defaulting to nil, so anything decoded
+    /// off disk is inferred. Sound because the app never re-saves captures —
+    /// `RateLimitStore.save` and `CaptureDirectory.save` are helper-side, and
+    /// `UsageStore.rebuild` re-dates every candidate on every pass.
+    public var provenAt: TimeInterval?
+
+    private enum CodingKeys: String, CodingKey {
+        case version, capturedAt, sevenDay, fiveHour, sessionId, transcriptPath
+    }
+
     public init(version: Int, capturedAt: TimeInterval, sevenDay: Reading, fiveHour: Reading?,
                 sessionId: String? = nil, transcriptPath: String? = nil) {
         self.version = version
@@ -111,6 +128,7 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
         if let mintedAt {
             // A reading cannot have been minted after we saw it.
             result.capturedAt = min(result.capturedAt, mintedAt)
+            result.provenAt = mintedAt
         }
         return result
     }

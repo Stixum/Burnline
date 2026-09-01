@@ -126,3 +126,40 @@ private func republishable(capturedAt: TimeInterval,
 
     #expect(CaptureAge.isStale(now - corrected.capturedAt))
 }
+
+// MARK: - provenAt
+
+// `capturedAt` is a conservative upper bound produced by heuristics
+// (`correctedForRepublishing`, `TranscriptDating.mintedAt` when inexact).
+// `provenAt` is the narrower claim: this instant is exactly when the reading
+// was minted, not merely no later than. Only a proven date may demote a
+// high-water mark.
+
+@Test func aTranscriptDatedCaptureCarriesAProvenDate() {
+    let base = Date().timeIntervalSince1970
+    let capture = RateLimitCapture(version: 1, capturedAt: base,
+                                   sevenDay: .init(usedPercent: 40, resetsAt: base + 3_600),
+                                   fiveHour: nil)
+    #expect(capture.dated(mintedAt: base - 600).provenAt == base - 600)
+}
+
+@Test func anUndatedCaptureHasNoProvenDate() {
+    let base = Date().timeIntervalSince1970
+    let capture = RateLimitCapture(version: 1, capturedAt: base,
+                                   sevenDay: .init(usedPercent: 40, resetsAt: base + 3_600),
+                                   fiveHour: nil)
+    #expect(capture.dated(mintedAt: nil).provenAt == nil)
+}
+
+/// Anything read off disk must be INFERRED. A persisted provenAt would be a
+/// claim the app can no longer verify.
+@Test func provenAtNeverSurvivesADecode() throws {
+    let base = Date().timeIntervalSince1970
+    var capture = RateLimitCapture(version: 1, capturedAt: base,
+                                   sevenDay: .init(usedPercent: 40, resetsAt: base + 3_600),
+                                   fiveHour: nil)
+    capture.provenAt = base
+    let round = try JSONDecoder().decode(
+        RateLimitCapture.self, from: try JSONEncoder().encode(capture))
+    #expect(round.provenAt == nil)
+}
