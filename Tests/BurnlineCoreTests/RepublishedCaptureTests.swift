@@ -143,12 +143,17 @@ private func republishable(capturedAt: TimeInterval,
     #expect(capture.dated(mintedAt: base - 600).provenAt == base - 600)
 }
 
-@Test func anUndatedCaptureHasNoProvenDate() {
-    let base = Date().timeIntervalSince1970
-    let capture = RateLimitCapture(version: 1, capturedAt: base,
-                                   sevenDay: .init(usedPercent: 40, resetsAt: base + 3_600),
-                                   fiveHour: nil)
-    #expect(capture.dated(mintedAt: nil).provenAt == nil)
+/// `dated(mintedAt: nil)` still runs `correctedForRepublishing()`, which moves
+/// `capturedAt` from inference alone — no exact mint time in sight. That
+/// correction must not be mistaken for proof: a corrected date is not a
+/// proven date.
+@Test func aCorrectedDateIsNotAProvenDate() {
+    let corrected = republishable(capturedAt: 10_000, fiveHourResetsAt: 4_000)
+        .dated(mintedAt: nil)
+
+    // Confirms the correction actually ran, so this isn't passing by doing nothing.
+    #expect(corrected.capturedAt == 4_000)
+    #expect(corrected.provenAt == nil)
 }
 
 /// Anything read off disk must be INFERRED. A persisted provenAt would be a

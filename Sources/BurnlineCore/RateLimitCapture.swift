@@ -123,6 +123,8 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
     /// Both rules are applied and the **earlier** wins. They cannot both be true
     /// when they disagree, and overstating freshness is the failure that
     /// matters — a figure that looks live is acted on; one that looks old isn't.
+    /// A supplied `mintedAt` is also stamped onto `provenAt`, since it's exact
+    /// rather than an upper bound.
     public func dated(mintedAt: TimeInterval?) -> RateLimitCapture {
         var result = correctedForRepublishing()
         if let mintedAt {
