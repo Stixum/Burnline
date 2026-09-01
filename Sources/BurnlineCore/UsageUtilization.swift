@@ -184,9 +184,14 @@ public struct UsageUtilization: Sendable, Decodable {
     /// **`sessionId` and `transcriptPath` stay `nil` deliberately.** No session
     /// produced this reading, and `fetchedAt` is already exact — dating it from
     /// a transcript would replace a true timestamp with a guess.
+    ///
+    /// **`provenAt` is set to `fetchedAt`.** This is the whole reason this
+    /// undocumented, non-self-refreshing source is worth keeping as a peer: it
+    /// is the one place in the system with a genuinely proven mint time, rather
+    /// than a heuristic upper bound — see `RateLimitCapture.provenAt`.
     public func asCapture() -> RateLimitCapture? {
         guard let sevenDay else { return nil }
-        return RateLimitCapture(
+        var capture = RateLimitCapture(
             version: RateLimitCapture.currentVersion,
             capturedAt: fetchedAt,
             sevenDay: .init(usedPercent: sevenDay.percent,
@@ -196,5 +201,7 @@ public struct UsageUtilization: Sendable, Decodable {
             },
             sessionId: nil,
             transcriptPath: nil)
+        capture.provenAt = fetchedAt
+        return capture
     }
 }

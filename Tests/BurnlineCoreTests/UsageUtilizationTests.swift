@@ -101,6 +101,14 @@ private func decodeUtilization(_ json: String) throws -> UsageUtilization {
     #expect(capture.transcriptPath == nil)
 }
 
+/// fetchedAtMs is the one honest timestamp in this system — every other
+/// dating rule in the project is a heuristic that exists because the
+/// statusline payload carries none.
+@Test func theUtilizationSourceCarriesAProvenDate() throws {
+    let utilization = try decodeUtilization(realUtilization)
+    #expect(utilization.asCapture()?.provenAt == utilization.fetchedAt)
+}
+
 @Test func aBlockWithNoSevenDayYieldsNoCapture() throws {
     #expect(try decodeUtilization(#"{"fetchedAtMs":1000}"#).asCapture() == nil)
 }
