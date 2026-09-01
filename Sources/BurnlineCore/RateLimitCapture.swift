@@ -58,6 +58,11 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
     /// off disk is inferred. Sound because the app never re-saves captures —
     /// `RateLimitStore.save` and `CaptureDirectory.save` are helper-side, and
     /// `UsageStore.rebuild` re-dates every candidate on every pass.
+    ///
+    /// Deliberately survives `correctedForRepublishing()` untouched: that
+    /// method only ever narrows `capturedAt` to a more conservative estimate,
+    /// while `provenAt` is the one honest fact and must never be narrowed
+    /// alongside it. The two are allowed to diverge there.
     public var provenAt: TimeInterval?
 
     private enum CodingKeys: String, CodingKey {

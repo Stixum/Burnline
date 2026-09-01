@@ -185,10 +185,12 @@ public struct UsageUtilization: Sendable, Decodable {
     /// produced this reading, and `fetchedAt` is already exact — dating it from
     /// a transcript would replace a true timestamp with a guess.
     ///
-    /// **`provenAt` is set to `fetchedAt`.** This is the whole reason this
-    /// undocumented, non-self-refreshing source is worth keeping as a peer: it
-    /// is the one place in the system with a genuinely proven mint time, rather
-    /// than a heuristic upper bound — see `RateLimitCapture.provenAt`.
+    /// **`provenAt` is set to `fetchedAt`.** Not why this source is worth
+    /// reading at all — the header above already gives three independent
+    /// reasons, most of which have nothing to do with dating. This is
+    /// narrower: it's what makes this source trustworthy enough to demote a
+    /// high-water mark, rather than only an inferred upper bound — see
+    /// `RateLimitCapture.provenAt`.
     public func asCapture() -> RateLimitCapture? {
         guard let sevenDay else { return nil }
         var capture = RateLimitCapture(
