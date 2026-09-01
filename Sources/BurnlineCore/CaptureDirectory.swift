@@ -83,11 +83,26 @@ public struct CaptureDirectory: Sendable {
     /// The capture to trust. Pure — callers date the inputs first, since dating
     /// is file I/O and this must stay testable without it.
     ///
-    /// Ties break on the higher percentage: same instant and cumulative usage
-    /// means the larger figure is the later one.
+    /// ⚠️ **Ties break on provenance, never on magnitude.** This used to read
+    /// "the higher percentage: same instant and cumulative usage means the
+    /// larger figure is the later one". Anthropic re-issued the weekly allowance
+    /// inside an unchanged window on 2026-09-01 and the true figure went
+    /// 51% → 0%, so usage is not monotonic within a window and magnitude says
+    /// nothing about order. Worse, a magnitude tie-break is the second place —
+    /// after `RateLimitHighWater` — where a frozen high reading beats the truth.
+    ///
+    /// A reading whose date is PROVEN (`RateLimitCapture.provenAt`: an explicit
+    /// `fetchedAtMs`, or an exact `TranscriptDating.mintedAt`) therefore wins
+    /// over one whose age is merely inferred. Beyond that the input order
+    /// stands, which is deterministic: `CaptureDirectory.load` sorts by session
+    /// id and `UsageStore` appends the other sources in a fixed order.
+    ///
+    /// Note that eligibility is decided upstream in `CaptureSelection` — this
+    /// only ranks what it is given.
     public static func freshest(of captures: [RateLimitCapture]) -> RateLimitCapture? {
         captures.max {
-            ($0.capturedAt, $0.sevenDay.usedPercent) < ($1.capturedAt, $1.sevenDay.usedPercent)
+            ($0.capturedAt, $0.provenAt != nil ? 1 : 0)
+                < ($1.capturedAt, $1.provenAt != nil ? 1 : 0)
         }
     }
 }

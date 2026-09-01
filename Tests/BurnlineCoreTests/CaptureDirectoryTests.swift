@@ -99,10 +99,24 @@ private func sessionCapture(_ id: String?, percent: Double = 50,
     #expect(CaptureDirectory.freshest(of: []) == nil)
 }
 
-/// Same instant, cumulative usage — the larger figure is the later one.
-@Test func freshestBreaksATieOnTheHigherPercentage() {
-    let a = sessionCapture("a", percent: 70, capturedAt: 5_000)
+/// ⚠️ **This test is an INVERSION of the one it replaces**, kept in place the way
+/// `unchangedWeightsStillScanIncrementally` → `aWeightChangeNoLongerTriggersARescan`
+/// was, because the reasoning it overturns still explains the design.
+///
+/// It used to read `freshestBreaksATieOnTheHigherPercentage`, and its comment
+/// said: "Same instant, cumulative usage — the larger figure is the later one."
+/// That axiom was falsified on 2026-09-01, when Anthropic re-issued the weekly
+/// allowance *inside* an unchanged window and the true figure went 51% → 0%.
+/// Usage is no longer monotonic within a window, so magnitude says nothing about
+/// order — and a tie-break on magnitude is the second place, after
+/// `RateLimitHighWater`, where a frozen high reading beats the truth.
+///
+/// Provenance replaces it: at an equal instant, the reading whose date can be
+/// PROVEN (`RateLimitCapture.provenAt`) wins over one whose age is only inferred.
+@Test func freshestBreaksATieOnProvenanceNotMagnitude() {
+    var a = sessionCapture("a", percent: 70, capturedAt: 5_000)
+    a.provenAt = 5_000
     let b = sessionCapture("b", percent: 75, capturedAt: 5_000)
 
-    #expect(CaptureDirectory.freshest(of: [a, b])?.sevenDay.usedPercent == 75)
+    #expect(CaptureDirectory.freshest(of: [a, b])?.sevenDay.usedPercent == 70)
 }
