@@ -121,7 +121,7 @@ Leave the setting off and the only network request left is the update check, whi
 
 **"Notify on thresholds" is off by default.** Turn it on in Settings and Burnline posts a macOS notification when you slip a set number of points behind pace, or when weekly or 5-hour usage reaches a percentage you pick. macOS asks for notification permission the first time you enable it.
 
-Each threshold fires once per window and re-arms at the reset. A nudge, not a nag.
+Each threshold fires once per allowance and re-arms when a new one starts — at the weekly reset, or if Anthropic re-issues your limits mid-window. A nudge, not a nag.
 
 ## Build from source
 
