@@ -221,6 +221,43 @@ private func reading(_ percent: Double, at capturedAt: TimeInterval) -> RateLimi
     #expect(rejected?.explanation.contains("re-issued") == true)
 }
 
+/// 🔴 The tolerance EDGE, both sides of it. `aSubSecondDifference…` above pins
+/// 0.58s, which is comfortably inside — so nothing there can tell `<` from `<=`
+/// on the 60.000s boundary, and a mutation of exactly that passed the whole
+/// suite when this branch spelled the tolerance out itself.
+///
+/// The answer is `isSameWindow`'s, deliberately: exactly 60s apart is one
+/// window, because `CaptureSelection.eligible` says so about the same 60
+/// seconds. These two fixtures are what stops the two sites drifting apart.
+@Test func exactlyTheToleranceApartIsStillTheSameWindow() {
+    let onDisk = reading(51, at: 9_999)
+    let resolved = RateLimitCapture(
+        version: 1, capturedAt: 1_000,
+        sevenDay: .init(usedPercent: 7, resetsAt: week + RateLimitHighWater.sameWindowTolerance),
+        fiveHour: nil)
+
+    let rejected = RateLimitHighWater.rejection(onDisk: onDisk, resolved: resolved)
+
+    #expect(rejected?.isFromAnEarlierWindow == false)
+    #expect(rejected?.explanation.contains("re-issued") == true)
+}
+
+/// The positive control for it: one second past the tolerance and the branch
+/// fires. Without this, `isFromAnEarlierWindow = false` satisfies the test above.
+@Test func oneSecondPastTheToleranceIsAnEarlierWindow() {
+    let onDisk = reading(51, at: 9_999)
+    let resolved = RateLimitCapture(
+        version: 1, capturedAt: 1_000,
+        sevenDay: .init(usedPercent: 7,
+                        resetsAt: week + RateLimitHighWater.sameWindowTolerance + 1),
+        fiveHour: nil)
+
+    let rejected = RateLimitHighWater.rejection(onDisk: onDisk, resolved: resolved)
+
+    #expect(rejected?.isFromAnEarlierWindow == true)
+    #expect(rejected?.explanation.contains("previous weekly window") == true)
+}
+
 /// Windows are seven days apart, so the tolerance cannot merge two of them.
 @Test func theEarlierWindowBranchNamesThePreviousWindowNotTheRegrant() {
     let rejected = RateLimitHighWater.RejectedReading(reportedPercent: 51, usingPercent: 3,

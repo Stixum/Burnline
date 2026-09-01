@@ -165,10 +165,20 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
         // establish, and the row is wrong without it: once the window rolls
         // under an open epoch, the freshest reading on disk can be a replay of
         // the window that just ended while the trusted one describes the new
-        // one. Same tolerance as window identity everywhere else — the two
-        // sources spell one boundary 0.58s apart, and that must not read as two
-        // windows.
-        let earlier = onDisk.sevenDay.resetsAt < resolved.sevenDay.resetsAt - sameWindowTolerance
+        // one.
+        //
+        // 🔴 Routed through `isSameWindow` rather than spelling the tolerance
+        // out a second time, so "same window" has ONE definition in this file
+        // and this site cannot answer the strict/non-strict question differently
+        // from `CaptureSelection.eligible`, which asks it about the same 60
+        // seconds. Written as `resetsAt < other - sameWindowTolerance` the two
+        // read as a `<`/`<=` mismatch that a later reader has to adjudicate —
+        // and one of the two would then look like a typo. A difference of
+        // exactly 60s is the SAME window at both sites; the tolerance exists
+        // because the statusline reports whole epoch seconds while
+        // `cachedUsageUtilization` reports microseconds, 0.58s apart.
+        let earlier = !isSameWindow(onDisk.sevenDay.resetsAt, resolved.sevenDay.resetsAt)
+            && onDisk.sevenDay.resetsAt < resolved.sevenDay.resetsAt
         return RejectedReading(reportedPercent: reported, usingPercent: using,
                                isFromAnEarlierWindow: earlier)
     }
