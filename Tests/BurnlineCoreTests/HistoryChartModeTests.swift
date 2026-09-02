@@ -148,6 +148,44 @@ private func series(_ percentages: [Double]) -> HistoryQuery.PercentSeries {
     #expect(HistoryChartMode.percent.emptyMessage.contains("cannot"))
 }
 
+// MARK: - The y domain
+
+@Test func theUnitsModeDeclaresThatItHasNoCeilingRatherThanStayingSilent() {
+    // 🔴 The reason `yDomain` is a member returning an OPTIONAL. The test the
+    // type has to pass is "would someone adding a third mode know what to fill
+    // in?", and a nil case is the compiler asking them. Parked on
+    // `PercentSeries` instead, this answer would exist nowhere at all — the
+    // units chart would simply omit `.chartYScale` and a reader would have to
+    // infer that the omission was deliberate.
+    //
+    // Auto-fit is right here for a reason, not by default: the unit scale is
+    // arbitrary by construction — `Weights` documents that calibration divides
+    // it out — so there is no meaningful fixed ceiling to name.
+    #expect(HistoryChartMode.units.yDomain(for: []) == nil)
+    #expect(HistoryChartMode.units.yDomain(for: [series([2, 7, 12])]) == nil)
+    #expect(HistoryChartMode.units.yDomain(for: [series([40, 104])]) == nil)
+
+    // And the percent mode never answers nil, so its chart's `if let` always
+    // takes the domain branch.
+    #expect(HistoryChartMode.percent.yDomain(for: []) != nil)
+    #expect(HistoryChartMode.percent.yDomain(for: [series([2, 7, 12])]) != nil)
+}
+
+@Test func everyModeAnswersTheAxisQuestionOneWayOrTheOther() {
+    // The enumeration is the point: a mode added without deciding its ceiling
+    // cannot compile, and this walks `allCases` so the walk grows with the type
+    // rather than naming the two that exist today.
+    for mode in HistoryChartMode.allCases {
+        let domain = mode.yDomain(for: [series([12, 40])])
+        if let domain {
+            #expect(domain.lowerBound.isFinite && domain.upperBound.isFinite)
+            #expect(domain.lowerBound < domain.upperBound)
+        }
+        // A nil is a real answer — "fit the data" — and needs no assertion
+        // beyond having been reachable at all.
+    }
+}
+
 // MARK: - The percent domain
 
 @Test func thePercentDomainIsTheWholeAllowanceNotJustWhatWasObserved() {
@@ -155,9 +193,9 @@ private func series(_ percentages: [Double]) -> HistoryQuery.PercentSeries {
     // to one that reached 95%, and the pace diagonal is only the plot area's
     // diagonal while the ceiling is the whole allowance — fit the domain to the
     // data and "above the line" stops meaning "ahead of pace".
-    #expect(HistoryChartMode.percentDomain(for: [series([2, 7, 12])]) == 0...100)
-    #expect(HistoryChartMode.percentDomain(for: [series([61, 74, 88])]) == 0...100)
-    #expect(HistoryChartMode.percentDomain(for: [series([100])]) == 0...100)
+    #expect(HistoryChartMode.percent.yDomain(for: [series([2, 7, 12])]) == 0...100)
+    #expect(HistoryChartMode.percent.yDomain(for: [series([61, 74, 88])]) == 0...100)
+    #expect(HistoryChartMode.percent.yDomain(for: [series([100])]) == 0...100)
 }
 
 @Test func aReGrantedWeekIsDrawnAtTheSameScaleAsAnyOther() {
@@ -167,14 +205,14 @@ private func series(_ percentages: [Double]) -> HistoryQuery.PercentSeries {
     // no fixed size.
     let regranted = series([18, 34, 51, 3, 9])
     #expect(regranted.regrants.count == 1)
-    #expect(HistoryChartMode.percentDomain(for: [regranted]) == 0...100)
+    #expect(HistoryChartMode.percent.yDomain(for: [regranted]) == 0...100)
 }
 
 @Test func anEmptyChartStillShowsTheWholeAllowance() {
     // Nothing recorded is not a week at 0%, and a domain collapsed to 0...0
     // would divide the axis by nothing.
-    #expect(HistoryChartMode.percentDomain(for: []) == 0...100)
-    #expect(HistoryChartMode.percentDomain(for: [series([])]) == 0...100)
+    #expect(HistoryChartMode.percent.yDomain(for: []) == 0...100)
+    #expect(HistoryChartMode.percent.yDomain(for: [series([])]) == 0...100)
 }
 
 @Test func aReadingPastTheAllowanceIsNeverClippedOutOfThePlot() {
@@ -182,9 +220,9 @@ private func series(_ percentages: [Double]) -> HistoryQuery.PercentSeries {
     // silently declined to draw a reading would be the chart choosing not to
     // report a measurement it had. Headroom above it, so the top stroke is not
     // half-clipped by the frame either.
-    #expect(HistoryChartMode.percentDomain(for: [series([40, 104])]) == 0...110)
-    #expect(HistoryChartMode.percentDomain(for: [series([110])]) == 0...120)
-    #expect(HistoryChartMode.percentDomain(for: [series([100.5])]) == 0...110)
+    #expect(HistoryChartMode.percent.yDomain(for: [series([40, 104])]) == 0...110)
+    #expect(HistoryChartMode.percent.yDomain(for: [series([110])]) == 0...120)
+    #expect(HistoryChartMode.percent.yDomain(for: [series([100.5])]) == 0...110)
 }
 
 @Test func theDomainIsTakenAcrossEveryOverlaidWeekNotJustTheFirst() {
@@ -192,8 +230,8 @@ private func series(_ percentages: [Double]) -> HistoryQuery.PercentSeries {
     // comparison. A domain read off one series would clip the others.
     let quiet = series([3, 9])
     let over = series([40, 104])
-    #expect(HistoryChartMode.percentDomain(for: [quiet, over]) == 0...110)
-    #expect(HistoryChartMode.percentDomain(for: [over, quiet]) == 0...110)
+    #expect(HistoryChartMode.percent.yDomain(for: [quiet, over]) == 0...110)
+    #expect(HistoryChartMode.percent.yDomain(for: [over, quiet]) == 0...110)
 }
 
 @Test func aNonFiniteReadingCannotBlowUpTheDomain() {
@@ -210,9 +248,9 @@ private func series(_ percentages: [Double]) -> HistoryQuery.PercentSeries {
                                       at: seriesStart, allowance: 0, followsRegrant: false),
         ],
         regrants: [])
-    let domain = HistoryChartMode.percentDomain(for: [poisoned])
+    let domain = HistoryChartMode.percent.yDomain(for: [poisoned])
     #expect(domain == 0...100)
-    #expect(domain.upperBound.isFinite)
+    #expect(domain?.upperBound.isFinite == true)
 }
 
 @Test func thePaceDiagonalEndsAtTheSameCeilingTheAxisDoes() {
@@ -220,6 +258,6 @@ private func series(_ percentages: [Double]) -> HistoryQuery.PercentSeries {
     // ceiling is the same constant. Spelled twice they can drift, and a pace
     // line that stops short of the corner reads as a target you cannot reach.
     #expect(HistoryChartMode.fullAllowance == 100)
-    #expect(HistoryChartMode.percentDomain(for: []).upperBound
+    #expect(HistoryChartMode.percent.yDomain(for: [])?.upperBound
             == HistoryChartMode.fullAllowance)
 }

@@ -148,6 +148,13 @@ struct HistoryBurnCurves: View {
         // 🔴 ONE scale. A second y-axis would let two series be scaled
         // independently, and the entire point of the overlay is that they are
         // not — a curve above another curve has to mean more units.
+        //
+        // ⚠️ **No `.chartYScale` at all, and that is a stated decision rather
+        // than an omission**: `HistoryChartMode.units.yDomain` returns nil, so
+        // Charts fits the data. Correct precisely because the unit scale is
+        // arbitrary — `Weights` documents that calibration divides it out — so
+        // there is no meaningful fixed ceiling to name. The percent face names
+        // one, and the two answers live side by side on the mode.
         .chartXScale(domain: 0...1)
         // ⚠️ Explicit range from each week's ramp position, never
         // `prefix(count)`: `prefix` assumes the drawn array IS the recency

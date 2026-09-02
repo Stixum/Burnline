@@ -98,17 +98,34 @@ public enum HistoryOverlay {
         // window now in progress — the flush can land one either side of a
         // reset — is never drawn a second time beside itself.
         //
-        // Sorted here rather than trusted from the caller: `loadWindows` keeps
-        // any line that decodes out of an append-only file, so archive order is
-        // not a guarantee, and an out-of-order row would hand "second newest"
-        // to whichever week happened to be written first.
+        // ⚠️ **`windows.jsonl` GUARANTEES NEITHER ORDER NOR UNIQUENESS, and the
+        // next two lines are the only place this feature assumes otherwise.**
+        // The property is worth knowing on its own, because it is a property of
+        // the archive rather than of this function:
+        //
+        // - The file is **append-only**, and `HistoryStore.loadWindows` keeps
+        //   every line that decodes — unlike the cell rows, which deduplicate
+        //   on read. So archive order is write order, and nothing sorts it.
+        // - Writes are **at-least-once**. `WindowLedger.isAlreadyWritten` is the
+        //   guard against appending a row twice, and it runs at the one
+        //   construction site — which by this archive's own doctrine
+        //   (`WindowRow.regrant`) means it is an invariant the FILE does not
+        //   have. A crash between the append and the next read, or any second
+        //   writer, leaves two rows claiming one start.
+        //
+        // Sorting matters because recency is the entire meaning of the colour:
+        // an out-of-order row hands "second newest" to whichever week happened
+        // to be written first. Deduplicating matters twice over — drawn as-is a
+        // duplicate is one week in two colours, AND it evicts a genuine prior
+        // from an overlay that only holds three.
+        //
+        // 🔴 The fix here is LOCAL to the overlay. `loadWindows` still returns
+        // duplicates to every other caller, so the scoreboard and the range
+        // picker can still show one week twice.
         var seen = Set<Date>()
         let priors = windows
             .filter { $0.start < currentStart }
             .sorted { $0.start > $1.start }
-            // Two rows claiming one start are a corrupt archive, not two weeks.
-            // Drawn as-is they are the same week twice, in two colours, and the
-            // second one silently costs a real prior week its place.
             .filter { seen.insert($0.start).inserted }
             .prefix(capacity - 1)
 

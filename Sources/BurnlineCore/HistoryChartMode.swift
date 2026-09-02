@@ -118,11 +118,22 @@ public enum HistoryChartMode: Hashable, CaseIterable, Sendable {
 
     /// The percent chart's y domain.
     ///
-    /// 🔴 **Fixed at the whole allowance, not fitted to the data.** A
-    /// percentage is the one figure in this app whose scale is not arbitrary —
-    /// `Weights` documents that the unit scale is meaningless in absolute terms
-    /// and only compares week to week, and that is exactly what makes fitting
-    /// the *units* axis to its data correct and fitting this one wrong.
+    /// 🔴 **A member, not a free function on the percent series, and it returns
+    /// an OPTIONAL so that auto-fit is a stated answer rather than a silence.**
+    /// The test this whole type is built to pass is: *would someone adding a
+    /// third mode know what to fill in?* A `nil` case here is the compiler
+    /// asking them what their axis ceiling is; the same rule parked on
+    /// `PercentSeries` would scatter mode knowledge across two types and leave
+    /// the units mode's auto-fit written down nowhere at all.
+    ///
+    /// - `.units` → **nil, meaning let Charts fit the data.** Correct precisely
+    ///   because the unit scale IS arbitrary: `Weights` documents that
+    ///   calibration divides it out, so there is no meaningful fixed ceiling to
+    ///   name and no comparison a fixed one would protect.
+    /// - `.percent` → **the whole allowance, fixed, never fitted.** A
+    ///   percentage is the one figure in this app whose scale is not arbitrary,
+    ///   which is exactly what makes fitting the units axis right and fitting
+    ///   this one wrong.
     ///
     /// Three things break under an auto-fitted percent domain, all of them
     /// quietly:
@@ -138,9 +149,14 @@ public enum HistoryChartMode: Hashable, CaseIterable, Sendable {
     /// number, not ours — so the ceiling lifts to the next ten above it rather
     /// than clipping it out of the plot, which would be a measurement the chart
     /// silently declined to draw.
-    public static func percentDomain(
-        for series: [HistoryQuery.PercentSeries]
-    ) -> ClosedRange<Double> {
+    public func yDomain(
+        for readings: [HistoryQuery.PercentSeries]
+    ) -> ClosedRange<Double>? {
+        // The units mode ignores its argument, and that asymmetry is the point:
+        // one mode names a ceiling and the other declines to, in one place a
+        // reader can see both.
+        guard case .percent = self else { return nil }
+
         // Non-finite readings are FILTERED, not clamped, for two reasons that
         // are both about this function and neither about `Int`:
         //
@@ -157,12 +173,12 @@ public enum HistoryChartMode: Hashable, CaseIterable, Sendable {
         // defence for a PUBLIC entry point — `PercentSeries` can be built by
         // any caller — and it is written down because otherwise the next reader
         // deletes it as dead code.
-        let observed = series
+        let observed = readings
             .flatMap(\.points)
             .map(\.percent)
             .filter { $0.isFinite }
             .max() ?? 0
-        guard observed > fullAllowance else { return 0...fullAllowance }
+        guard observed > Self.fullAllowance else { return 0...Self.fullAllowance }
         // Floor-then-add, so the top reading is never drawn ON the frame where
         // half its stroke is clipped away.
         return 0...((observed / 10).rounded(.down) * 10 + 10)

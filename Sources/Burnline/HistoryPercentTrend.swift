@@ -346,6 +346,26 @@ struct HistoryPercentTrend: View {
     }
 
     private var chart: some View {
+        scaled(plot)
+    }
+
+    /// Applies the mode's y ceiling, or lets Charts fit when the mode names
+    /// none.
+    ///
+    /// ⚠️ **`if let`, deliberately not `?? someFallback`.** `yDomain` returns an
+    /// optional so that "fit the data" is an answer a mode gives rather than a
+    /// silence, and a coalescing fallback here would quietly convert that
+    /// answer back into whatever constant sat on the right-hand side. The nil
+    /// branch is the units mode's axis, written down.
+    @ViewBuilder private func scaled<V: View>(_ chart: V) -> some View {
+        if let domain = HistoryChartMode.percent.yDomain(for: curves.map(\.series)) {
+            chart.chartYScale(domain: domain)
+        } else {
+            chart
+        }
+    }
+
+    private var plot: some View {
         Chart {
             pace
             regrantSpans
@@ -355,9 +375,6 @@ struct HistoryPercentTrend: View {
             nowLine
         }
         .chartXScale(domain: 0...1)
-        // 🔴 The whole allowance, never fitted to the data — the decision and
-        // the three things it prevents are written down on `percentDomain`.
-        .chartYScale(domain: HistoryChartMode.percentDomain(for: curves.map(\.series)))
         // Explicit range rather than `prefix(count)`: the ramp position is the
         // week's recency, and this chart's array is filtered independently of
         // the unit chart's.
