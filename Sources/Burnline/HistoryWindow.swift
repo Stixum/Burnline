@@ -140,7 +140,7 @@ struct HistoryView: View {
             // Reachable: the live week has cells to draw a curve from long
             // before any window has closed. A bare column header over nothing
             // would read as a table that failed to load.
-            Text("None yet — the first row is written when this week's window closes.")
+            Text("The first week appears after your next reset.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Theme.textMuted)
         } else {
@@ -263,8 +263,8 @@ struct HistoryView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if let model, model.hasGaps {
-                warning("Coverage has holes. Usage during them is unknown, not zero — the "
-                        + "affected weeks are marked below and their totals are floors.",
+                warning("The history has gaps. Usage during them is unknown, not zero. "
+                        + "Affected weeks are marked below; their totals are floors.",
                         symbol: "exclamationmark.triangle.fill")
             }
             if let model, model.skippedLines > 0 {
@@ -283,8 +283,8 @@ struct HistoryView: View {
         if let begins = model?.coverageBegins {
             // Claude Code deletes transcripts after 30 days, so this is a real
             // horizon rather than a starting point that will keep receding.
-            return "Archived from \(HistoryLabels.day(begins)). Earlier weeks cannot be "
-                + "recovered — Claude Code deletes its transcripts after 30 days."
+            return "Archived from \(HistoryLabels.day(begins)). Earlier weeks are gone: "
+                + "Claude Code deletes transcripts after 30 days."
         }
         guard store.historyFillState.reloadPhase == .finished else { return nil }
         return "Nothing archived yet."

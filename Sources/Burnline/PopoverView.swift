@@ -13,8 +13,8 @@ struct PopoverView: View {
     /// Names the target being compared against, so the number is never ambiguous.
     private var legendTarget: String {
         switch mode {
-        case .realTime: return "now \(DisplayValue.whole(snapshot.targetPercent))%  ·  today \(DisplayValue.whole(snapshot.endOfDayPercent))%"
-        case .endOfDay: return "today \(DisplayValue.whole(snapshot.endOfDayPercent))%  ·  now \(DisplayValue.whole(snapshot.targetPercent))%"
+        case .realTime: return "now \(DisplayValue.whole(snapshot.targetPercent))% · today \(DisplayValue.whole(snapshot.endOfDayPercent))%"
+        case .endOfDay: return "today \(DisplayValue.whole(snapshot.endOfDayPercent))% · now \(DisplayValue.whole(snapshot.targetPercent))%"
         }
     }
 

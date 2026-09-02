@@ -42,7 +42,7 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
                     Stepper(value: $store.settings.resetSchedule.minute, in: 0...59, step: 5) {
-                        Text("Min \(String(format: "%02d", store.settings.resetSchedule.minute))")
+                        Text("Minute \(String(format: "%02d", store.settings.resetSchedule.minute))")
                             .monospacedDigit()
                             .foregroundStyle(Theme.textSecondary)
                     }
@@ -70,7 +70,7 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 8) {
-                    Text("\"Today\" ends").font(.system(size: 11))
+                    Text("Today ends").font(.system(size: 11))
                         .foregroundStyle(Theme.textMuted)
                     Picker("", selection: $store.settings.dayBoundary) {
                         ForEach(DayBoundary.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -249,7 +249,7 @@ struct SettingsView: View {
                         .font(.system(size: 11)).monospacedDigit()
                         .foregroundStyle(Theme.textMuted)
                     Spacer()
-                    Button("Check for Updates…") { Updater.shared.checkForUpdates() }
+                    Button("Check for updates…") { Updater.shared.checkForUpdates() }
                         .buttonStyle(.bordered)
                 }
 

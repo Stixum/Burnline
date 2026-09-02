@@ -136,7 +136,7 @@ struct HistoryScoreboard: View {
             if row.hasGap {
                 note("Gap in coverage", "exclamationmark.triangle.fill", Theme.warning,
                      help: "Burnline was not running for part of this week. Tokens burned "
-                         + "then are unknown, not zero — the total is a floor.")
+                         + "then are unknown, not zero, so the total is a floor.")
             }
             // ⚠️ A text token, never a curve ramp colour, and the same symbol
             // the popover's live re-grant row carries: one event, one glyph.

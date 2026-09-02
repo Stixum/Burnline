@@ -133,7 +133,7 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
             if isFromAnEarlierWindow {
                 return """
                        Another Claude Code session reported \(said)%, but that reading is from \
-                       the previous weekly window, which has already reset — so it was ignored. \
+                       the previous weekly window, which has already reset, so it was ignored. \
                        The \(kept)% shown is measured against the current window.
                        """
             }
