@@ -118,11 +118,19 @@ struct HistoryScoreboard: View {
         }
     }
 
-    /// Left to right, each note qualifies the column it stands nearest: the gap
-    /// qualifies the units, the re-grant qualifies the percentage, and the
-    /// bounds note qualifies the dates. `.observed` bounds are the expected case
-    /// and carry no annotation — labelling the normal state trains people to
-    /// ignore the label.
+    /// Ordered by severity, not by the column each one qualifies: a warning that
+    /// the units are incomplete, then the annotation that reframes the
+    /// percentage, then a provenance footnote about the dates. (Nearest-column
+    /// ordering would put the bounds note FIRST — `Week` is the leftmost cell in
+    /// the row — so the two rules disagree and this is the one being followed.)
+    /// `.observed` bounds are the expected case and carry no annotation —
+    /// labelling the normal state trains people to ignore the label.
+    ///
+    /// ⚠️ All three can appear at once, which is newly reachable now there are
+    /// three. `.lineLimit(1)` because this column is the only unbounded one in
+    /// the row and a wrapped note would grow the row's height out of the grid —
+    /// the same reason `percentColumn`'s subtitle sets it. There is no test
+    /// target here; a screenshot is what checks the width.
     @ViewBuilder private func notes(_ row: HistoryQuery.ScoreboardRow) -> some View {
         HStack(spacing: 12) {
             if row.hasGap {
@@ -153,6 +161,7 @@ struct HistoryScoreboard: View {
                          + "seven days they cover is a guess.")
             }
         }
+        .lineLimit(1)
     }
 
     /// Symbol + word + colour. Never colour alone.

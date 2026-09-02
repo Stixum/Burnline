@@ -92,19 +92,27 @@ public enum HistoryQuery {
             // and the column to the left already prints the final one. Through
             // `HistoryLabels`, which saturates and guards non-finite: the value
             // descends from an append-only file on disk.
+            //
+            // ⚠️ **`opened at`, never a bare `at`.** This note sits inches from
+            // a percent column reading 30% on the SAME row, and `at 3%` parses
+            // as a restatement of it — which is the exact misread the note was
+            // added to prevent. `Snapshot.Regrant.rowValue` gets away with
+            // `was 0%` because the popover row it fills is already labelled
+            // "Rate since re-grant"; a scoreboard cell has no such frame, and
+            // the tooltip cannot rescue a label that reads wrong on sight.
             let percent = HistoryLabels.percent(regrant.percent)
             if regrant.observed > 1 {
                 // 🔴 A DIFFERENT sentence when there was more than one, which is
                 // the whole reason `observed` exists. `at` and `percent`
                 // describe the last of them, so the wording says "last" rather
                 // than letting a three-allowance week read as a two.
-                label = "Re-granted \(regrant.observed)×, last day \(day) at \(percent)"
+                label = "Re-granted \(regrant.observed)×, last day \(day), opened at \(percent)"
                 help = "Anthropic re-issued this week's allowance \(regrant.observed) times "
                     + "without moving the reset. The percentage beside this is the climb "
                     + "since the last of them, on day \(day) — not the week's usage. The "
                     + "units are unaffected."
             } else {
-                label = "Re-granted day \(day), at \(percent)"
+                label = "Re-granted day \(day), opened at \(percent)"
                 help = "Anthropic re-issued this week's allowance part-way through, without "
                     + "moving the reset. The percentage beside this is the climb since then, "
                     + "not the week's usage. The units are unaffected."
