@@ -89,7 +89,7 @@ struct PopoverView: View {
                 // string. "ahead of / behind pace" is the app's one vocabulary
                 // for this comparison — the menu bar's spoken label, the
                 // notification body and the Settings stepper all use it.
-                Text("\(DisplayValue.pointsUnit(delta)) \(under ? "ahead of pace" : "behind pace")")
+                Text("\(DisplayValue.pointsUnit(abs(delta))) \(under ? "ahead of pace" : "behind pace")")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.textMuted)
             }
