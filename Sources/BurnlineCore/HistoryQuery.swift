@@ -51,6 +51,84 @@ public enum HistoryQuery {
             self.usedPercent = usedPercent
             self.hasGap = hasGap
         }
+
+        /// This week's re-grant annotation, or nil for every ordinary week.
+        /// See `RegrantNote`.
+        public var regrantNote: RegrantNote? { RegrantNote(window: window) }
+    }
+
+    /// 🔴 **The scoreboard's fourth state: a week whose allowance was re-issued
+    /// mid-window.**
+    ///
+    /// `WindowRow.finalPercent` is the newest reading inside the window, so on a
+    /// re-granted week it measures the climb since the LAST re-grant and not the
+    /// week's usage. The live 2026-09-01 event read 51% and then 3% without
+    /// `resets_at` moving; that row archives somewhere near 30% beside a token
+    /// total larger than a 91% week's. Window rows are appended once and never
+    /// revised, so an unannotated one reads as a quiet week permanently.
+    ///
+    /// Assembled here rather than in the view, like `FiveHourStatus.rowValue`
+    /// and `Snapshot.Regrant.rowValue`: `Sources/Burnline` has no test target,
+    /// so a string built there is a string nothing can check.
+    public struct RegrantNote: Equatable, Sendable {
+        /// The Notes cell. Rendered in a text token — **never a curve ramp
+        /// colour**, two of which sit under the contrast floor for text this
+        /// size — and always beside a symbol, because status is never colour
+        /// alone.
+        public let label: String
+        /// The tooltip, which carries the consequence: what the percentage
+        /// printed in the column to its left is actually measuring.
+        public let help: String
+
+        /// 🔴 **nil for every ordinary week.** `WindowRow.regrant` being
+        /// optional IS the discriminator — this reads it and invents no second
+        /// way of asking, the same rule `Mark.regrant` and `Snapshot.regrant`
+        /// already hold.
+        public init?(window: WindowRow) {
+            guard let regrant = window.regrant else { return nil }
+            let day = Self.day(of: regrant.at, in: window)
+            // 🔴 `regrant.percent`, never `finalPercent`. This is the first
+            // figure seen AFTER the re-grant — 3% on the live event, not zero —
+            // and the column to the left already prints the final one. Through
+            // `HistoryLabels`, which saturates and guards non-finite: the value
+            // descends from an append-only file on disk.
+            let percent = HistoryLabels.percent(regrant.percent)
+            if regrant.observed > 1 {
+                // 🔴 A DIFFERENT sentence when there was more than one, which is
+                // the whole reason `observed` exists. `at` and `percent`
+                // describe the last of them, so the wording says "last" rather
+                // than letting a three-allowance week read as a two.
+                label = "Re-granted \(regrant.observed)×, last day \(day) at \(percent)"
+                help = "Anthropic re-issued this week's allowance \(regrant.observed) times "
+                    + "without moving the reset. The percentage beside this is the climb "
+                    + "since the last of them, on day \(day) — not the week's usage. The "
+                    + "units are unaffected."
+            } else {
+                label = "Re-granted day \(day), at \(percent)"
+                help = "Anthropic re-issued this week's allowance part-way through, without "
+                    + "moving the reset. The percentage beside this is the climb since then, "
+                    + "not the week's usage. The units are unaffected."
+            }
+        }
+
+        /// The 1-based day of the window an instant fell on, **measured against
+        /// that window's own bounds**.
+        ///
+        /// ⚠️ A window day is a seventh of THIS window — `Window.dayIndex`,
+        /// which is the one definition of it in this codebase and the one the
+        /// end-of-day pace target is already drawn from. Dividing by a fixed
+        /// seven days instead breaks twice over: a DST week is 167 or 169 hours
+        /// long, and `WindowLedger` can substitute an observed reset that moves
+        /// `end` further than that. Both change the denominator, and a fixed one
+        /// would print a day the rest of the app disagrees with.
+        static func day(of instant: Date, in window: WindowRow) -> Int {
+            let position = Window(start: window.start, end: window.end, now: instant)
+            // `dayIndex` is `elapsedFraction * 7` and `elapsedFraction` is
+            // clamped to 0...1, so this is 1...8 and cannot trap. The cap bites
+            // only on an instant exactly at the reset, which containment
+            // excludes and only a hand-edited row could produce.
+            return min(7, DisplayValue.floor(position.dayIndex) + 1)
+        }
     }
 
     public struct CurvePoint: Equatable, Sendable {
@@ -442,11 +520,18 @@ public enum HistoryQuery {
     public static func percentCurve(tracking: [TrackingEntry],
                                     start: Date, end: Date) -> PercentSeries {
         let duration = end.timeIntervalSince(start)
-        // ⚠️ Belt and braces, and written down rather than reasoned about. The
-        // containment filter below cannot admit a reading when `end <= start`,
-        // so nothing ever reaches the division — mutating this guard away
-        // changes no result. It stays because it is the division's guard, and
-        // the next edit to the filter must not silently make it load-bearing.
+        // ⚠️ Belt and braces, and written down rather than reasoned about.
+        // What actually keeps `duration` out of the division below is
+        // `WindowLedger.contained`, whose `at >= start && at < end` cannot
+        // admit a reading when `end <= start` — so the series is empty before
+        // anything is divided, and mutating this guard away changes no result.
+        //
+        // 🔴 That filter now lives in ANOTHER FILE, which is the hazard this
+        // note exists for: an edit to `WindowLedger.contained` that relaxed the
+        // upper bound would make this guard load-bearing here, silently, and
+        // whoever made it would never have read this line. Named explicitly so
+        // the grep from there lands. `aWindowWithNoDurationDrawsNothing` says
+        // the same thing from the test side.
         guard duration > 0 else { return PercentSeries(points: [], regrants: []) }
 
         // 🔴 Containment, ordering and the same-instant tie-break come from
@@ -472,17 +557,22 @@ public enum HistoryQuery {
         var regrants: [RegrantMarker] = []
         var allowance = 0
 
+        // 🔴 The adjacency walk is `WindowLedger.regrantIndices` — the same
+        // walk, over the same order, under the same predicate that annotates
+        // the archived row. Nothing about the rule is restated here: not the
+        // threshold, not the ordering, and no longer the pairing either. The
+        // row's `observed` count and this curve's marker count are two
+        // projections of one result and cannot drift.
+        let regrantPositions = Set(WindowLedger.regrantIndices(in: contained))
+
         // One walk produces all three signals — the per-point allowance index,
         // the per-point flag and the marker list — so they cannot drift apart.
         for (index, entry) in contained.enumerated() {
+            // `regrantIndices` never returns 0, so a marker always has its
+            // predecessor; bound-checked anyway rather than force-indexed,
+            // because this runs while a view is being built.
             let previous = index > 0 ? contained[index - 1] : nil
-            // 🔴 The rule itself is `WindowLedger.isMaterialDrop`, restated
-            // nowhere. `WindowLedger.regrantObservations` annotates the
-            // archived row by walking the same predicate over the same series,
-            // so the row's count and this curve's marker count cannot drift.
-            let opensAllowance = previous.map {
-                WindowLedger.isMaterialDrop(from: $0, to: entry)
-            } ?? false
+            let opensAllowance = regrantPositions.contains(index)
 
             if opensAllowance, let previous {
                 allowance += 1

@@ -183,6 +183,122 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
     #expect(isClose(rows[0].units, 7 * Weights.default.output))
 }
 
+// MARK: - Re-grant note
+
+/// A window that can be given bounds of its own, because the day a re-grant
+/// fell on is measured against them and a seven-day fixture could never show
+/// that. `finalPercent` deliberately differs from every `regrant.percent` below
+/// — the note reports the figure the new allowance OPENED at, and the column
+/// beside it already prints the final one.
+private func regrantedWeek(start: Date, duration: TimeInterval = sevenDays,
+                           at offset: TimeInterval, percent: Double,
+                           observed: Int = 1, finalPercent: Double? = 30) -> WindowRow {
+    WindowRow(start: start, end: start.addingTimeInterval(duration), counts: .zero,
+              finalPercent: finalPercent,
+              finalPercentAt: start.addingTimeInterval(duration - 900),
+              finalPercentSource: "live", boundsSource: .observed, observedResetsAt: nil,
+              regrant: WindowRow.RegrantAnnotation(at: start.addingTimeInterval(offset),
+                                                   percent: percent, observed: observed))
+}
+
+@Test func aReGrantedWeekCarriesANoteSayingWhenAndAtWhat() {
+    // 🔴 THE test for this state. `finalPercent` is the newest reading in the
+    // window, so on a re-granted week it is the climb since the re-grant and
+    // not the week's usage: this row archives 30% beside a token total larger
+    // than a 91% week's, and window rows are written once. Without the note
+    // that row reads as a quiet week forever.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let rows = HistoryQuery.scoreboard(
+        windows: [regrantedWeek(start: start, at: 3.5 * 86_400, percent: 3,
+                                finalPercent: 30)],
+        cells: [], coverage: Coverage(records: []), weights: .default)
+
+    let note = rows[0].regrantNote
+    // 🔴 `3%` is `regrant.percent` — what the new allowance opened at, which on
+    // the live 2026-09-01 event was 3 and not 0. Taking `finalPercent` here
+    // would print the 30% already shown in the column to the left and lose the
+    // only figure this note exists to add.
+    #expect(note?.label == "Re-granted day 4, at 3%")
+    #expect(note?.help.contains("not the week's usage") == true)
+    // The row still reports Anthropic's own final figure, unchanged: the note
+    // qualifies that column, it does not replace it.
+    #expect(rows[0].usedPercent == 30)
+}
+
+@Test func anOrdinaryWeekCarriesNoReGrantNote() {
+    // The positive control for the test above, and the mutation that matters
+    // most: a note rendered on every week is a note nobody reads. `regrant`
+    // being nil IS the discriminator — almost every row in the archive is one.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let rows = HistoryQuery.scoreboard(
+        windows: [weekRow(start: start, finalPercent: 91)],
+        cells: [], coverage: Coverage(records: []), weights: .default)
+
+    #expect(rows[0].window.regrant == nil)
+    #expect(rows[0].regrantNote == nil)
+}
+
+@Test func theDayIsMeasuredAgainstTheWindowsOwnBoundsNotAFixedWeek() {
+    // ⚠️ A window is not seven days. It is 167 or 169 hours across a DST
+    // transition, and `WindowLedger` can substitute an observed reset that
+    // moves `end` further than that. A day is a seventh of THIS window —
+    // `Window.dayIndex`, the definition the end-of-day pace target already
+    // uses — so the denominator is the row's own duration.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+
+    // A window closed early by an observed reset: 3.5 days long. 2.25 days in
+    // is halfway through its fifth day. Divide by a fixed seven days instead
+    // and the same instant reads "day 3".
+    let short = regrantedWeek(start: start, duration: 3.5 * 86_400,
+                              at: 2.25 * 86_400, percent: 4)
+    #expect(HistoryQuery.RegrantNote(window: short)?.label == "Re-granted day 5, at 4%")
+
+    // A 169-hour DST week. Six real days in is 5.96 of its slightly longer
+    // days — still day 6. A fixed 168-hour week puts the same instant at
+    // exactly 6.0 and prints "day 7".
+    let dst = regrantedWeek(start: start, duration: 169 * 3_600,
+                            at: 144 * 3_600, percent: 4)
+    #expect(HistoryQuery.RegrantNote(window: dst)?.label == "Re-granted day 6, at 4%")
+}
+
+@Test func aWeekReGrantedTwiceDoesNotReadAsAWeekReGrantedOnce() {
+    // 🔴 The whole reason `observed` exists. `at` and `percent` describe the
+    // LAST re-grant, because only the last one pairs with `finalPercent` to
+    // describe a single stretch of the week — so a two-re-grant week rendered
+    // with the one-re-grant wording would be a quietly false row, permanently.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let once = regrantedWeek(start: start, at: 3.5 * 86_400, percent: 3, observed: 1)
+    let twice = regrantedWeek(start: start, at: 3.5 * 86_400, percent: 3, observed: 2)
+    let thrice = regrantedWeek(start: start, at: 3.5 * 86_400, percent: 3, observed: 3)
+
+    #expect(HistoryQuery.RegrantNote(window: twice)?.label
+            == "Re-granted 2×, last day 4 at 3%")
+    #expect(HistoryQuery.RegrantNote(window: thrice)?.label
+            == "Re-granted 3×, last day 4 at 3%")
+    // Same instant, same percentage, different count — the labels must differ,
+    // and the count must be the number seen rather than a bare "more than one".
+    #expect(HistoryQuery.RegrantNote(window: once)?.label
+            != HistoryQuery.RegrantNote(window: twice)?.label)
+    #expect(HistoryQuery.RegrantNote(window: twice)?.label
+            != HistoryQuery.RegrantNote(window: thrice)?.label)
+    #expect(HistoryQuery.RegrantNote(window: twice)?.help.contains("2 times") == true)
+}
+
+@Test func aSillyArchivedPercentageRendersRatherThanTraps() {
+    // `windows.jsonl` is append-only plain JSON that any local process can
+    // write, and `Int(Double)` traps outside `Int`'s range — the class of
+    // defect `DisplayValue` exists for. A menu bar app renders a silly number;
+    // it does not die.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let absurd = regrantedWeek(start: start, at: 86_400, percent: 1e30)
+    #expect(HistoryQuery.RegrantNote(window: absurd)?.label == "Re-granted day 2, at 999%")
+
+    // Non-finite is reported as an absence rather than as a number, which is
+    // `HistoryLabels.percent`'s rule and not this type's to restate.
+    let broken = regrantedWeek(start: start, at: 86_400, percent: .infinity)
+    #expect(HistoryQuery.RegrantNote(window: broken)?.label == "Re-granted day 2, at —")
+}
+
 // MARK: - Burn curve
 
 @Test func burnCurveIsCumulativeAcrossTheWindow() {

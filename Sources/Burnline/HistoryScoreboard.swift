@@ -3,12 +3,17 @@ import BurnlineCore
 
 /// One row per completed weekly window, newest first.
 ///
-/// 🔴 **Three states, and all three occur on a real archive today.** A recorded
+/// 🔴 **Four states, and all four occur on a real archive today.** A recorded
 /// percentage carries its own age, because a week where the laptop closed on
 /// Thursday holds Thursday's reading and a bare `61%` claims a final figure the
 /// app never saw. A missing one reads as *not recorded* — never `0%`, which
 /// would claim a week of no usage. A hole in coverage is marked as unknown, not
-/// as idle.
+/// as idle. And a week whose allowance was **re-granted** mid-window says so:
+/// its recorded percentage is only the climb since the last re-grant, so
+/// without the note a 30% row sits beside a token total bigger than a 91%
+/// week's and reads as quiet. Rows are written once, so that reading would be
+/// permanent. Every one of the four is `HistoryQuery`'s or `HistoryLabels`'
+/// derivation, never this file's.
 ///
 /// Selecting a row points the breakdown at that window. The two have to be
 /// aimable at the same period or their totals reconcile with nothing.
@@ -113,15 +118,25 @@ struct HistoryScoreboard: View {
         }
     }
 
-    /// Gap first: it qualifies the units, which are printed to its left.
-    /// `.observed` bounds are the expected case and carry no annotation —
-    /// labelling the normal state trains people to ignore the label.
+    /// Left to right, each note qualifies the column it stands nearest: the gap
+    /// qualifies the units, the re-grant qualifies the percentage, and the
+    /// bounds note qualifies the dates. `.observed` bounds are the expected case
+    /// and carry no annotation — labelling the normal state trains people to
+    /// ignore the label.
     @ViewBuilder private func notes(_ row: HistoryQuery.ScoreboardRow) -> some View {
         HStack(spacing: 12) {
             if row.hasGap {
                 note("Gap in coverage", "exclamationmark.triangle.fill", Theme.warning,
                      help: "Burnline was not running for part of this week. Tokens burned "
                          + "then are unknown, not zero — the total is a floor.")
+            }
+            // ⚠️ A text token, never a curve ramp colour, and the same symbol
+            // the popover's live re-grant row carries: one event, one glyph.
+            // The wording — including which day of the window it fell on — is
+            // `HistoryQuery.RegrantNote`, where a test can read it.
+            if let regrant = row.regrantNote {
+                note(regrant.label, "arrow.counterclockwise.circle.fill", Theme.textSecondary,
+                     help: regrant.help)
             }
             switch row.window.boundsSource {
             case .observed:
