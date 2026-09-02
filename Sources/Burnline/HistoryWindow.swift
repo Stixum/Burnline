@@ -47,6 +47,18 @@ struct HistoryView: View {
     /// recent complete window, and `model.range` is what the picker displays.
     @State private var range: HistoryRange = .newestWindow
 
+    /// Which series the chart area is drawing.
+    ///
+    /// ⚠️ **Not persisted, and it starts on `.units` every time.** A toggle's
+    /// cost is a mode you can occupy without noticing, and a restored mode is
+    /// one nobody chose in this sitting. Units is also the mode that has data
+    /// for every archived week; percent is sparse by construction and only
+    /// fills in going forward.
+    ///
+    /// Deliberately NOT part of `LoadKey`: both series come off the same read,
+    /// so flipping this redraws and never touches disk.
+    @State private var chartMode: HistoryChartMode = .units
+
     /// The fill phase the model on screen was read under, so a reload knows
     /// whether the archive can have changed under it.
     @State private var loadedPhase: HistoryFillState.ReloadPhase?
@@ -140,14 +152,7 @@ struct HistoryView: View {
 
         Divider().overlay(Theme.hairline).padding(.vertical, 2)
 
-        HStack(alignment: .firstTextBaseline) {
-            Text("Burn curves").eyebrow()
-            Text("cumulative units against how far through the window you were")
-                .font(.system(size: 10.5))
-                .foregroundStyle(Theme.textMuted)
-        }
-        HistoryBurnCurves(curves: model.curves,
-                          nowFraction: store.snapshot.window.elapsedFraction)
+        burnCurves(model)
 
         Divider().overlay(Theme.hairline).padding(.vertical, 2)
 
@@ -157,6 +162,62 @@ struct HistoryView: View {
                          windows: model.scoreboard.map(\.window),
                          dimension: $dimension,
                          range: rangeBinding(model))
+    }
+
+    /// One chart area, two series, a segmented control between them.
+    ///
+    /// 🔴 **The heading is not the mode indicator — the subtitle, the caveat and
+    /// the y-axis unit are.** All three change with `chartMode`, and none of
+    /// them is written here: `HistoryChartMode` owns every one, because
+    /// `Sources/Burnline` has no test target and a rule spelled inline in a
+    /// `body` is a rule nothing can hold upright. Reading a percent trend while
+    /// believing it is the units curve is a wrong conclusion, not a cosmetic
+    /// slip — the two series have opposite blind spots.
+    @ViewBuilder private func burnCurves(_ model: HistoryViewModel) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("Burn curves").eyebrow()
+                Text(chartMode.subtitle)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 12)
+                modePicker
+            }
+
+            Text(chartMode.caveat)
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            switch chartMode {
+            case .units:
+                HistoryBurnCurves(curves: model.curves,
+                                  nowFraction: store.snapshot.window.elapsedFraction)
+            case .percent:
+                HistoryPercentTrend(curves: model.percentCurves,
+                                    nowFraction: store.snapshot.window.elapsedFraction)
+            }
+        }
+    }
+
+    private var modePicker: some View {
+        Picker("", selection: $chartMode) {
+            ForEach(HistoryChartMode.allCases, id: \.self) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        // ⚠️ `.tint` genuinely lands on a segmented picker, unlike on
+        // `.borderedProminent`, which ignores it and renders a grey system pill
+        // (see `AccentButtonStyle`). Two system controls, opposite behaviour;
+        // the documented trap about one is not evidence about the other. Without
+        // this the selected segment inherits the *system* accent and comes out
+        // macOS blue in an app whose accent is violet — invisible in the source,
+        // obvious in a screenshot.
+        .tint(Theme.accent)
+        .labelsHidden()
+        .frame(width: 150)
     }
 
     /// The selection to display, which is not always the one that is loaded.

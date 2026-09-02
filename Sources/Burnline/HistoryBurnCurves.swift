@@ -65,7 +65,9 @@ struct HistoryBurnCurves: View {
 
     var body: some View {
         if curves.isEmpty {
-            Text("Nothing archived for these weeks yet.")
+            // The mode owns its own copy: `Sources/Burnline` has no test
+            // target, and the two modes' absences mean different things.
+            Text(HistoryChartMode.units.emptyMessage)
                 .font(.system(size: 11.5))
                 .foregroundStyle(Theme.textMuted)
                 .padding(.vertical, 24)
@@ -160,7 +162,10 @@ struct HistoryBurnCurves: View {
             AxisMarks(position: .leading) { value in
                 AxisGridLine().foregroundStyle(Theme.hairline)
                 AxisValueLabel {
-                    Text(HistoryLabels.units(value.as(Double.self) ?? 0))
+                    // 🔴 Through the mode, not `HistoryLabels` directly. Both
+                    // charts share one axis-label rule, which is what makes
+                    // "the unit is the tell" a property rather than a habit.
+                    Text(HistoryChartMode.units.axisLabel(value.as(Double.self) ?? 0))
                         .font(.system(size: 9.5)).monospacedDigit()
                         .foregroundStyle(Theme.textMuted)
                 }

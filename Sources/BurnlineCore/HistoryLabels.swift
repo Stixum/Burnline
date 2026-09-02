@@ -79,6 +79,29 @@ public enum HistoryLabels {
         return "\(DisplayValue.whole(percent))%"
     }
 
+    /// A figure that is ALREADY on the 0…100 scale, rendered as a percentage.
+    ///
+    /// ⚠️ **The sibling of `share(_:)`, and the ×100 is the whole difference.**
+    /// `share` takes a 0…1 fraction because `BreakdownRow.share` is one;
+    /// `PercentPoint.percent` is Anthropic's own figure and already reads 51 for
+    /// fifty-one percent. Feeding one to the other is a hundred-fold error that
+    /// renders as a plausible-looking chart, so they are two named functions
+    /// rather than one with a flag.
+    ///
+    /// No `<1%` / `>99%` guards here, unlike `share`: those exist because a
+    /// breakdown row that *exists* consumed something, so rounding it to `0%`
+    /// contradicts the bar beside it. A percentage reading has no such
+    /// invariant — 0% is a real and common state at the start of a window, and
+    /// dressing it up as `<1%` would invent usage that was never reported.
+    public static func percent(_ value: Double) -> String {
+        // Same reason as `units`: an axis tick can arrive non-finite, and
+        // `String(format:)` would print `inf` where a reader expects a figure.
+        guard value.isFinite else { return "—" }
+        // Through `DisplayValue`, which saturates. `Int(Double)` traps on NaN
+        // and on anything outside Int's range.
+        return "\(DisplayValue.whole(value))%"
+    }
+
     // MARK: - Window range
 
     /// `Jul 30 – Aug 6`.
