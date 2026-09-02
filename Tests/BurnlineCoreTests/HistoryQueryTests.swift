@@ -431,6 +431,370 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
     #expect(isClose(rows[0].units, 10 * Weights.default.output * 5))
 }
 
+// MARK: - Percent of allowance
+
+/// A tracking observation `offset` seconds into the window starting at `start`.
+///
+/// ⚠️ `resetsAt` is a parameter only so one test can make the two readings
+/// either side of a re-grant DISAGREE about it, the way the two real capture
+/// sources do. Nothing in the query is allowed to read it.
+private func reading(_ percent: Double, at offset: TimeInterval,
+                     from start: Date, resetsAt: Date? = nil) -> TrackingEntry {
+    TrackingEntry(percent: percent, at: start.addingTimeInterval(offset),
+                  resetsAt: resetsAt ?? start.addingTimeInterval(sevenDays))
+}
+
+@Test func theSeriesBreaksWhereTheAllowanceWasReGranted() {
+    // 🔴 THE test for this unit, and it is the live 2026-09-01 event: 51% at
+    // 17:24, then 3% at 19:01 with `resets_at` unmoved. The burn curve beside
+    // this one shows NOTHING at that instant — units are monotonic and a
+    // re-grant does not un-spend a token — so the percentage is the only series
+    // in which the event is visible at all. That is the entire reason this
+    // query exists.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    let regrantSeen: TimeInterval = 4 * 3_600 + 5_820      // 97 minutes after the last 51%
+    let entries = [
+        reading(44, at: 3 * 3_600, from: start),
+        reading(51, at: 4 * 3_600, from: start),           // the last of the old allowance
+        reading(3, at: regrantSeen, from: start),          // the first of the new one
+        reading(5, at: 6 * 3_600, from: start),
+    ]
+
+    let series = HistoryQuery.percentCurve(tracking: entries, start: start, end: end)
+
+    #expect(series.points.map(\.percent) == [44, 51, 3, 5])
+    // The flag is on the reading AFTER the drop: the one before it is the last
+    // measurement of an allowance that no longer exists.
+    #expect(series.points.map(\.followsRegrant) == [false, false, true, false])
+    #expect(series.points.filter(\.followsRegrant).map(\.at)
+            == [start.addingTimeInterval(regrantSeen)])
+    #expect(series.points.map(\.allowance) == [0, 0, 1, 1])
+    #expect(series.regrants.count == 1)
+    #expect(series.regrants.first?.percentBefore == 51)
+    #expect(series.regrants.first?.percentAfter == 3)
+}
+
+@Test func aReGrantIsSeenThoughTheTwoSourcesDisagreeAboutTheResetBySecond() {
+    // 🔴 The entries' own `resetsAt` is NEVER compared. On the live event the
+    // two readings carry `06:59:59.424Z` and `07:00:00Z`, because they came
+    // from the two capture sources, which report one instant to different
+    // precision. "The reset did not move" is established by both readings
+    // falling inside ONE window — the containment this query already does — and
+    // an equality test on `resetsAt` would have missed the only re-grant on
+    // record. Same rule, same reason, as `WindowLedger.regrantObservations`.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    let entries = [
+        reading(51, at: 4 * 3_600, from: start, resetsAt: end.addingTimeInterval(0.424)),
+        reading(3, at: 5 * 3_600, from: start, resetsAt: end.addingTimeInterval(-1)),
+    ]
+
+    let series = HistoryQuery.percentCurve(tracking: entries, start: start, end: end)
+
+    #expect(series.regrants.count == 1)
+    #expect(series.points.map(\.followsRegrant) == [false, true])
+}
+
+@Test func elapsedFractionIsMeasuredAgainstThisWindowsOwnBounds() {
+    // The axis is what makes overlaying two weeks valid, and only the window
+    // defines it. Two ways to get it wrong, both live: measuring from the
+    // window's END rather than its start, and dividing by a hardcoded seven
+    // days rather than by this window's real duration — which differs whenever
+    // an observed reset moved a boundary, and across a DST week, which is 167
+    // or 169 hours.
+    let sixDays: TimeInterval = 6 * 86_400
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+
+    let series = HistoryQuery.percentCurve(
+        tracking: [reading(37, at: 3 * 86_400, from: start)],
+        start: start, end: start.addingTimeInterval(sixDays))
+
+    // Three days into a SIX-day window is halfway. Against a hardcoded week it
+    // is 0.4286; measured from the end it is negative.
+    #expect(series.points.count == 1)
+    guard let point = series.points.first else { return }
+    #expect(isClose(point.elapsedFraction, 0.5))
+    #expect(!isClose(point.elapsedFraction, 3.0 / 7.0))
+}
+
+@Test func percentSeriesFromDifferentWeeksShareOneAxis() {
+    // The same argument `burnCurvesAreIndexedToWindowElapsedNotWallClock`
+    // makes, and it has to hold for BOTH series or the toggle between them
+    // switches axes underneath the reader.
+    let startA = Date(timeIntervalSince1970: Double(queryBase))
+    let startB = startA.addingTimeInterval(3 * 86_400)          // a different weekday
+
+    let a = HistoryQuery.percentCurve(
+        tracking: [reading(23, at: sevenDays / 4, from: startA)],
+        start: startA, end: startA.addingTimeInterval(sevenDays))
+    let b = HistoryQuery.percentCurve(
+        tracking: [reading(61, at: sevenDays / 4, from: startB)],
+        start: startB, end: startB.addingTimeInterval(sevenDays))
+
+    #expect(a.points.count == 1)
+    #expect(b.points.count == 1)
+    guard let first = a.points.first, let second = b.points.first else { return }
+    #expect(isClose(first.elapsedFraction, 0.25))
+    #expect(isClose(second.elapsedFraction, 0.25))
+}
+
+@Test func readingsFromOtherWindowsAreNotDrawnAndNeverLookLikeAReGrant() {
+    // 🔴 The ordinary weekly reset is an 87 → 4 drop and it is NOT a re-grant.
+    // Anything that lets the previous window's last reading sit beside this
+    // window's first would annotate almost every week in the archive as
+    // re-granted — the trap `WindowLedger` records against its own walk.
+    //
+    // The rule is containment of `at` in [start, end): a reading exactly at
+    // `start` is this window's, one exactly at `end` belongs to the next.
+    // ⚠️ Deliberately NOT the bucket-ownership rule the unit queries share — a
+    // tracking entry is an instant, not a fifteen-minute bucket, and rounding
+    // one to a bucket would move readings across a boundary.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    let entries = [
+        reading(87, at: -1_800, from: start),           // the previous week's last
+        reading(4, at: 0, from: start),                 // exactly at start: this week's
+        reading(19, at: 5 * 86_400, from: start),
+        reading(2, at: sevenDays, from: start),         // exactly at end: the next week's
+    ]
+
+    let series = HistoryQuery.percentCurve(tracking: entries, start: start, end: end)
+
+    #expect(series.points.map(\.percent) == [4, 19])
+    // 87 → 4 and 19 → 2 are both material drops. Neither is inside this window.
+    #expect(series.regrants.isEmpty)
+}
+
+@Test func aWeekWithNoReadingsIsEmptyRatherThanAZeroOrigin() {
+    // 🔴 Missing is not zero — the distinction this feature has already been
+    // bitten by. `burnCurve` opens every series with `(0, 0)` because zero
+    // units consumed at a window's start is true BY DEFINITION. Nothing of the
+    // sort is true of a percentage: the series exists only forward from the
+    // commit that stopped pruning tracking entries, so nearly every archived
+    // week has none at all, and a synthetic origin would draw those weeks as a
+    // line rising from 0% — a claim about the allowance instead of an admission
+    // of ignorance.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    // Real readings, every one of them in the FOLLOWING week.
+    let elsewhere = [reading(31, at: sevenDays + 3_600, from: start),
+                     reading(46, at: sevenDays + 7_200, from: start)]
+
+    let absent = HistoryQuery.percentCurve(tracking: elsewhere, start: start, end: end)
+    #expect(absent.points.isEmpty)
+    #expect(absent.regrants.isEmpty)
+    #expect(absent.isEmpty)
+
+    // The positive control, and the anti-origin assertion in one: a week that
+    // DOES have readings begins at its first real one, not at (0, 0).
+    let drawn = HistoryQuery.percentCurve(tracking: elsewhere, start: end,
+                                          end: end.addingTimeInterval(sevenDays))
+    #expect(drawn.points.count == 2)
+    #expect(!drawn.isEmpty)
+    guard let opening = drawn.points.first else { return }
+    #expect(opening.percent == 31)
+    #expect(!isClose(opening.elapsedFraction, 0))
+}
+
+@Test func readingsAreOrderedByTheirInstantNotByArchiveOrder() {
+    // `tracking.json` is append-only and has always been written in order, so
+    // ordering holds today by accident rather than by construction. A series
+    // built in file order would, on any out-of-order write, draw the line
+    // backwards AND invent a re-grant out of a climb read in reverse — which is
+    // exactly what the reversed fixture below produces if this is unsorted.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    let chronological = [
+        reading(12, at: 3_600, from: start),
+        reading(48, at: 7_200, from: start),
+        reading(6, at: 10_800, from: start),            // the one real re-grant
+        reading(17, at: 14_400, from: start),
+    ]
+
+    let ordered = HistoryQuery.percentCurve(tracking: chronological, start: start, end: end)
+    let reversed = HistoryQuery.percentCurve(tracking: chronological.reversed(),
+                                             start: start, end: end)
+
+    #expect(ordered == reversed)
+    #expect(ordered.points.map(\.percent) == [12, 48, 6, 17])
+    // Read backwards this fixture shows TWO drops (17 → 6 and 48 → 12).
+    #expect(ordered.regrants.count == 1)
+}
+
+@Test func repeatedReadingsAtOneInstantNeverFabricateABreak() {
+    // The live `tracking.json` holds three exact duplicates among its 211
+    // entries — the writer is at-least-once and reads deduplicate. Beyond that,
+    // two capture sources can date one reading to the same instant.
+    //
+    // A drop between two readings at ONE instant is never a re-grant: a
+    // re-issued allowance is an event BETWEEN observations, and the order
+    // within a single instant carries no information. Sorting ascending by
+    // percent inside an instant is what guarantees it — the transition within
+    // an instant is then never downward — and it also makes the series
+    // deterministic, which `Array.sort` does not otherwise promise.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    let together: TimeInterval = 9_000
+    let entries = [
+        reading(13, at: together, from: start),
+        reading(13, at: together, from: start),         // an exact duplicate
+        reading(41, at: together, from: start),         // a disagreeing source
+        reading(45, at: together + 3_600, from: start),
+    ]
+
+    let series = HistoryQuery.percentCurve(tracking: entries, start: start, end: end)
+
+    #expect(series.points.map(\.percent) == [13, 13, 41, 45])
+    #expect(series.regrants.isEmpty)                    // 41 → 13 is not an event
+}
+
+@Test func theSeriesAndTheWindowLedgerAgreeOnWhatCountsAsAReGrant() {
+    // The archived window row and this series describe the same event from the
+    // same entries, and must never disagree about whether it happened: a row
+    // annotated "re-granted" above a curve drawn straight through it — or the
+    // reverse — is worse than either alone. So the threshold is read from
+    // `RateLimitHighWater.materialDropPoints` in both places and restated in
+    // neither, and this pins the two walks together.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    let threshold = RateLimitHighWater.materialDropPoints
+    let entries = [
+        reading(63, at: 3_600, from: start),
+        // Just under the threshold: two sources rounding one figure, not a
+        // re-issued allowance. Must not break the line.
+        reading(63 - (threshold - 0.5), at: 7_200, from: start),
+        reading(71, at: 10_800, from: start),
+        // Exactly at it: it does.
+        reading(71 - threshold, at: 14_400, from: start),
+    ]
+
+    let series = HistoryQuery.percentCurve(tracking: entries, start: start, end: end)
+    let ledger = WindowLedger.regrantObservations(in: entries)
+
+    #expect(ledger.count == 1)                          // the fixture's premise
+    #expect(series.regrants.count == ledger.count)
+    #expect(series.points.filter(\.followsRegrant).map(\.at) == ledger.map(\.at))
+}
+
+@Test func twoReGrantsInOneWindowOpenThreeAllowances() {
+    // A window row records only the LAST re-grant plus a count, because a row
+    // is one line; the series is not so constrained, and it is the only place a
+    // second one can be SEEN. Without a per-point allowance index a renderer
+    // would have to find the breaks itself, which is arithmetic in a view.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    let entries = [
+        reading(50, at: 3_600, from: start),
+        reading(7, at: 7_200, from: start),
+        reading(29, at: 10_800, from: start),
+        reading(4, at: 14_400, from: start),
+        reading(16, at: 18_000, from: start),
+    ]
+
+    let series = HistoryQuery.percentCurve(tracking: entries, start: start, end: end)
+
+    #expect(series.points.map(\.allowance) == [0, 1, 1, 2, 2])
+    #expect(series.points.map(\.followsRegrant) == [false, true, false, true, false])
+    #expect(series.regrants.map(\.percentBefore) == [50, 29])
+    #expect(series.regrants.map(\.percentAfter) == [7, 4])
+}
+
+@Test func theMarkerSpansTheStretchTheReGrantHappenedIn() {
+    // 🔴 The re-grant ITSELF is unrecoverable. On the live event the readings
+    // either side were ninety-seven minutes apart and nothing recorded where
+    // inside that stretch the allowance was re-issued — the gap is there
+    // *because* the old code was frozen and reporting nothing. So the marker
+    // carries both fractions: the last instant the old allowance is known to
+    // have still held, and the first at which the new one is known to have
+    // already been in force. A renderer handed one hard x can only state a time
+    // nobody observed; handed both it can draw the uncertainty, and it does so
+    // without measuring anything itself.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    let series = HistoryQuery.percentCurve(
+        tracking: [reading(51, at: sevenDays / 4, from: start),
+                   reading(3, at: sevenDays / 2, from: start)],
+        start: start, end: end)
+
+    #expect(series.regrants.count == 1)
+    guard let marker = series.regrants.first else { return }
+    #expect(isClose(marker.lastKnownFraction, 0.25))
+    #expect(isClose(marker.knownByFraction, 0.5))
+    #expect(marker.lastKnownFraction < marker.knownByFraction)
+    #expect(marker.percentBefore == 51)
+    #expect(marker.percentAfter == 3)
+}
+
+@Test func theFlagTheAllowanceIndexAndTheMarkerAllNameTheSamePoint() {
+    // Three views of one event, and a renderer uses all three: the allowance
+    // index to break the polyline, the flag to ring the point it resumes at,
+    // the marker to draw the break between them. They come out of a single walk
+    // so they cannot drift, and this is what says so — a fourth caller adding
+    // its own scan is the thing being prevented.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    let entries = [
+        reading(50, at: 3_600, from: start),
+        reading(7, at: 7_200, from: start),
+        reading(29, at: 10_800, from: start),
+        reading(4, at: 14_400, from: start),
+        reading(16, at: 18_000, from: start),
+    ]
+
+    let series = HistoryQuery.percentCurve(tracking: entries, start: start, end: end)
+
+    #expect(series.points.filter(\.followsRegrant).count == series.regrants.count)
+    #expect(series.points.last?.allowance == series.regrants.count)
+    for (index, marker) in series.regrants.enumerated() {
+        let opened = series.points.filter { $0.followsRegrant && $0.allowance == index + 1 }
+        #expect(opened.count == 1)
+        // ⚠️ `.first`, never `opened[0]`: a subscript on an empty array TRAPS,
+        // and a trap in a test aborts the whole process — every later test in
+        // the run reports nothing at all, which is how a mutation that this
+        // suite does catch reads as "the build is broken".
+        guard let resumed = opened.first else { continue }
+        #expect(isClose(resumed.elapsedFraction, marker.knownByFraction))
+        #expect(resumed.percent == marker.percentAfter)
+    }
+}
+
+@Test func aWindowWhoseFirstReadingIsAlreadyPostReGrantShowsNoBreak() {
+    // The same deliberate omission `WindowLedger` makes: a re-grant that
+    // happened before the window's first contained reading leaves no drop to
+    // see, and this archive labels what it knows rather than what it assumes.
+    // An unmarked break costs the chart a note; a guessed one draws an event at
+    // an instant nobody observed.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    let entries = [
+        reading(9, at: 3_600, from: start),
+        reading(14, at: 7_200, from: start),
+        reading(22, at: 10_800, from: start),
+    ]
+
+    let series = HistoryQuery.percentCurve(tracking: entries, start: start, end: end)
+
+    #expect(series.regrants.isEmpty)
+    #expect(series.points.allSatisfy { $0.allowance == 0 && !$0.followsRegrant })
+}
+
+@Test func aWindowWithNoDurationDrawsNothing() {
+    // Bounds are passed in rather than inferred, so a caller can hand over
+    // anything, and dividing by a zero duration yields infinity or NaN.
+    //
+    // ⚠️ What actually holds this is CONTAINMENT, not the duration guard: no
+    // reading can satisfy `at >= start && at < end` when `end <= start`, so the
+    // series is empty before any division happens. Said plainly because the
+    // guard is unreachable defence — removing it passes this test — and a test
+    // that claims to police something it cannot is worse than no test.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let series = HistoryQuery.percentCurve(
+        tracking: [reading(38, at: 0, from: start)], start: start, end: start)
+
+    #expect(series.isEmpty)
+}
+
 // MARK: - Scale
 
 @Test func queryOverATenYearArchiveStaysOffTheHotPath() {

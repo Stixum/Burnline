@@ -290,6 +290,229 @@ public enum HistoryQuery {
         return result
     }
 
+    // MARK: - Percent of allowance
+
+    /// One reading of Anthropic's own percentage, on the same 0...1 elapsed
+    /// axis `CurvePoint` uses.
+    ///
+    /// 🔴 **A sibling of `CurvePoint`, deliberately not the same type.** The two
+    /// series share an x axis and nothing else. Units are cumulative and
+    /// monotonic *by construction* — nothing can un-spend a token — while a
+    /// percentage is a reading that can FALL, and that it falls is the whole
+    /// reason this query exists. Folding both into one type with two y fields
+    /// would let a chart plot one series' axis against the other's values; one
+    /// with an optional `percent` would let it plot a missing week as zero.
+    public struct PercentPoint: Equatable, Sendable {
+        /// 0...1 through the window — the shared axis that makes overlay valid.
+        public let elapsedFraction: Double
+        /// Anthropic's own figure at `at`. Never an estimate, never a
+        /// calibration: `TrackingEntry` only ever holds a captured percentage.
+        public let percent: Double
+        /// When it was observed. Carried so a hover label can name the instant
+        /// without converting a fraction back to a date in a view body, and so
+        /// a caller can match a point against a `WindowRow.regrantedAt`.
+        public let at: Date
+
+        /// Which allowance this reading measures. 0 is the one the window
+        /// opened with; each observed re-grant opens the next.
+        ///
+        /// **The grouping key that breaks the drawn line.** Two readings either
+        /// side of a re-grant are measurements of different allowances, and a
+        /// segment joining them draws a plunge that never happened — 51% did not
+        /// fall to 3%, it was replaced. A renderer keys its series on this and
+        /// the break costs it no arithmetic.
+        public let allowance: Int
+
+        /// This reading is the FIRST of a new allowance — the discontinuity
+        /// itself, and where a renderer puts its ring.
+        ///
+        /// 🔴 On the reading AFTER the drop, never the one before it. The
+        /// earlier reading is the last honest measurement of the allowance that
+        /// ended; this one is the earliest proof the new one was already in
+        /// force.
+        public let followsRegrant: Bool
+
+        public init(elapsedFraction: Double, percent: Double, at: Date,
+                    allowance: Int, followsRegrant: Bool) {
+            self.elapsedFraction = elapsedFraction
+            self.percent = percent
+            self.at = at
+            self.allowance = allowance
+            self.followsRegrant = followsRegrant
+        }
+    }
+
+    /// Where an allowance was re-granted, as much as the readings can say.
+    ///
+    /// 🔴 **The re-grant itself is unrecoverable, so this is a STRETCH and not
+    /// an instant.** On the live 2026-09-01 event the readings either side were
+    /// 51% and 3%, ninety-seven minutes apart — the gap is there precisely
+    /// because nothing was reporting across it. Somewhere in there the
+    /// allowance was re-issued and nothing recorded where.
+    ///
+    /// Both ends are carried so a renderer can draw the uncertainty rather than
+    /// a hard rule at a time nobody observed, and so that it measures nothing
+    /// itself. Named `…Marker` rather than `Regrant` because it is drawing
+    /// geometry: `RateLimitHighWater.Regrant` and `Snapshot.Regrant` are the
+    /// domain values, and this is neither.
+    public struct RegrantMarker: Equatable, Sendable {
+        /// Fraction of the last reading of the allowance that ended.
+        public let lastKnownFraction: Double
+        /// That reading's percentage — the high-water of the old allowance.
+        public let percentBefore: Double
+        /// Fraction of the first reading of the new allowance: the earliest
+        /// point the re-grant is known to have ALREADY happened. It can only
+        /// ever be late.
+        public let knownByFraction: Double
+        /// That reading's percentage — **the first figure seen after the
+        /// re-grant, not zero.** The live event's was 3%: the reporting gap had
+        /// already been burned through by the time anything reported again.
+        public let percentAfter: Double
+
+        public init(lastKnownFraction: Double, percentBefore: Double,
+                    knownByFraction: Double, percentAfter: Double) {
+            self.lastKnownFraction = lastKnownFraction
+            self.percentBefore = percentBefore
+            self.knownByFraction = knownByFraction
+            self.percentAfter = percentAfter
+        }
+    }
+
+    /// One window's percentage readings, plus every discontinuity in them.
+    ///
+    /// 🔴 **Empty means NOT RECORDED — never render it as a week at 0%.** The
+    /// same rule as `ScoreboardRow.usedPercent`, and here it is the common case
+    /// rather than the edge one: tracking entries survived a window's close
+    /// only from the commit that stopped pruning them onward, so every week
+    /// archived before that has no percentage series at all and never will.
+    /// That is why the series carries no synthetic origin — see `percentCurve`.
+    public struct PercentSeries: Equatable, Sendable {
+        public let points: [PercentPoint]
+        /// Oldest first, one per observed re-grant. `regrants.count` is the
+        /// number of allowances this window is known to have been given beyond
+        /// its first, and `points.last?.allowance` equals it.
+        public let regrants: [RegrantMarker]
+
+        public init(points: [PercentPoint], regrants: [RegrantMarker]) {
+            self.points = points
+            self.regrants = regrants
+        }
+
+        /// Nothing was recorded for this window. **Not "no usage".**
+        public var isEmpty: Bool { points.isEmpty }
+    }
+
+    /// The percentage of the weekly allowance through a window, on the same
+    /// 0...1 elapsed axis as `burnCurve`, broken wherever the allowance was
+    /// re-granted.
+    ///
+    /// 🔴 **Why this exists at all.** `burnCurve` plots cumulative token units,
+    /// and units are MONOTONIC — a re-grant does not un-spend a token, so a
+    /// re-granted week's unit curve looks perfectly ordinary while the
+    /// scoreboard beside it reports 3%. The percentage is the only series in
+    /// which the event is visible, and until this it was plotted nowhere.
+    ///
+    /// Takes plain bounds, **not a `WindowRow`** — the live window is the one a
+    /// reader most wants and has no row, because a row is written only once a
+    /// window closes. Same signature shape, same reason, as `burnCurve`.
+    ///
+    /// ⚠️ **No synthetic `(0, 0)` origin, unlike `burnCurve`.** Zero units
+    /// consumed at a window's start is true by definition; nothing of the sort
+    /// is true of a percentage. An origin here would draw every week with no
+    /// readings as a line rising from 0%, which claims an allowance was
+    /// untouched rather than admitting it was never measured. The series starts
+    /// at the first real reading or does not exist.
+    ///
+    /// ⚠️ **Gaps between readings are drawn straight through, on purpose.**
+    /// Readings land roughly every 45 minutes and irregularly, and a quiet
+    /// stretch is a real absence of information — but unlike a coverage gap it
+    /// is a BOUNDED one: the two readings either side pin exactly how much was
+    /// consumed across it, only not when. A straight segment is that
+    /// interpolation and it cannot overstate or understate the total. The one
+    /// case where interpolating would lie is the re-grant, and that is exactly
+    /// what `allowance` breaks. Choosing a "too long a gap" threshold here
+    /// would be inventing a constant the data does not supply.
+    ///
+    /// ⚠️ **Not thinned, unlike the unit curve.** A week holds ~210 readings
+    /// against the unit curve's ~670 buckets, because this series is
+    /// observation-driven rather than bucket-driven, so there is a third as much
+    /// to draw. And `hourly`'s last-in-the-hour rule would silently swallow a
+    /// re-grant whose two readings fell in one hour — the single point the whole
+    /// feature exists to show.
+    public static func percentCurve(tracking: [TrackingEntry],
+                                    start: Date, end: Date) -> PercentSeries {
+        let duration = end.timeIntervalSince(start)
+        // ⚠️ Belt and braces, and written down rather than reasoned about. The
+        // containment filter below cannot admit a reading when `end <= start`,
+        // so nothing ever reaches the division — mutating this guard away
+        // changes no result. It stays because it is the division's guard, and
+        // the next edit to the filter must not silently make it load-bearing.
+        guard duration > 0 else { return PercentSeries(points: [], regrants: []) }
+
+        // Containment of the INSTANT in [start, end) — the rule `WindowLedger`
+        // matches an entry to a window by, and deliberately not the
+        // bucket-ownership rule the unit queries share. A tracking entry is an
+        // observation at an instant, not a fifteen-minute bucket, and rounding
+        // one to a bucket would walk readings across a boundary.
+        //
+        // 🔴 Per window, never across the series: the ordinary weekly reset is
+        // an 87 → 4 drop, so a walk over the whole file would read almost every
+        // week as re-granted.
+        //
+        // Sorted by instant because the archive's own order is not a guarantee;
+        // ties break on ASCENDING percent, which makes the order total (and so
+        // the series deterministic, which `sort` does not otherwise promise) and
+        // means a transition within one instant is never downward. Two readings
+        // dated to the same instant are two sources describing one moment, not
+        // an event between two moments, and must never open an allowance.
+        let contained = tracking
+            .filter { $0.at >= start && $0.at < end }
+            .sorted { $0.at == $1.at ? $0.percent < $1.percent : $0.at < $1.at }
+        guard !contained.isEmpty else { return PercentSeries(points: [], regrants: []) }
+
+        let origin = start.timeIntervalSince1970
+        func fraction(of instant: Date) -> Double {
+            (instant.timeIntervalSince1970 - origin) / duration
+        }
+
+        var points: [PercentPoint] = []
+        points.reserveCapacity(contained.count)
+        var regrants: [RegrantMarker] = []
+        var allowance = 0
+
+        // One walk produces all three signals — the per-point allowance index,
+        // the per-point flag and the marker list — so they cannot drift apart.
+        for (index, entry) in contained.enumerated() {
+            let previous = index > 0 ? contained[index - 1] : nil
+            // 🔴 The threshold is `RateLimitHighWater.materialDropPoints`, read
+            // from there and restated nowhere. `WindowLedger.regrantObservations`
+            // annotates the archived row from the same rule over the same
+            // entries; the row and this curve describe one event and must never
+            // disagree about whether it happened. Materiality is on the
+            // ADJACENT drop, as it is in the live path.
+            let opensAllowance = previous.map {
+                $0.percent - entry.percent >= RateLimitHighWater.materialDropPoints
+            } ?? false
+
+            if opensAllowance, let previous {
+                allowance += 1
+                regrants.append(RegrantMarker(
+                    lastKnownFraction: fraction(of: previous.at),
+                    percentBefore: previous.percent,
+                    knownByFraction: fraction(of: entry.at),
+                    percentAfter: entry.percent))
+            }
+
+            points.append(PercentPoint(elapsedFraction: fraction(of: entry.at),
+                                       percent: entry.percent,
+                                       at: entry.at,
+                                       allowance: allowance,
+                                       followsRegrant: opensAllowance))
+        }
+
+        return PercentSeries(points: points, regrants: regrants)
+    }
+
     // MARK: - Breakdown
 
     /// Weighted units by project or model, descending, with the tail past
