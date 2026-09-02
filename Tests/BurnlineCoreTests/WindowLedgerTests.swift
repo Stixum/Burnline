@@ -333,7 +333,7 @@ private func observed(_ percent: Double, dayIn days: Int) -> TrackingEntry {
     // silently wrong-looking — and a window row is written once, so that is
     // wrong forever.
     //
-    // 🔴 `percentAtRegrant` is 3, NOT 0. Ninety-seven minutes separated those
+    // 🔴 `regrant.percent` is 3, NOT 0. Ninety-seven minutes separated those
     // two real readings — the stretch where the old code was frozen and
     // recording nothing — so the first post-re-grant observation was already
     // at 3%. The annotation records what was SEEN, and the exact re-grant
@@ -353,10 +353,10 @@ private func observed(_ percent: Double, dayIn days: Int) -> TrackingEntry {
     // The instant is the first OBSERVATION after the re-grant, never the
     // entry before the drop — that one is the last reading of the allowance
     // that ended.
-    #expect(rows.first?.regrantedAt == after.at)
-    #expect(rows.first?.regrantedAt != before.at)
-    #expect(rows.first?.percentAtRegrant == 3)
-    #expect(rows.first?.regrantsObserved == 1)
+    #expect(rows.first?.regrant?.at == after.at)
+    #expect(rows.first?.regrant?.at != before.at)
+    #expect(rows.first?.regrant?.percent == 3)
+    #expect(rows.first?.regrant?.observed == 1)
 }
 
 @Test func aWeekThatOnlyClimbedIsNotAnnotated() {
@@ -364,11 +364,9 @@ private func observed(_ percent: Double, dayIn days: Int) -> TrackingEntry {
     let rows = rowsAfterAFortnight(tracking: [observed(10, dayIn: 1), observed(37, dayIn: 3),
                                               observed(64, dayIn: 5)])
     #expect(rows.first?.finalPercent == 64)
-    #expect(rows.first?.regrantedAt == nil)
-    #expect(rows.first?.percentAtRegrant == nil)
-    // nil, never 0 — the three fields are set together or not at all, so a
-    // reader never meets a row that half-claims a re-grant.
-    #expect(rows.first?.regrantsObserved == nil)
+    // One absent value, not three. A row that half-claims a re-grant is
+    // unspellable now that the optional is the discriminator.
+    #expect(rows.first?.regrant == nil)
 }
 
 @Test func aDropOfExactlyTheMaterialThresholdIsARegrant() {
@@ -378,9 +376,9 @@ private func observed(_ percent: Double, dayIn days: Int) -> TrackingEntry {
     // or a week is annotated while no epoch ever opened, or the reverse.
     let rows = rowsAfterAFortnight(tracking: [observed(40, dayIn: 1), observed(38, dayIn: 3),
                                               observed(45, dayIn: 5)])
-    #expect(rows.first?.regrantedAt == plus(days: 3, from: anchorDate))
-    #expect(rows.first?.percentAtRegrant == 38)
-    #expect(rows.first?.regrantsObserved == 1)
+    #expect(rows.first?.regrant?.at == plus(days: 3, from: anchorDate))
+    #expect(rows.first?.regrant?.percent == 38)
+    #expect(rows.first?.regrant?.observed == 1)
     #expect(rows.first?.finalPercent == 45)
 }
 
@@ -392,16 +390,14 @@ private func observed(_ percent: Double, dayIn days: Int) -> TrackingEntry {
     let rows = rowsAfterAFortnight(tracking: [observed(40, dayIn: 1), observed(38.1, dayIn: 3),
                                               observed(44, dayIn: 5)])
     #expect(rows.first?.finalPercent == 44)
-    #expect(rows.first?.regrantedAt == nil)
-    #expect(rows.first?.percentAtRegrant == nil)
-    #expect(rows.first?.regrantsObserved == nil)
+    #expect(rows.first?.regrant == nil)
 }
 
 @Test func aSecondReGrantIsTheOneRecordedAndTheCountSaysThereWereTwo() {
-    // 🔴 The decision, pinned. `regrantedAt` is the LAST re-grant in the
+    // 🔴 The decision, pinned. `regrant.at` is the LAST re-grant in the
     // window: `finalPercent` is the climb since that one, so the pair
     // describes a single stretch of the week only if the instant is the last.
-    // Record the first and `finalPercent − percentAtRegrant` spans two
+    // Record the first and `finalPercent − regrant.percent` spans two
     // allowances — the same category of arithmetic the spec rejected by name
     // in 51 + 30 = 81. It also matches the live path, where a material drop
     // inside an open epoch REPLACES the `Regrant` wholesale.
@@ -412,9 +408,9 @@ private func observed(_ percent: Double, dayIn days: Int) -> TrackingEntry {
     let rows = rowsAfterAFortnight(tracking: [
         observed(51, dayIn: 1), observed(3, dayIn: 2), observed(20, dayIn: 3),
         observed(6, dayIn: 4), observed(33, dayIn: 5)])
-    #expect(rows.first?.regrantedAt == plus(days: 4, from: anchorDate))
-    #expect(rows.first?.percentAtRegrant == 6)
-    #expect(rows.first?.regrantsObserved == 2)
+    #expect(rows.first?.regrant?.at == plus(days: 4, from: anchorDate))
+    #expect(rows.first?.regrant?.percent == 6)
+    #expect(rows.first?.regrant?.observed == 2)
     #expect(rows.first?.finalPercent == 33)
 }
 
@@ -430,9 +426,7 @@ private func observed(_ percent: Double, dayIn days: Int) -> TrackingEntry {
     #expect(rows.count == 2)
     #expect(rows.first?.finalPercent == 87)
     #expect(rows.last?.finalPercent == 4)
-    #expect(rows.allSatisfy { $0.regrantedAt == nil })
-    #expect(rows.allSatisfy { $0.percentAtRegrant == nil })
-    #expect(rows.allSatisfy { $0.regrantsObserved == nil })
+    #expect(rows.allSatisfy { $0.regrant == nil })
 }
 
 @Test func aDropIsAReGrantEvenWhenTheTwoSourcesDisagreeAboutTheReset() {
@@ -454,8 +448,109 @@ private func observed(_ percent: Double, dayIn days: Int) -> TrackingEntry {
     let latest = TrackingEntry(percent: 30, at: plus(days: 4, from: anchorDate), resetsAt: end)
 
     let rows = rowsAfterAFortnight(tracking: [before, after, latest])
-    #expect(rows.first?.regrantedAt == after.at)
-    #expect(rows.first?.percentAtRegrant == 3)
-    #expect(rows.first?.regrantsObserved == 1)
+    #expect(rows.first?.regrant?.at == after.at)
+    #expect(rows.first?.regrant?.percent == 3)
+    #expect(rows.first?.regrant?.observed == 1)
     #expect(rows.first?.finalPercent == 30)
+}
+
+@Test func twoReadingsAtOneInstantAreOneMomentNotAReGrant() {
+    // 🔴 The probe that found this, run both ways round. `tracking.json`
+    // stores `at` through `.iso8601`, which truncates to whole seconds, while
+    // `HistoryWriter.observe` dedupes on FULL equality — so two readings dated
+    // to the same second both survive routinely, in whichever order they
+    // landed.
+    //
+    // Ordered by instant alone, that pair reads as a DROP or as a RISE
+    // depending on the order: measured on the previous implementation,
+    // `[49, 51, 55]` at one instant annotated a re-grant that never happened
+    // while `[51, 49, 55]` missed one. Neither is an event. Two readings
+    // sharing an instant are two sources describing one moment.
+    let instant = plus(days: 2, from: anchorDate)
+    let end = plus(days: 7, from: anchorDate)
+    func series(_ percents: [Double]) -> [TrackingEntry] {
+        percents.map { TrackingEntry(percent: $0, at: instant, resetsAt: end) }
+    }
+
+    // The shared ordering, directly: one total order whatever the file said.
+    let asRising = WindowLedger.contained(series([49, 51, 55]), from: anchorDate, to: end)
+    let asFalling = WindowLedger.contained(series([51, 49, 55]), from: anchorDate, to: end)
+    #expect(asRising.map(\.percent) == [49, 51, 55])
+    #expect(asFalling.map(\.percent) == [49, 51, 55])
+    #expect(WindowLedger.regrantObservations(in: asRising).isEmpty)
+    #expect(WindowLedger.regrantObservations(in: asFalling).isEmpty)
+
+    // And through the row, which is where it was measured.
+    for order in [[49, 51, 55], [51, 49, 55]] as [[Double]] {
+        let rows = rowsAfterAFortnight(tracking: series(order))
+        #expect(rows.first?.regrant == nil)
+        #expect(rows.first?.finalPercent == 55)
+    }
+}
+
+@Test func aReadingExactlyOnTheWindowStartIsInsideIt() {
+    // Containment is `[start, end)`, the convention
+    // `anEntryExactlyOnTheBoundaryBelongsToTheLaterWindow` already pins for
+    // `finalPercent`. Here it decides whether the reading a drop is measured
+    // FROM exists at all: exclude the boundary and this window holds two
+    // readings, no pair spans the re-grant, and the annotation vanishes.
+    let onTheBoundary = TrackingEntry(percent: 51, at: anchorDate,
+                                      resetsAt: plus(days: 7, from: anchorDate))
+    let rows = rowsAfterAFortnight(tracking: [onTheBoundary, observed(3, dayIn: 2),
+                                              observed(30, dayIn: 4)])
+    #expect(rows.first?.regrant?.at == plus(days: 2, from: anchorDate))
+    #expect(rows.first?.regrant?.percent == 3)
+    #expect(rows.first?.regrant?.observed == 1)
+    #expect(rows.first?.finalPercent == 30)
+}
+
+@Test func aResetReadingExactlyOnTheBoundaryIsNotThisWeeksReGrant() {
+    // 🔴 The sibling of `theResetBetweenTwoWindowsIsNotAReGrant`, one instant
+    // tighter: that one dates the opening reading to day 8, which a `[start,
+    // end]` containment still excludes. At EXACTLY the reset, an inclusive
+    // upper bound admits it into the week it ends — and 87 → 4 then annotates
+    // the closing week as re-granted. Every ordinary week, forever, because a
+    // row is written once.
+    let closing = observed(87, dayIn: 3)
+    let opening = TrackingEntry(percent: 4, at: plus(days: 7, from: anchorDate),
+                                resetsAt: plus(days: 14, from: anchorDate))
+    let rows = rowsAfterAFortnight(tracking: [closing, opening])
+    #expect(rows.count == 2)
+    #expect(rows.first?.finalPercent == 87)
+    #expect(rows.last?.finalPercent == 4)
+    #expect(rows.allSatisfy { $0.regrant == nil })
+}
+
+@Test func finalPercentComesFromTheRowsOwnSeriesNotTheGridsNewest() {
+    // 🔴 A row may not contradict itself. `finalPercent` used to be chosen
+    // against the GRID's end while the annotation came from the substituted
+    // bounds — so a reset observed six hours late made them different
+    // readings, and the row reported `finalPercent` 51 from BEFORE the
+    // re-grant beside an annotation at 3. `finalPercent − regrant.percent`
+    // then reads 48: a subtraction across two allowances, invented by the
+    // archive, which is the fabrication this feature exists to refuse.
+    //
+    // Both now come from one series taken on the row's own bounds, so
+    // `finalPercentAt >= regrant.at` holds by construction.
+    let gridEnd = plus(days: 7, from: anchorDate)
+    let realReset = gridEnd.addingTimeInterval(6 * 3_600)
+    let last = TrackingEntry(percent: 51, at: gridEnd.addingTimeInterval(-3_600),
+                             resetsAt: realReset)
+    let after = TrackingEntry(percent: 3, at: gridEnd.addingTimeInterval(3_600),
+                              resetsAt: realReset)
+    let latest = TrackingEntry(percent: 30, at: gridEnd.addingTimeInterval(4 * 3_600),
+                               resetsAt: realReset)
+
+    let rows = anchored.writableRows(coverage: threeWeeks, written: [], cells: [],
+                                     tracking: [last, after, latest],
+                                     now: plus(days: 20, from: anchorDate))
+    let first = rows.first { $0.start == anchorDate }
+    #expect(first?.end == realReset)
+    #expect(first?.finalPercent == 30)
+    #expect(first?.finalPercentAt == latest.at)
+    #expect(first?.regrant?.at == after.at)
+    #expect(first?.regrant?.percent == 3)
+    #expect(first?.regrant?.observed == 1)
+    // The contradiction, stated as the invariant it is.
+    #expect((first?.finalPercentAt ?? .distantPast) >= (first?.regrant?.at ?? .distantFuture))
 }

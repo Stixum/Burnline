@@ -48,22 +48,33 @@ struct HistoryRecordsTests {
         decoder.dateDecodingStrategy = .iso8601
         let row = try decoder.decode(WindowRow.self, from: Data(line.utf8))
         #expect(row.output == 11)
-        #expect(row.regrantedAt == nil)
-        #expect(row.percentAtRegrant == nil)
-        #expect(row.regrantsObserved == nil)
+        #expect(row.regrant == nil)
 
         // Positive control. Without it "absent decodes to nil" is
         // indistinguishable from a field nothing ever populates, and the
-        // assertions above would hold against a decoder that ignored the keys
+        // assertion above would hold against a decoder that ignored the key
         // entirely.
-        let annotated = line.replacingOccurrences(
-            of: #""boundsSource":"extrapolated""#,
-            with: #""boundsSource":"extrapolated","regrantedAt":"2026-05-14T02:00:00Z","#
-                + #""percentAtRegrant":3,"regrantsObserved":1"#)
-        let carried = try decoder.decode(WindowRow.self, from: Data(annotated.utf8))
-        #expect(carried.regrantedAt == Date(timeIntervalSince1970: 1_778_724_000))
-        #expect(carried.percentAtRegrant == 3)
-        #expect(carried.regrantsObserved == 1)
+        func withRegrant(_ body: String) -> Data {
+            Data(line.replacingOccurrences(
+                of: #""boundsSource":"extrapolated""#,
+                with: #""boundsSource":"extrapolated","regrant":{"# + body + "}").utf8)
+        }
+        let carried = try decoder.decode(
+            WindowRow.self,
+            from: withRegrant(#""at":"2026-05-14T02:00:00Z","percent":3,"observed":1"#))
+        #expect(carried.regrant?.at == Date(timeIntervalSince1970: 1_778_724_000))
+        #expect(carried.regrant?.percent == 3)
+        #expect(carried.regrant?.observed == 1)
+
+        // 🔴 And the point of nesting: a half-written annotation is not a
+        // lenient decode, it is not a decode at all. Three independent
+        // optionals accepted `observed` with no instant behind it, and
+        // `windows.jsonl` is append-only — a line like that would have been
+        // permanent. `decodeLines` drops what it cannot read, which is the
+        // safe direction for a row no writer of ours can produce.
+        #expect(throws: (any Error).self) {
+            try decoder.decode(WindowRow.self, from: withRegrant(#""observed":2"#))
+        }
     }
 
     @Test func theReGrantAnnotationRoundTripsAndIsOmittedWhenAbsent() throws {
@@ -80,9 +91,8 @@ struct HistoryRecordsTests {
                       finalPercentAt: Date(timeIntervalSince1970: 1_787_100_000),
                       finalPercentSource: "live", boundsSource: .observed,
                       observedResetsAt: nil,
-                      regrantedAt: regrant ? regrantedAt : nil,
-                      percentAtRegrant: regrant ? 3 : nil,
-                      regrantsObserved: regrant ? 1 : nil)
+                      regrant: regrant ? WindowRow.RegrantAnnotation(
+                        at: regrantedAt, percent: 3, observed: 1) : nil)
         }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -91,18 +101,17 @@ struct HistoryRecordsTests {
 
         let annotated = try encoder.encode(row(regrant: true))
         let annotatedJSON = String(decoding: annotated, as: UTF8.self)
-        #expect(annotatedJSON.contains("\"percentAtRegrant\":3"))
-        // Positive control for the omission assertions below: these keys are
+        #expect(annotatedJSON.contains("\"percent\":3"))
+        // Positive control for the omission assertion below: the key is
         // written when there is something to write.
-        #expect(annotatedJSON.contains("\"regrantedAt\""))
-        #expect(annotatedJSON.contains("\"regrantsObserved\":1"))
+        #expect(annotatedJSON.contains("\"regrant\":{"))
+        #expect(annotatedJSON.contains("\"observed\":1"))
         #expect(try decoder.decode(WindowRow.self, from: annotated) == row(regrant: true))
 
-        // An unannotated row carries none of the three keys rather than
-        // zeroes: every ordinary week writes one of these lines forever.
+        // An unannotated row carries no `regrant` key at all rather than a
+        // null or an empty object: every ordinary week writes one of these
+        // lines forever.
         let plain = String(decoding: try encoder.encode(row(regrant: false)), as: UTF8.self)
-        #expect(!plain.contains("regrantedAt"))
-        #expect(!plain.contains("percentAtRegrant"))
-        #expect(!plain.contains("regrantsObserved"))
+        #expect(!plain.contains("regrant"))
     }
 }

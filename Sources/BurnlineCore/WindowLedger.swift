@@ -92,39 +92,38 @@ public struct WindowLedger: Sendable {
                                timeZone: schedule.timeZone)
         guard bounds.count >= 2 else { return [] }
 
-        // Newest first, so `first(where:)` on a window yields its FINAL reading.
-        let newestFirst = tracking.sorted { $0.at > $1.at }
         var rows: [WindowRow] = []
 
         // `bounds` is mutated in place below but never resized, so the range is
         // stable for the whole walk.
         for cursor in 1..<bounds.count {
             let start = bounds[cursor - 1]
-            var end = bounds[cursor]
+            let gridEnd = bounds[cursor]
+            var end = gridEnd
 
             // Rule 3. An entry belongs to the window whose [start, end)
             // CONTAINS `at`. Windows are seven days and non-overlapping, so
             // containment is exact and needs no tolerance — unlike comparing
             // two derived boundaries, which can differ by days.
-            let entry = newestFirst.first { $0.at >= start && $0.at < end }
+            let onTheGrid = Self.contained(tracking, from: start, to: end)
 
             var boundsSource = base
             var observedResetsAt: Date?
 
-            if let entry {
-                if abs(entry.resetsAt.timeIntervalSince(end)) <= Self.sameResetTolerance {
+            if let newest = onTheGrid.last {
+                if abs(newest.resetsAt.timeIntervalSince(end)) <= Self.sameResetTolerance {
                     boundsSource = .observed
-                    observedResetsAt = entry.resetsAt
-                } else if entry.resetsAt > entry.at,
-                          cursor + 1 >= bounds.count || entry.resetsAt < bounds[cursor + 1] {
+                    observedResetsAt = newest.resetsAt
+                } else if newest.resetsAt > newest.at,
+                          cursor + 1 >= bounds.count || newest.resetsAt < bounds[cursor + 1] {
                     // The observation wins: the grid is an inference, and this
                     // is a reset someone actually saw. Writing it back into
                     // `bounds` moves the NEXT window's start with it, so the
                     // grid stays contiguous and non-overlapping.
-                    end = entry.resetsAt
+                    end = newest.resetsAt
                     bounds[cursor] = end
                     boundsSource = .observed
-                    observedResetsAt = entry.resetsAt
+                    observedResetsAt = newest.resetsAt
                 }
             }
 
@@ -138,25 +137,37 @@ public struct WindowLedger: Sendable {
             guard firstBucket <= lastBucket else { continue }
             guard coverage.covers(from: firstBucket, through: lastBucket) else { continue }
 
-            // The re-grant annotation, derived from the entries THIS ROW's
-            // bounds contain — after any substitution above, so an instant it
-            // names always lies inside the window it describes.
+            // 🔴 ONE series backs every reading this row reports, taken from
+            // the row's OWN bounds — re-filtered exactly when the substitution
+            // above moved them.
+            //
+            // `finalPercent` used to come from the GRID's newest entry while
+            // the annotation came from the substituted bounds, and a later
+            // `end` made them different entries: a row could report
+            // `finalPercent` 51 from before the re-grant beside an annotation
+            // at 3, so `finalPercent − percent` read 48 — a subtraction across
+            // two allowances, which is the fabrication this whole feature
+            // exists to refuse. `finalPercentAt >= regrant.at` is now true by
+            // construction rather than by argument.
             //
             // 🔴 Per window, never across the series. The last reading of one
             // window and the first of the next are 87% and 4% on an ordinary
-            // week: that is the reset, and a walk over the whole series would
+            // week: that is the reset, and a walk over the whole file would
             // annotate almost every week as re-granted.
             //
             // A window whose FIRST contained reading is already post-re-grant
             // shows no drop and goes unannotated. That is deliberate — an
             // omitted annotation costs a row a note, a guessed one is wrong
             // forever.
-            let contained = Array(newestFirst.filter { $0.at >= start && $0.at < end }.reversed())
-            let regrants = Self.regrantObservations(in: contained)
+            let window = end == gridEnd ? onTheGrid : Self.contained(tracking, from: start, to: end)
+            let regrants = Self.regrantObservations(in: window)
 
             // Rule 4. Anthropic's own figure or nothing — never an estimate,
-            // never a calibration. `entry` is still contained after any end
-            // substitution above, which required `resetsAt > at`.
+            // never a calibration. The newest of `window`, which is contained
+            // by construction, so no substitution can strand it outside the
+            // row that reports it.
+            let entry = window.last
+
             rows.append(WindowRow(
                 start: start,
                 end: end,
@@ -166,48 +177,94 @@ public struct WindowLedger: Sendable {
                 finalPercentSource: entry == nil ? nil : "live",
                 boundsSource: boundsSource,
                 observedResetsAt: observedResetsAt,
-                // The LAST re-grant: `finalPercent` is the climb since that
-                // one, so only the last pairs with it to describe one stretch
-                // of the week. The count keeps the row from claiming there was
-                // exactly one.
-                regrantedAt: regrants.last?.at,
-                percentAtRegrant: regrants.last?.percent,
-                regrantsObserved: regrants.isEmpty ? nil : regrants.count
+                // The LAST re-grant, carrying the count so the row does not
+                // claim there was exactly one. Built through `map` on that
+                // last observation: an annotation with no instant behind it is
+                // then unspellable rather than merely unwritten.
+                regrant: regrants.last.map {
+                    WindowRow.RegrantAnnotation(at: $0.at, percent: $0.percent,
+                                                observed: regrants.count)
+                }
             ))
         }
 
         return rows
     }
 
-    /// The observations that FOLLOW a material drop, oldest first — one per
-    /// re-grant seen in `entries`, which must be one window's own captures in
-    /// chronological order.
+    // MARK: - The re-grant rule
+    //
+    // 🔴 ONE definition, two callers. `HistoryQuery.percentCurve` draws the
+    // discontinuity from the same series this row is annotated from, and the
+    // row and the curve describe ONE event: a week the scoreboard calls
+    // re-granted must be a week the chart breaks, and the reverse. They
+    // diverged for real while each owned its own containment and ordering —
+    // the curve sorted ascending with a tie-break, the ledger sorted
+    // descending and reversed — so the two disagreed on a same-instant pair.
+    // Containment, ordering and materiality all live here now; a caller that
+    // reimplements any of the three is reopening that bug.
+
+    /// One window's entries, contained and in a TOTAL chronological order.
+    ///
+    /// Containment is of the INSTANT in `[start, end)`, the rule an entry is
+    /// matched to a window by. Deliberately not the bucket-ownership rule the
+    /// unit queries share: a tracking entry is an observation at an instant,
+    /// not a fifteen-minute bucket, and rounding one to a bucket would walk
+    /// readings across a boundary.
+    ///
+    /// 🔴 **Ties break on ASCENDING percent, and that is not tidiness.**
+    /// `tracking.json` stores `at` through `.iso8601`, which truncates to whole
+    /// seconds, while `HistoryWriter.observe` dedupes on FULL equality — so two
+    /// readings dated to the same second both survive routinely. Ordered only
+    /// by instant, `sort` leaves those two in either order, and the pair reads
+    /// as a rise or as a drop depending on which. Measured on the probe that
+    /// found this: `[49, 51, 55]` at one instant annotated a re-grant that
+    /// never happened, while `[51, 49, 55]` missed one.
+    ///
+    /// Ascending percent makes the order total — so the series is
+    /// deterministic, which `sort` does not otherwise promise — and makes a
+    /// transition WITHIN one instant never downward. Two readings sharing an
+    /// instant are two sources describing one moment, not an event between two
+    /// moments, and must never open an allowance.
+    static func contained(_ tracking: [TrackingEntry],
+                          from start: Date, to end: Date) -> [TrackingEntry] {
+        tracking
+            .filter { $0.at >= start && $0.at < end }
+            .sorted { $0.at == $1.at ? $0.percent < $1.percent : $0.at < $1.at }
+    }
+
+    /// Whether two adjacent readings of one window are a re-grant.
     ///
     /// 🔴 The threshold is `RateLimitHighWater.materialDropPoints` and is read
     /// from there, never restated. The archive and the live path must agree on
     /// what counts as a re-grant, or a week is annotated as re-granted while no
     /// epoch ever opened, or the reverse — and a 51 → 50 flicker is far likelier
-    /// two sources rounding the same figure than a re-issued allowance.
+    /// two sources rounding one figure than a re-issued allowance.
     ///
     /// ⚠️ Materiality is on the ADJACENT drop, not the distance from the epoch
     /// that opened. Settled in the live path, and it is why a second re-grant
     /// inside an open epoch re-bases it rather than being absorbed.
     ///
-    /// The returned entry is the one AFTER the drop: the reading before it is
-    /// the last of the allowance that ended.
-    ///
     /// 🔴 The entries' own `resetsAt` is NEVER compared. A re-grant is a drop
     /// with the reset unmoved, but "unmoved" is established by both readings
     /// being contained in ONE window — not by equality between two `resetsAt`
-    /// values. On the live 2026-09-01 event those two values are
-    /// `06:59:59Z` and `07:00:00Z`, because the readings came from the two
-    /// sources, which report the same instant to different precision. An
-    /// equality test there would have missed the only re-grant on record.
+    /// values. On the live 2026-09-01 event those two values are `06:59:59Z`
+    /// and `07:00:00Z`, because the readings came from the two sources, which
+    /// report the same instant to different precision. An equality test there
+    /// would have missed the only re-grant on record.
+    static func isMaterialDrop(from previous: TrackingEntry, to entry: TrackingEntry) -> Bool {
+        previous.percent - entry.percent >= RateLimitHighWater.materialDropPoints
+    }
+
+    /// The observations that FOLLOW a material drop, oldest first — one per
+    /// re-grant seen in `entries`, which must be one window's own series as
+    /// `contained(_:from:to:)` returns it.
+    ///
+    /// The returned entry is the one AFTER the drop: the reading before it is
+    /// the last of the allowance that ended.
     static func regrantObservations(in entries: [TrackingEntry]) -> [TrackingEntry] {
         guard entries.count >= 2 else { return [] }
         return (1..<entries.count).compactMap { index in
-            let drop = entries[index - 1].percent - entries[index].percent
-            return drop >= RateLimitHighWater.materialDropPoints ? entries[index] : nil
+            isMaterialDrop(from: entries[index - 1], to: entries[index]) ? entries[index] : nil
         }
     }
 

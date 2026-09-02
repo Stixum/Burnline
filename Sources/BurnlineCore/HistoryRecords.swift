@@ -68,47 +68,72 @@ public struct WindowRow: Equatable, Sendable, Codable {
     public var boundsSource: BoundsSource
     public var observedResetsAt: Date?
 
-    /// The first OBSERVATION after the allowance was re-granted inside this
-    /// window — Anthropic re-issuing it without moving `resets_at`.
+    /// A re-grant seen inside one archived window: when it was first
+    /// observed, at what reading, and how many the window held.
     ///
-    /// 🔴 **Not the re-grant itself, which is unrecoverable.** On the live
-    /// 2026-09-01 event the readings either side were 51% and 3%, ninety-seven
-    /// minutes apart; the re-grant happened somewhere inside that gap and
-    /// nothing recorded where. This is the earliest instant it is known to
-    /// have ALREADY happened, and it can only ever be late.
+    /// One value rather than three fields, because the three are only ever
+    /// meaningful together — see `regrant`.
+    public struct RegrantAnnotation: Equatable, Sendable, Codable {
+        /// The first OBSERVATION after the allowance was re-granted.
+        ///
+        /// 🔴 **Not the re-grant itself, which is unrecoverable.** On the live
+        /// 2026-09-01 event the readings either side were 51% and 3%,
+        /// ninety-seven minutes apart; the re-grant happened somewhere inside
+        /// that gap and nothing recorded where. This is the earliest instant it
+        /// is known to have ALREADY happened, and it can only ever be late.
+        ///
+        /// ⚠️ Whole seconds, and it arrives that way. `tracking.json` is
+        /// written through `.iso8601`, and `writeCompletedWindows` loads it
+        /// back from disk — so every `at` the ledger sees has already been
+        /// truncated, and nothing is lost again on the way into this row.
+        /// Anything matching this against another instant still wants
+        /// `WindowLedger.sameResetTolerance` rather than equality.
+        public var at: Date
+        /// The reading at `at` — **the first figure seen after the re-grant,
+        /// not zero.** The live event's was 3%: the reporting gap had already
+        /// been burned through by the time anything reported again.
+        public var percent: Double
+        /// How many re-grants were observed in this window — at least 1.
+        ///
+        /// 🔴 Present so the row never claims there was exactly one. `at` and
+        /// `percent` describe the LAST of them, because `finalPercent` is the
+        /// climb since that one and only the last pairs with it to describe a
+        /// single stretch of the week. Without this count a two-re-grant week
+        /// would read as a one-re-grant week, and a window row is written once.
+        ///
+        /// "Observed" is the honest word: a re-grant whose next reading still
+        /// landed above the previous one leaves no drop to see, and this
+        /// archive labels what it knows rather than what it assumes — the same
+        /// rule as `CoverageRecord.truncated` and `verified`.
+        public var observed: Int
+
+        public init(at: Date, percent: Double, observed: Int) {
+            self.at = at
+            self.percent = percent
+            self.observed = observed
+        }
+    }
+
+    /// Set only when this window's readings show the allowance being re-granted
+    /// mid-window — Anthropic re-issuing it without moving `resets_at`.
     ///
-    /// ⚠️ Goes through `.iso8601` like every other instant here, so it comes
-    /// back up to a second earlier than it went out. Nothing compares it to
-    /// another instant today, and a second cannot move which day it fell on —
-    /// but anything that ever matches it against a tracking entry's `at` must
-    /// use `WindowLedger.sameResetTolerance`, not equality.
-    public var regrantedAt: Date?
-    /// The reading at `regrantedAt` — **the first figure seen after the
-    /// re-grant, not zero.** The live event's was 3%: the capture gap had
-    /// already been burned through by the time anything reported again.
-    public var percentAtRegrant: Double?
-    /// How many re-grants were OBSERVED in this window, when any were.
+    /// 🔴 **The optional IS the discriminator**, the idiom
+    /// `RateLimitHighWater.Mark.regrant` and `Snapshot.regrant` already use.
+    /// Three independent optionals were the first shape here, and they could
+    /// spell `observed: 2` with no instant: `windows.jsonl` is append-only and
+    /// `decodeLines` keeps any line that decodes, so an invariant enforced only
+    /// at the one construction site is an invariant the ARCHIVE does not have.
+    /// Nested, a half-written annotation cannot be written down at all.
     ///
-    /// 🔴 Present so the row never claims there was exactly one.
-    /// `regrantedAt` records the LAST of them — `finalPercent` is the climb
-    /// since that one, so the pair describes a single stretch of the week only
-    /// if it is the last. Without this count a two-re-grant week would report
-    /// as a one-re-grant week, and a window row is written once.
-    ///
-    /// "Observed" is the honest word: a re-grant whose next reading still
-    /// landed above the previous one leaves no drop to see, and this archive
-    /// labels what it knows rather than what it assumes — the same rule as
-    /// `CoverageRecord.truncated` and `verified`.
-    ///
-    /// nil rather than 0 when there was none, so the three annotation fields
-    /// are set together or not at all and no ordinary week grows three keys.
-    public var regrantsObserved: Int?
+    /// Absent from every row written before this existed, and absent from every
+    /// ordinary week after it — an absent key decodes to nil, so old rows load
+    /// unchanged and nothing grows a key it has nothing to say with.
+    public var regrant: RegrantAnnotation?
 
     public init(start: Date, end: Date, counts: TokenCounts, finalPercent: Double?,
                 finalPercentAt: Date?, finalPercentSource: String?,
                 boundsSource: BoundsSource, observedResetsAt: Date?,
-                regrantedAt: Date? = nil, percentAtRegrant: Double? = nil,
-                regrantsObserved: Int? = nil) {
+                regrant: RegrantAnnotation? = nil) {
         self.start = start
         self.end = end
         self.input = counts.input
@@ -120,9 +145,7 @@ public struct WindowRow: Equatable, Sendable, Codable {
         self.finalPercentSource = finalPercentSource
         self.boundsSource = boundsSource
         self.observedResetsAt = observedResetsAt
-        self.regrantedAt = regrantedAt
-        self.percentAtRegrant = percentAtRegrant
-        self.regrantsObserved = regrantsObserved
+        self.regrant = regrant
     }
 
     public var counts: TokenCounts {

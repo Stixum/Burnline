@@ -636,10 +636,16 @@ private func reading(_ percent: Double, at offset: TimeInterval,
     let start = Date(timeIntervalSince1970: Double(queryBase))
     let end = start.addingTimeInterval(sevenDays)
     let together: TimeInterval = 9_000
+    // ⚠️ The disagreeing source comes FIRST, and that is the whole test.
+    // Listed in ascending order this fixture passes with or without the
+    // tie-break — the sort has nothing to reorder — so it could not fail for
+    // the defect the paragraph above describes. Written adversarially, an
+    // ordering by instant alone leaves 41 → 13 adjacent and fabricates a
+    // 28-point re-grant.
     let entries = [
+        reading(41, at: together, from: start),         // a disagreeing source
         reading(13, at: together, from: start),
         reading(13, at: together, from: start),         // an exact duplicate
-        reading(41, at: together, from: start),         // a disagreeing source
         reading(45, at: together + 3_600, from: start),
     ]
 

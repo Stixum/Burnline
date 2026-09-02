@@ -310,7 +310,7 @@ public enum HistoryQuery {
         public let percent: Double
         /// When it was observed. Carried so a hover label can name the instant
         /// without converting a fraction back to a date in a view body, and so
-        /// a caller can match a point against a `WindowRow.regrantedAt`.
+        /// a caller can match a point against a `WindowRow.regrant`.
         public let at: Date
 
         /// Which allowance this reading measures. 0 is the one the window
@@ -449,25 +449,17 @@ public enum HistoryQuery {
         // the next edit to the filter must not silently make it load-bearing.
         guard duration > 0 else { return PercentSeries(points: [], regrants: []) }
 
-        // Containment of the INSTANT in [start, end) — the rule `WindowLedger`
-        // matches an entry to a window by, and deliberately not the
-        // bucket-ownership rule the unit queries share. A tracking entry is an
-        // observation at an instant, not a fifteen-minute bucket, and rounding
-        // one to a bucket would walk readings across a boundary.
+        // 🔴 Containment, ordering and the same-instant tie-break come from
+        // `WindowLedger`, which owns them for both callers — this curve and the
+        // `WindowRow.regrant` annotation describe ONE event and may never
+        // disagree about whether it happened. They did, while each end kept its
+        // own copy: the ledger's descending-then-reversed order inverted a
+        // same-instant pair that this ascending one read correctly.
         //
         // 🔴 Per window, never across the series: the ordinary weekly reset is
         // an 87 → 4 drop, so a walk over the whole file would read almost every
-        // week as re-granted.
-        //
-        // Sorted by instant because the archive's own order is not a guarantee;
-        // ties break on ASCENDING percent, which makes the order total (and so
-        // the series deterministic, which `sort` does not otherwise promise) and
-        // means a transition within one instant is never downward. Two readings
-        // dated to the same instant are two sources describing one moment, not
-        // an event between two moments, and must never open an allowance.
-        let contained = tracking
-            .filter { $0.at >= start && $0.at < end }
-            .sorted { $0.at == $1.at ? $0.percent < $1.percent : $0.at < $1.at }
+        // week as re-granted. `contained` is what confines it.
+        let contained = WindowLedger.contained(tracking, from: start, to: end)
         guard !contained.isEmpty else { return PercentSeries(points: [], regrants: []) }
 
         let origin = start.timeIntervalSince1970
@@ -484,14 +476,12 @@ public enum HistoryQuery {
         // the per-point flag and the marker list — so they cannot drift apart.
         for (index, entry) in contained.enumerated() {
             let previous = index > 0 ? contained[index - 1] : nil
-            // 🔴 The threshold is `RateLimitHighWater.materialDropPoints`, read
-            // from there and restated nowhere. `WindowLedger.regrantObservations`
-            // annotates the archived row from the same rule over the same
-            // entries; the row and this curve describe one event and must never
-            // disagree about whether it happened. Materiality is on the
-            // ADJACENT drop, as it is in the live path.
+            // 🔴 The rule itself is `WindowLedger.isMaterialDrop`, restated
+            // nowhere. `WindowLedger.regrantObservations` annotates the
+            // archived row by walking the same predicate over the same series,
+            // so the row's count and this curve's marker count cannot drift.
             let opensAllowance = previous.map {
-                $0.percent - entry.percent >= RateLimitHighWater.materialDropPoints
+                WindowLedger.isMaterialDrop(from: $0, to: entry)
             } ?? false
 
             if opensAllowance, let previous {
