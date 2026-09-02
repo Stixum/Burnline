@@ -36,6 +36,25 @@ public enum DisplayValue {
         whole(value, ceiling: 100 * 365 * 86_400)
     }
 
+    /// `1 point`, `12 points` — the delta, with its noun agreeing with it.
+    ///
+    /// Four surfaces print this figure (the popover hero, the menu bar
+    /// accessibility label, the behind-pace notification body and the Settings
+    /// stepper) and all four read `1 points` at the one value a user is most
+    /// likely to sit on, since the delta crosses ±1 every few minutes. Rounding
+    /// happens here rather than at the call site, so the noun agrees with the
+    /// number actually displayed rather than with the unrounded double.
+    public static func points(_ value: Double) -> String {
+        "\(whole(value)) \(pointsUnit(value))"
+    }
+
+    /// Just the noun, for the one surface that renders the figure separately:
+    /// the popover hero sets the number at 34pt and the words at 12pt, so it
+    /// cannot use a single string — but it must not disagree about the plural.
+    public static func pointsUnit(_ value: Double) -> String {
+        abs(whole(value)) == 1 ? "point" : "points"
+    }
+
     /// Like `whole`, but floors. 42.99% is not 43% of the way through anything.
     ///
     /// Clamps before converting for the same reason `whole` does: `Int(Double)`

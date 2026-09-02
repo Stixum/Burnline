@@ -446,11 +446,15 @@ final class UsageStore {
             wiringError = nil
         } catch {
             // A settings.json we cannot parse is the user's to fix, and we must
-            // not offer to overwrite it. Reported as a conflict so the
-            // automatic button stays hidden, plus an explicit error so the
-            // window can say what actually went wrong.
-            wiringState = .conflict(command: "")
-            wiringError = "~/.claude/settings.json could not be read: \(error.localizedDescription)"
+            // not offer to overwrite it — `.unreadable` is not automatically
+            // fixable, same as `.conflict`.
+            //
+            // 🔴 It is NOT reported as a conflict, which is what it used to be.
+            // That kept the automatic button hidden and told the user, in two
+            // windows, that they already had somebody else's status line — a
+            // claim about the contents of a file nothing had read.
+            wiringState = .unreadable
+            wiringError = "Could not read ~/.claude/settings.json: \(error.localizedDescription)"
         }
     }
 

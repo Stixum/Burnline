@@ -42,6 +42,50 @@ import Foundation
     #expect(DisplayValue.whole(1e308, ceiling: .nan) == Int(DisplayValue.percentCeiling))
 }
 
+// MARK: - Pluralised points
+
+/// The defect this exists to remove: the delta crosses ±1 constantly, so `1
+/// points` is not an edge case, it is the value a user sees most often after 0.
+@Test func oneIsSingularAndEverythingElseIsPlural() {
+    #expect(DisplayValue.points(1) == "1 point")
+    #expect(DisplayValue.points(0) == "0 points")
+    #expect(DisplayValue.points(2) == "2 points")
+    #expect(DisplayValue.points(12) == "12 points")
+}
+
+/// Rounding happens inside, so the noun agrees with the number on screen rather
+/// than with the double behind it. `1.4` prints as `1`, and `1 points` would be
+/// the same defect one decimal place further down.
+@Test func thePluralFollowsTheRoundedFigureNotTheRawOne() {
+    #expect(DisplayValue.points(1.4) == "1 point")
+    #expect(DisplayValue.points(0.6) == "1 point")
+    #expect(DisplayValue.points(1.5) == "2 points")
+}
+
+/// Magnitude, not sign. No current caller passes a negative — every one takes
+/// an absolute value or a positive threshold first — but `-1 points` would be
+/// the same grammatical error, and this type's job is to never produce one.
+@Test func aSingleNegativePointIsStillSingular() {
+    #expect(DisplayValue.points(-1) == "-1 point")
+    #expect(DisplayValue.points(-2) == "-2 points")
+}
+
+/// Same saturation rule as `whole`, since this is `whole` with a noun on it: a
+/// figure descending from JSON on disk must never trap.
+@Test func pointsSaturateRatherThanTrapping() {
+    #expect(DisplayValue.points(.nan) == "0 points")
+    #expect(DisplayValue.points(.infinity) == "\(Int(DisplayValue.percentCeiling)) points")
+}
+
+/// The popover hero renders the number at 34pt and the noun at 12pt, so it
+/// takes the noun alone — and must not be able to disagree with `points`.
+@Test func theBareUnitAgreesWithTheFullString() {
+    for value in [0.0, 0.6, 1, 1.4, 2, 12, -1, .nan, .infinity] {
+        #expect(DisplayValue.points(value)
+                == "\(DisplayValue.whole(value)) \(DisplayValue.pointsUnit(value))")
+    }
+}
+
 // MARK: - Flooring conversion
 
 /// `floor` exists for percentages, where 42.99% must read as "42%" — rounding

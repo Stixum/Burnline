@@ -41,6 +41,15 @@ public struct UsageUtilization: Sendable, Decodable {
         /// Assembled here like `FiveHourStatus.rowValue`, so no view body does
         /// formatting of its own.
         public var rowValue: String { "\(DisplayValue.whole(percent))%" }
+
+        /// The popover row's label.
+        ///
+        /// The model name alone was the label, sitting in a column of rows
+        /// whose labels name a *period* — `Day`, `Resets`, `Time left`,
+        /// `5-hour` — so a bare `Opus` read as a heading rather than as a
+        /// limit, and the row said nothing about which limit or over what
+        /// span. The period is the missing word.
+        public var rowLabel: String { "\(modelName) weekly" }
     }
 
     public let fetchedAt: TimeInterval

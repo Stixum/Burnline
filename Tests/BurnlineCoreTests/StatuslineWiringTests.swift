@@ -64,6 +64,43 @@ private let helper = "/Applications/Burnline.app/Contents/MacOS/burnline-statusl
     #expect(StatuslineWiring.State.stalePath(current: "/x").isAutomaticallyFixable)
     #expect(!StatuslineWiring.State.configured.isAutomaticallyFixable)
     #expect(!StatuslineWiring.State.conflict(command: "/x").isAutomaticallyFixable)
+    // The one property `.unreadable` shares with `.conflict`, and the reason it
+    // was borrowed from it for so long: Burnline must not write to this file.
+    #expect(!StatuslineWiring.State.unreadable.isAutomaticallyFixable)
+}
+
+// --- what each state is called ---
+
+/// 🔴 The defect `.unreadable` was added for. A file that could not be parsed
+/// was reported as `.conflict`, so both windows announced somebody else's status
+/// line over a file whose contents nothing had read. The two states must not be
+/// able to say the same thing.
+@Test func anUnreadableSettingsFileIsNotDescribedAsSomebodyElsesStatusLine() {
+    let unreadable = StatuslineWiring.State.unreadable.title
+    #expect(unreadable == "Settings file could not be read")
+    #expect(unreadable != StatuslineWiring.State.conflict(command: "").title)
+}
+
+/// Settings and Onboarding both render `title`, so a state that described itself
+/// two ways would put the app's own name for it in doubt.
+@Test func everyStateHasItsOwnWording() {
+    let states: [StatuslineWiring.State] = [
+        .noSettingsFile, .notConfigured, .configured,
+        .stalePath(current: "/x"), .conflict(command: "/x"), .unreadable
+    ]
+    let titles = states.map(\.title)
+    #expect(titles.allSatisfy { !$0.isEmpty })
+    // `noSettingsFile` and `notConfigured` are deliberately the same words —
+    // "no file" and "a file with no statusLine key" are one thing to a reader.
+    #expect(Set(titles).count == states.count - 1)
+    #expect(StatuslineWiring.State.noSettingsFile.title
+            == StatuslineWiring.State.notConfigured.title)
+}
+
+/// The wiring state is what the "Set up" affordance keys off, so `configured`
+/// has to read as *done* rather than as another instruction.
+@Test func theConfiguredStateReadsAsFinished() {
+    #expect(StatuslineWiring.State.configured.title == "Connected")
 }
 
 // --- the merge itself ---

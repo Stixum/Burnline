@@ -22,12 +22,47 @@ public enum StatuslineWiring {
         /// Someone else's statusline. **Burnline does not win this.** The user
         /// is shown their own command and the snippet, and decides.
         case conflict(command: String)
+        /// A settings file that exists and cannot be parsed. **Not a conflict.**
+        ///
+        /// 🔴 This case exists because the app was telling the user something
+        /// false. `UsageStore` mapped a read failure to `.conflict(command: "")`
+        /// — a shape that reads as "someone else's status line is installed" —
+        /// so Settings said `Another status line configured` and Onboarding said
+        /// `You already have a status line`, over a file whose contents nothing
+        /// had managed to read. Both then offered the merge instruction, which
+        /// is advice about a status line that may not exist.
+        ///
+        /// It shares `conflict`'s one operational property — Burnline must not
+        /// write to this file — and nothing else, which is exactly why it could
+        /// not stay borrowed from it.
+        case unreadable
 
         /// Whether "Set up automatically" should be offered.
         public var isAutomaticallyFixable: Bool {
             switch self {
             case .noSettingsFile, .notConfigured, .stalePath: true
-            case .configured, .conflict: false
+            case .configured, .conflict, .unreadable: false
+            }
+        }
+
+        /// The state in words, for both surfaces that report it.
+        ///
+        /// Settings and Onboarding described the same five states in different
+        /// words — `Not set up` against `Not set up yet`, `Another status line
+        /// configured` against `You already have a status line` — which reads as
+        /// two features rather than two views of one. The wording here is
+        /// Onboarding's, because that is where a user meets these states first
+        /// and with the most explanation around them.
+        ///
+        /// Words only. Icon and colour stay in the views: they are presentation,
+        /// and status in this app is never carried by colour alone anyway.
+        public var title: String {
+            switch self {
+            case .configured: "Connected"
+            case .noSettingsFile, .notConfigured: "Not set up yet"
+            case .stalePath: "Set up for a different copy"
+            case .conflict: "You already have a status line"
+            case .unreadable: "Settings file could not be read"
             }
         }
     }

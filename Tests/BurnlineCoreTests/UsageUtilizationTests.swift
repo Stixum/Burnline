@@ -162,6 +162,26 @@ private func utilizationCapture(_ percent: Double, fetchedAt: TimeInterval) thro
     #expect(snapshot.scopedWeekly?.rowValue == "2%")
 }
 
+/// 🔴 The row's label was the bare model name, in a column whose other labels
+/// all name a period — `Day`, `Resets`, `Time left`, `5-hour`. `Fable` sitting
+/// among those reads as a heading, and says nothing about which limit or over
+/// what span. The period is the missing word, and it is assembled here because
+/// no view body in this codebase formats.
+@Test func theScopedRowNamesThePeriodAsWellAsTheModel() throws {
+    let scoped = try #require(try decodeUtilization(realUtilization).scopedWeekly)
+
+    #expect(scoped.rowLabel == "Fable weekly")
+}
+
+/// The label is derived from the reported name, never from a table of models
+/// this app would then have to keep current.
+@Test func theScopedRowLabelFollowsWhateverModelWasReported() {
+    let limit = UsageUtilization.ScopedLimit(percent: 12, severity: "normal",
+                                             modelName: "Opus")
+
+    #expect(limit.rowLabel == "Opus weekly")
+}
+
 /// Absent on plans that don't report one, so the row must simply not render.
 @Test func noScopedLimitMeansNoRow() {
     let snapshot = SnapshotBuilder.build(cache: ScanCache(), settings: .default,

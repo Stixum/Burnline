@@ -68,6 +68,25 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
             "said \(DisplayValue.whole(reportedPercent))%, kept \(DisplayValue.whole(usingPercent))%"
         }
 
+        /// The popover row's label, which has to branch for the same reason
+        /// `explanation` does.
+        ///
+        /// 🔴 **`Stale session` was unconditional and is wrong on two of the
+        /// three branches.** `explanation`'s own note says a re-grant refusal
+        /// covers a candidate with *no proven date at all* — the shared file
+        /// with no `session_id`, the rollback script, an older build — and that
+        /// reading "may be perfectly live". Labelling its session stale states
+        /// as fact the one thing this type explicitly cannot check.
+        ///
+        /// Only the earlier-window branch names a fact about time, and it is
+        /// the one branch that has checked one: `isFromAnEarlierWindow` is
+        /// computed from the two reset instants. Everything else says what
+        /// actually happened — the reading was ignored — and leaves the reason
+        /// to the tooltip, which has room for it.
+        public var rowLabel: String {
+            isFromAnEarlierWindow ? "Earlier window" : "Reading ignored"
+        }
+
         /// Why the two figures differ — for the reason they actually differ.
         ///
         /// ⚠️ The popover used to state one reason unconditionally: "usage

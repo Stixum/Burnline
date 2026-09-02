@@ -454,20 +454,31 @@ struct SettingsView: View {
     }
 
     /// Word and icon, never colour alone.
+    ///
+    /// The words are `StatuslineWiring.State.title`, shared with Onboarding —
+    /// two views of one state should not describe it two ways. Only the icon and
+    /// the tint are decided here, because those are presentation.
     @ViewBuilder private var statuslineStateLabel: some View {
+        let state = store.wiringState
+        Label(state.title, systemImage: statuslineStateIcon)
+            .font(.system(size: 11.5))
+            .foregroundStyle(statuslineStateTint)
+    }
+
+    private var statuslineStateIcon: String {
         switch store.wiringState {
-        case .configured:
-            Label("Connected", systemImage: "checkmark.circle.fill")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.success)
-        case .noSettingsFile, .notConfigured:
-            Label("Not set up", systemImage: "circle.dashed")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.textMuted)
-        case .stalePath:
-            Label("Configured for a different copy", systemImage: "arrow.triangle.2.circlepath")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.warning)
-        case .conflict:
-            Label("Another status line configured", systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.warning)
+        case .configured: "checkmark.circle.fill"
+        case .noSettingsFile, .notConfigured: "circle.dashed"
+        case .stalePath: "arrow.triangle.2.circlepath"
+        case .conflict, .unreadable: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var statuslineStateTint: Color {
+        switch store.wiringState {
+        case .configured: Theme.success
+        case .noSettingsFile, .notConfigured: Theme.textMuted
+        case .stalePath, .conflict, .unreadable: Theme.warning
         }
     }
 

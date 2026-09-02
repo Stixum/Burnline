@@ -60,29 +60,39 @@ struct OnboardingView: View {
             switch store.wiringState {
             case .configured:
                 statusRow(icon: "checkmark.circle.fill", tint: Theme.success,
-                          title: "Connected",
+                          state: store.wiringState,
                           detail: "Claude Code is reporting usage after every response.")
                 captureAgeRow
 
             case .noSettingsFile, .notConfigured:
                 statusRow(icon: "circle.dashed", tint: Theme.textMuted,
-                          title: "Not set up yet",
+                          state: store.wiringState,
                           detail: "Adds a status line to your Claude Code settings.")
                 setUpButton("Set up automatically")
 
             case .stalePath(let current):
                 statusRow(icon: "arrow.triangle.2.circlepath", tint: Theme.warning,
-                          title: "Configured for a different copy",
+                          state: store.wiringState,
                           detail: "Your settings name a copy of Burnline other than this one.")
                 monospacedBox(current)
                 setUpButton("Update it")
 
             case .conflict(let command):
                 statusRow(icon: "exclamationmark.triangle.fill", tint: Theme.warning,
-                          title: "You already have a status line",
+                          state: store.wiringState,
                           detail: "Burnline will not replace it. Merge the snippet below into "
                                 + "your own, and both keep working.")
                 if !command.isEmpty { monospacedBox(command) }
+
+            // 🔴 No merge instruction and no snippet. Nothing has read this
+            // file, so there is no status line to merge with — and the advice
+            // that fits a conflict is advice about a claim we cannot make. The
+            // error row beneath this one carries the parser's own message.
+            case .unreadable:
+                statusRow(icon: "exclamationmark.triangle.fill", tint: Theme.warning,
+                          state: store.wiringState,
+                          detail: "Burnline will not change a file it cannot parse. "
+                                + "Fix the JSON and reopen this window.")
             }
         }
         .padding(14)
@@ -92,6 +102,14 @@ struct OnboardingView: View {
     }
 
     /// Status carries an icon and words as well as colour — never colour alone.
+    ///
+    /// The title comes from the state itself, not from the call site: Settings
+    /// reports the same five states and the two used to word them differently.
+    private func statusRow(icon: String, tint: Color,
+                           state: StatuslineWiring.State, detail: String) -> some View {
+        statusRow(icon: icon, tint: tint, title: state.title, detail: detail)
+    }
+
     private func statusRow(icon: String, tint: Color, title: String, detail: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon).foregroundStyle(tint).font(.system(size: 14))

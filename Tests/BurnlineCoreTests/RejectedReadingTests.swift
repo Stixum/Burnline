@@ -49,6 +49,36 @@ private func reading(_ percent: Double, at capturedAt: TimeInterval) -> RateLimi
     #expect(rejected?.rowValue == "said 69%, kept 74%")
 }
 
+/// 🔴 The label branches for the same reason `explanation` does. `Stale session`
+/// was unconditional, and `explanation`'s own note says the re-grant branch fires
+/// for a candidate with no proven date at all — a reading that "may be perfectly
+/// live". The row was stating as fact the one thing this type cannot check.
+@Test func onlyTheBranchThatCheckedADateIsAllowedToNameOne() {
+    let regrant = RateLimitHighWater.RejectedReading(reportedPercent: 51, usingPercent: 7)
+    let idleSession = RateLimitHighWater.RejectedReading(reportedPercent: 69, usingPercent: 74)
+    let earlier = RateLimitHighWater.RejectedReading(reportedPercent: 51, usingPercent: 3,
+                                                     isFromAnEarlierWindow: true)
+
+    #expect(earlier.rowLabel == "Earlier window")
+    #expect(regrant.rowLabel == "Reading ignored")
+    #expect(idleSession.rowLabel == "Reading ignored")
+}
+
+/// The specific wording that had to go: neither undated branch may call the
+/// other session stale, in either direction the figures can move.
+@Test func noRowLabelCallsAnUndatedSessionStale() {
+    let readings = [
+        RateLimitHighWater.RejectedReading(reportedPercent: 51, usingPercent: 7),
+        RateLimitHighWater.RejectedReading(reportedPercent: 69, usingPercent: 74),
+        RateLimitHighWater.RejectedReading(reportedPercent: 51, usingPercent: 3,
+                                           isFromAnEarlierWindow: true)
+    ]
+    for reading in readings {
+        #expect(!reading.rowLabel.lowercased().contains("stale"))
+        #expect(!reading.rowLabel.isEmpty)
+    }
+}
+
 /// End to end through the real reconcile, which is how the app produces the two
 /// values — not two hand-built captures that happen to differ.
 @Test func reconcilingAStaleSessionProducesAReportableRejection() {
