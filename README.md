@@ -27,6 +27,8 @@ Click the chart icon in the popover for past weeks: totals week over week, this 
 
 Burnline builds this from the transcripts Claude Code still has, once, on first launch — about twenty seconds. **It keeps them, which matters, because Claude Code deletes its own transcripts after 30 days.** From then on it records each week as it closes.
 
+**The curves toggle between Units and Percent, and the two know different things.** Units are counted from this Mac's transcripts: every retained week, and they never fall, so a re-grant leaves no mark on them. Percent is Anthropic's figure: every machine, but flat wherever nothing reported. A re-grant shows only in Percent. The line breaks rather than plunging, a ring marks the first reading after it, and a band spans the stretch it is known to lie in.
+
 Two honest limits worth knowing:
 
 - **Anthropic's figure is recorded from the day you install this, not before.** Earlier weeks show Burnline's own unit total instead, marked "not recorded" — the real figure for a week that has already closed exists nowhere on your Mac and cannot be reconstructed.
@@ -90,6 +92,16 @@ Between readings it extrapolates from token counts in `~/.claude/projects/**/*.j
 
 Every real reading is account-wide and corrects for all of it. Only the forward guess is blind, and past an hour the popover says "Extrapolated" instead of "Live".
 
+## Re-grants
+
+**Anthropic sometimes re-grants the weekly limit mid-window, without moving the reset.** Seen 2026-09-01: 51% to 0%, same reset. Burnline used to read a falling figure as a stale session and freeze for days.
+
+It now believes a lower reading when its date is proven later than the one it replaces, by an explicit `fetchedAtMs` or the exact transcript turn that minted it. An inferred date still cannot.
+
+A drop of two points or more opens a new allowance. The **At this rate** row, which projects where the week lands, is measured from it and becomes **Rate since re-grant**. **The pace target does not move**, because the window did not. The popover says **Limits re-granted**, and the week's row in History reads `Re-granted day 4, opened at 3%`.
+
+**The instant itself is unrecoverable.** It fell between two readings, and the popover dates it to the later one.
+
 ## What it reads
 
 Local files. No credentials, no telemetry, and no usage data ever leaves your Mac. The only request Burnline makes on its own is an update check against GitHub — no system profile is sent with it (`SUSendProfileInfo` is explicitly false).
@@ -149,7 +161,7 @@ Everything funnels through **`SnapshotBuilder`**, which builds the one immutable
 
 - `WindowMath`: reset schedule plus now, into window bounds and elapsed fraction. The half that cannot be wrong.
 - `TranscriptScanner`: walks `~/.claude/projects` incrementally. `ConsumptionModel` weights the result.
-- `RateLimitHighWater`: picks which reading to trust when sources disagree, which they routinely do.
+- `RateLimitHighWater`: picks which reading to trust when sources disagree, which they routinely do, and decides whether a falling figure is a re-grant or a replay.
 - `UsagePoller`: the only thing that starts a process. It and the Sparkle update check are the only routes to the network.
 
 Two rules worth knowing before you change anything:
