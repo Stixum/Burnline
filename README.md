@@ -11,7 +11,7 @@ A macOS menu bar app that shows where you *should* be in your Claude weekly usag
 64/65
 ```
 
-64% used, 65% of the week gone. One point ahead of pace.
+64% used, 65% of the week gone. One point ahead of pace. Settings can put the delta, the projection or the 5-hour figure there instead.
 
 <img src="docs/images/popover.png" alt="Burnline popover: 0 points ahead of pace, running cool, with a usage bar showing 84% used against an 85% end-of-day target" width="300">
 
@@ -52,7 +52,7 @@ Local files. No credentials, no telemetry, and no usage data ever leaves your Ma
 | `~/.claude.json` | read | **One field**, `cachedUsageUtilization` |
 | `~/.claude/settings.json` | read, and write on your click | The status line, backed up first |
 
-`~/.claude.json` also lists every project path on your machine. Burnline keeps nothing from it except that one field.
+From the transcripts it keeps each response's timestamp, model, token counts and project directory, never the message text. `~/.claude.json` also lists every project path on your machine; Burnline keeps nothing from it except that one field.
 
 **Unsandboxed, on purpose.** `~/.claude` is a home dotfolder, not a TCC-protected location like Documents. An unsandboxed app reads it with no prompt and no Full Disk Access. Sandboxing would cut off the only data source.
 
@@ -85,12 +85,12 @@ Claude Code then reports usage after every response. Skip it and the figure goes
 1. **Live.** Anthropic's figure and the real reset time, from whichever is fresher:
    - the [status line](https://code.claude.com/docs/en/statusline), which fires after every response
    - `~/.claude.json`, which also carries the per-model weekly limit
-2. **Calibrated.** No reading available, but you've typed `/usage` numbers in by hand.
+2. **Calibrated.** No reading available, but you've typed `/usage` numbers into **Calibrate** in the popover.
 3. **Pace only.** Neither. The clock target on its own, which is still useful.
 
 Between readings it extrapolates from token counts in `~/.claude/projects/**/*.jsonl`. Those see **only Claude Code on this Mac**. Browser sessions, the desktop app, and your other machines are invisible to them.
 
-Every real reading is account-wide and corrects for all of it. Only the forward guess is blind, and past an hour the popover says "Extrapolated" instead of "Live".
+Every real reading is account-wide and corrects for all of it. Only the forward guess is blind, and past an hour the popover says "Extrapolated" instead of "Live" and the menu bar figure gains a `~`. A reading dies with its window: past the reset it describes a period that no longer exists, so it is discarded.
 
 ## Re-grants
 
@@ -127,7 +127,7 @@ It uses no message quota. `/usage` produces no assistant turn.
 
 **Decline all of them. It still works, and Burnline never wanted them.** Verified on a clean machine.
 
-Leave the setting off and the only network request left is the update check, which you can turn off too in Settings.
+The sessions it starts contact Anthropic. Leave the setting off and the only network request left is the update check.
 
 ## Notifications
 
@@ -155,6 +155,14 @@ SwiftPM, no Xcode project. Four targets:
 swift run BurnlineProbe
 ```
 
+**Running `BurnlineStatusline` writes the live capture file.** Redirect every Burnline data path first; `HOME` does nothing, because the directory resolves through `FileManager`, which ignores it.
+
+```bash
+BURNLINE_DATA_DIR=/tmp/burnline-test .build/debug/BurnlineStatusline < payload.json
+```
+
+The probe's first line says which directory is in play. `BURNLINE_OPEN_SETTINGS=1` and `BURNLINE_OPEN_HISTORY=1` open those windows at launch, which is how they get checked from a terminal.
+
 ### Where to start reading
 
 Everything funnels through **`SnapshotBuilder`**, which builds the one immutable `Snapshot` every view reads. The app and the probe both go through it, so start there and work outwards.
@@ -170,14 +178,6 @@ Two rules worth knowing before you change anything:
 - **Views do no arithmetic.** If a number needs computing it belongs in a pure unit with tests.
 
 The reasoning behind the non-obvious decisions lives in comments beside the code. A separate document drifts; a comment two lines up usually doesn't.
-
-## Known limitations
-
-Properties of the approach, not bugs.
-
-- **Between readings, only this Mac is visible.** A real reading corrects everything the moment it lands.
-- **Readings need Claude Code running.** An idle day freezes the anchor, and the popover says how old it is.
-- **A reading dies with its window.** Past the reset it describes a period that no longer exists, so it's discarded.
 
 ## License
 
