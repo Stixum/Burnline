@@ -799,6 +799,54 @@ private func reading(_ percent: Double, at offset: TimeInterval,
     #expect(series.points.filter(\.followsRegrant).map(\.at) == ledger.map(\.at))
 }
 
+@Test func theRowAndTheCurveAgreeOnAnAdversariallyOrderedSeries() {
+    // 🔴 THE seam test, and the one
+    // `theSeriesAndTheWindowLedgerAgreeOnWhatCountsAsAReGrant` above only
+    // looks like. That one polices the THRESHOLD: its fixture has distinct
+    // ascending instants, so whatever order the code produces is already the
+    // fixture's order and no ordering mutation can show — and it calls
+    // `regrantObservations` on a raw array, which that function's own
+    // precondition forbids, so it never reaches `writableRows` at all.
+    //
+    // This one runs the two PUBLIC entry points — the archived row and the
+    // drawn curve — over one array whose raw order is a lie: 41 then 13 at a
+    // single instant reads as a 28-point drop until the tie-break sorts them.
+    // Either side keeping its own ordering invents a re-grant the other never
+    // saw, and a row annotated "re-granted twice" above a curve that breaks
+    // once is worse than either alone. Verified against a descending-tie-break
+    // mutation planted inside `percentCurve` AND inside `writableRows`; both
+    // must fail this.
+    let start = Date(timeIntervalSince1970: Double(queryBase))
+    let end = start.addingTimeInterval(sevenDays)
+    let together: TimeInterval = 3_600
+    let entries = [
+        reading(41, at: together, from: start),         // a disagreeing source,
+        reading(13, at: together, from: start),         // one instant, listed first
+        reading(55, at: 7_200, from: start),
+        reading(6, at: 10_800, from: start),            // the one real re-grant
+    ]
+
+    let ledger = WindowLedger(anchor: start,
+                              schedule: ResetSchedule(weekday: 5, hour: 9, timeZone: .gmt))
+    let covered = Coverage(records: [CoverageRecord(from: queryBase,
+                                                   through: queryBase + Int(sevenDays),
+                                                   filledBy: "test")])
+    let rows = ledger.writableRows(coverage: covered, written: [], cells: [],
+                                   tracking: entries,
+                                   now: end.addingTimeInterval(3_600))
+    let series = HistoryQuery.percentCurve(tracking: entries, start: start, end: end)
+
+    // The fixture's premise: one order, one re-grant, on both sides.
+    #expect(rows.count == 1)
+    #expect(series.points.map(\.percent) == [13, 41, 55, 6])
+    #expect(rows.first?.regrant?.observed == 1)
+
+    // The agreement itself.
+    #expect(series.regrants.count == rows.first?.regrant?.observed)
+    #expect(series.points.filter(\.followsRegrant).last?.at == rows.first?.regrant?.at)
+    #expect(rows.first?.regrant?.percent == series.regrants.last?.percentAfter)
+}
+
 @Test func twoReGrantsInOneWindowOpenThreeAllowances() {
     // A window row records only the LAST re-grant plus a count, because a row
     // is one line; the series is not so constrained, and it is the only place a

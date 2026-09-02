@@ -3,6 +3,14 @@ import Foundation
 /// Decides which completed weekly windows are ready to be written as rows, and
 /// with what bounds, totals and provenance.
 ///
+/// **It also owns the re-grant rule** — see the MARK block below. Containment,
+/// the order a window's readings are walked in, and what counts as a material
+/// drop live here for every caller, not only for the rows this type writes:
+/// `HistoryQuery.percentCurve` draws its discontinuity from the same three.
+/// Both halves are questions about a window's bounds and the readings inside
+/// them, which is why they share a home; if a third caller ever appears, lift
+/// the MARK block into a `RegrantRule` namespace rather than copying it.
+///
 /// Pure: it reads inputs and returns rows. The caller does every byte of I/O.
 ///
 /// 🔴 **Bounds roll back from an observed reset, never from the stored
@@ -98,8 +106,10 @@ public struct WindowLedger: Sendable {
         // stable for the whole walk.
         for cursor in 1..<bounds.count {
             let start = bounds[cursor - 1]
-            let gridEnd = bounds[cursor]
-            var end = gridEnd
+            var end = bounds[cursor]
+            // Set with `end` below, and read once the guards have passed: the
+            // row's series has to be re-taken exactly when the bounds moved.
+            var substituted = false
 
             // Rule 3. An entry belongs to the window whose [start, end)
             // CONTAINS `at`. Windows are seven days and non-overlapping, so
@@ -122,6 +132,7 @@ public struct WindowLedger: Sendable {
                     // grid stays contiguous and non-overlapping.
                     end = newest.resetsAt
                     bounds[cursor] = end
+                    substituted = true
                     boundsSource = .observed
                     observedResetsAt = newest.resetsAt
                 }
@@ -159,13 +170,22 @@ public struct WindowLedger: Sendable {
             // shows no drop and goes unannotated. That is deliberate — an
             // omitted annotation costs a row a note, a guessed one is wrong
             // forever.
-            let window = end == gridEnd ? onTheGrid : Self.contained(tracking, from: start, to: end)
+            let window = substituted ? Self.contained(tracking, from: start, to: end) : onTheGrid
             let regrants = Self.regrantObservations(in: window)
 
             // Rule 4. Anthropic's own figure or nothing — never an estimate,
             // never a calibration. The newest of `window`, which is contained
             // by construction, so no substitution can strand it outside the
             // row that reports it.
+            //
+            // ⚠️ Under a same-instant pair this is "the HIGHER reading at the
+            // newest instant", not an arbitrary one of the two — that falls out
+            // of `contained`'s ascending-percent tie-break, and it is the
+            // deliberate answer: two sources describing one moment disagree,
+            // and the archive keeps the larger claim on the allowance rather
+            // than whichever line happened to be written first. Pinned by
+            // `twoReadingsAtOneInstantAreOneMomentNotAReGrant`; do not "fix"
+            // it to `first`.
             let entry = window.last
 
             rows.append(WindowRow(
@@ -255,6 +275,30 @@ public struct WindowLedger: Sendable {
         previous.percent - entry.percent >= RateLimitHighWater.materialDropPoints
     }
 
+    /// Positions in `entries` that FOLLOW a material drop, ascending — one per
+    /// re-grant. `entries` must be one window's own series as
+    /// `contained(_:from:to:)` returns it.
+    ///
+    /// 🔴 **The adjacency walk itself, and the last thing the two callers each
+    /// used to own.** The predicate and the ordering were already shared while
+    /// "for each adjacent pair" was still written twice, which left the row's
+    /// count and the curve's marker count derived independently — the same
+    /// shape as the divergence that made this a shared rule in the first place.
+    ///
+    /// Indices rather than entries because `percentCurve` needs the position:
+    /// it labels each point with the allowance it belongs to and reaches back
+    /// to the reading BEFORE the drop for its marker. `regrantObservations`
+    /// projects them for the caller that only wants the readings.
+    ///
+    /// **0 is never returned** — a drop needs a reading before it — so every
+    /// index here has a valid predecessor at `index - 1`.
+    static func regrantIndices(in entries: [TrackingEntry]) -> [Int] {
+        guard entries.count >= 2 else { return [] }
+        return (1..<entries.count).filter {
+            isMaterialDrop(from: entries[$0 - 1], to: entries[$0])
+        }
+    }
+
     /// The observations that FOLLOW a material drop, oldest first — one per
     /// re-grant seen in `entries`, which must be one window's own series as
     /// `contained(_:from:to:)` returns it.
@@ -262,10 +306,7 @@ public struct WindowLedger: Sendable {
     /// The returned entry is the one AFTER the drop: the reading before it is
     /// the last of the allowance that ended.
     static func regrantObservations(in entries: [TrackingEntry]) -> [TrackingEntry] {
-        guard entries.count >= 2 else { return [] }
-        return (1..<entries.count).compactMap { index in
-            isMaterialDrop(from: entries[index - 1], to: entries[index]) ? entries[index] : nil
-        }
+        regrantIndices(in: entries).map { entries[$0] }
     }
 
     /// True when a row already tells this window's days.
