@@ -23,23 +23,38 @@ enum HistoryRange: Hashable, Sendable {
     case newestWindow
 }
 
-/// One week's percentage readings, ready to draw.
+/// One week of cumulative units, ready to draw.
 ///
-/// A struct rather than the `(label:points:)` tuple `curves` uses, for two
-/// reasons: Swift does not synthesize `==` through a tuple (which is why
-/// `HistoryViewModel` hand-writes one), and this needs a third field the tuple
-/// shape has nowhere to put.
-struct HistoryPercentCurve: Equatable, Sendable {
-    /// Same text the units curve of this same week carries.
+/// Structs rather than the `(label:points:)` tuples this used to carry: Swift
+/// does not synthesize `==` through a tuple, which is why `HistoryViewModel`
+/// hand-wrote one, and both curves need a field the tuple shape had nowhere to
+/// put.
+struct HistoryUnitCurve: Equatable, Sendable {
     let label: String
 
-    /// 🔴 **Position in the recency ramp, NOT position in this array.**
+    /// 🔴 **The week's position in the recency ramp, carried from its
+    /// `HistoryOverlay.Slot` — NOT its position in this array.**
     ///
-    /// Colour encodes recency, and the percent series is sparser than the unit
-    /// one — a week can have cells and no readings, or readings and no cells.
-    /// Taking the colour from the array index would paint the newest *drawn*
-    /// series violet even when the live week is missing from it, which is the
-    /// encoding saying "this is now" about a week that is not.
+    /// Colouring by array position is a real defect, not a tidiness point: this
+    /// series omits the live window whenever it has one point or fewer, which is
+    /// the first quarter-hour after a reset and any time before the first scan
+    /// lands. At that moment array position 0 is the week *before*, and the ramp
+    /// paints it violet — the encoding saying "this is now" about a week that
+    /// ended.
+    let rampIndex: Int
+
+    let points: [HistoryQuery.CurvePoint]
+}
+
+/// One week's percentage readings, ready to draw.
+struct HistoryPercentCurve: Equatable, Sendable {
+    /// Same text the units curve of this same week carries — both come from one
+    /// `HistoryOverlay.Slot`, so the two modes cannot disagree about it.
+    let label: String
+
+    /// Same rule, same reason as `HistoryUnitCurve.rampIndex`, and the two
+    /// series drop *different* weeks: one can hold transcript cells and no
+    /// capture readings, or readings and no cells.
     let rampIndex: Int
 
     /// 🔴 `series.isEmpty` means NOT RECORDED, never a week at 0%. An empty
@@ -55,12 +70,12 @@ struct HistoryPercentCurve: Equatable, Sendable {
 /// pulled its own numbers would redo all of it on every redraw.
 struct HistoryViewModel: Equatable, Sendable {
     let scoreboard: [HistoryQuery.ScoreboardRow]
-    /// At most three, newest first. Colour encodes recency, so ORDER IS
-    /// MEANING here: index 0 is the most recent series shown.
-    let curves: [(label: String, points: [HistoryQuery.CurvePoint])]
-    /// The same weeks as `curves`, on the percent axis — but independently
-    /// filtered, because the two series have different absences. Newest first
-    /// among what is drawn; each entry carries its own ramp position.
+    /// At most three, newest first. ⚠️ Colour comes from each entry's
+    /// `rampIndex`, never from its position here — this array is filtered and
+    /// recency is not.
+    let curves: [HistoryUnitCurve]
+    /// The same slots as `curves`, on the percent axis — but independently
+    /// filtered, because the two series have different absences.
     let percentCurves: [HistoryPercentCurve]
     let breakdown: [HistoryQuery.BreakdownRow]
     let coverageBegins: Date?
@@ -71,10 +86,10 @@ struct HistoryViewModel: Equatable, Sendable {
     /// can be the default without the view knowing which window that is.
     let range: HistoryRange
 
-    /// The label the live window's curve carries. Not a date range: the current
-    /// window has no `WindowRow` — one is only written when a window closes —
-    /// and "this week" is what a reader is looking for anyway.
-    static let currentWeekLabel = "This week"
+    /// Forwards to the overlay rule, which is where the weeks and their ramp
+    /// positions are decided. Kept as a name here because it reads better at
+    /// the call sites that already had it.
+    static let currentWeekLabel = HistoryOverlay.currentWeekLabel
 
     /// True when Anthropic's own figure is missing from EVERY row.
     ///
@@ -101,21 +116,6 @@ struct HistoryViewModel: Equatable, Sendable {
     /// has data is the same class of wrong answer as reporting it over a
     /// running fill.
     var isEmpty: Bool { scoreboard.isEmpty && curves.isEmpty && percentCurves.isEmpty }
-
-    /// Written out because Swift does not synthesize `==` through a tuple.
-    static func == (lhs: HistoryViewModel, rhs: HistoryViewModel) -> Bool {
-        lhs.scoreboard == rhs.scoreboard
-            && lhs.breakdown == rhs.breakdown
-            && lhs.coverageBegins == rhs.coverageBegins
-            && lhs.hasGaps == rhs.hasGaps
-            && lhs.skippedLines == rhs.skippedLines
-            && lhs.range == rhs.range
-            && lhs.percentCurves == rhs.percentCurves
-            && lhs.curves.count == rhs.curves.count
-            && zip(lhs.curves, rhs.curves).allSatisfy {
-                $0.label == $1.label && $0.points == $1.points
-            }
-    }
 }
 
 /// Reads the archive off the main actor and hands back one view model.
@@ -176,6 +176,14 @@ actor HistoryLoader {
         let scoreboard = HistoryQuery.scoreboard(windows: archive.windows, cells: archive.cells,
                                                  coverage: archive.coverage, weights: weights)
 
+        // 🔴 ONE list of weeks, decided once, mapped over by both charts. The
+        // toggle's premise is that the two modes show the same weeks under the
+        // same labels in the same colours; while each built its own list from
+        // its own inputs, nothing enforced any of the three.
+        let slots = HistoryOverlay.slots(currentStart: currentWindow.start,
+                                         currentEnd: currentWindow.end,
+                                         windows: scoreboard.map(\.window))
+
         let resolved = resolve(range, windows: scoreboard.map(\.window))
         let breakdown = HistoryQuery.breakdown(
             cells: cells(for: resolved, in: archive), by: dimension,
@@ -186,10 +194,8 @@ actor HistoryLoader {
 
         return HistoryViewModel(
             scoreboard: scoreboard,
-            curves: curves(in: archive, scoreboard: scoreboard,
-                           currentWindow: currentWindow, weights: weights),
-            percentCurves: percentCurves(in: archive, scoreboard: scoreboard,
-                                         currentWindow: currentWindow),
+            curves: curves(in: archive, slots: slots, weights: weights),
+            percentCurves: percentCurves(in: archive, slots: slots),
             breakdown: breakdown,
             coverageBegins: archive.coverage.ranges.first
                 .map { Date(timeIntervalSince1970: Double($0.lowerBound)) },
@@ -201,40 +207,30 @@ actor HistoryLoader {
 
     // MARK: - Curves
 
-    /// The live window, then up to two completed windows before it.
+    /// Cumulative units for each overlaid week.
     ///
-    /// ⚠️ **Two priors, not three.** Colour encodes recency and the ramp's next
-    /// step measures 2.94:1 against the window background — under the 3:1 floor
-    /// for a mark, i.e. a line some readers cannot see at all.
+    /// ⚠️ **Which weeks, and which colour, is `HistoryOverlay`'s decision — not
+    /// this function's and not the chart's.** Both series map the same slots, so
+    /// a week is the same colour and the same name on both faces of the toggle.
     ///
     /// A series with nothing in it is omitted rather than drawn flat: an empty
     /// week and a week of no usage are different claims, and a flat line at zero
-    /// makes the second one.
-    private func curves(in archive: Archive, scoreboard: [HistoryQuery.ScoreboardRow],
-                        currentWindow: Window,
-                        weights: Weights) -> [(label: String, points: [HistoryQuery.CurvePoint])] {
-        var curves: [(label: String, points: [HistoryQuery.CurvePoint])] = []
-
-        let live = HistoryQuery.burnCurve(cells: archive.cells, start: currentWindow.start,
-                                          end: currentWindow.end, weights: weights)
-        if live.count > 1 {
-            curves.append((HistoryViewModel.currentWeekLabel,
-                           HistoryQuery.hourly(live, windowDuration: currentWindow.totalDuration)))
+    /// makes the second one. 🔴 The slot's `rampIndex` travels with the survivor
+    /// precisely because this filter runs — recency is not array position.
+    private func curves(in archive: Archive, slots: [HistoryOverlay.Slot],
+                        weights: Weights) -> [HistoryUnitCurve] {
+        slots.compactMap { slot in
+            let points = HistoryQuery.burnCurve(cells: archive.cells, start: slot.start,
+                                                end: slot.end, weights: weights)
+            guard points.count > 1 else { return nil }
+            let duration = slot.end.timeIntervalSince(slot.start)
+            return HistoryUnitCurve(
+                label: slot.label, rampIndex: slot.rampIndex,
+                points: HistoryQuery.hourly(points, windowDuration: duration))
         }
-
-        let priors = scoreboard.map(\.window).filter { $0.start < currentWindow.start }.prefix(2)
-        for window in priors {
-            let points = HistoryQuery.burnCurve(cells: archive.cells, start: window.start,
-                                                end: window.end, weights: weights)
-            guard points.count > 1 else { continue }
-            let duration = window.end.timeIntervalSince(window.start)
-            curves.append((HistoryLabels.windowRange(start: window.start, end: window.end),
-                           HistoryQuery.hourly(points, windowDuration: duration)))
-        }
-        return curves
     }
 
-    /// The same three weeks as `curves`, on the percent axis.
+    /// The same slots, on the percent axis.
     ///
     /// 🔴 **Not thinned.** `HistoryQuery.hourly` is the unit curve's thinner and
     /// must not be reused: it keeps the last point in each hour, and a re-grant
@@ -244,30 +240,18 @@ actor HistoryLoader {
     /// series is observation-driven rather than bucket-driven), so nothing is
     /// asking to be thinned in the first place.
     ///
-    /// A week with no readings is dropped rather than drawn flat, the same rule
-    /// `curves` follows and for a stronger reason: `PercentSeries.isEmpty` means
-    /// *not recorded*, and most archived weeks predate the retention fix — a
-    /// line at 0% would claim an untouched allowance for every one of them.
-    private func percentCurves(in archive: Archive, scoreboard: [HistoryQuery.ScoreboardRow],
-                               currentWindow: Window) -> [HistoryPercentCurve] {
-        // The live window first, then its priors — one ordered list, so the ramp
-        // index below is a week's RECENCY and not its luck in surviving the
-        // filter. Bounds rather than rows, because the live window has no
-        // `WindowRow`: one is written only when a window closes.
-        var weeks: [(label: String, start: Date, end: Date)] = [
-            (HistoryViewModel.currentWeekLabel, currentWindow.start, currentWindow.end),
-        ]
-        for window in scoreboard.map(\.window)
-            .filter({ $0.start < currentWindow.start }).prefix(2) {
-            weeks.append((HistoryLabels.windowRange(start: window.start, end: window.end),
-                          window.start, window.end))
-        }
-
-        return weeks.enumerated().compactMap { index, week in
+    /// A week with no readings is dropped rather than drawn flat, for a stronger
+    /// reason than the units filter: `PercentSeries.isEmpty` means *not
+    /// recorded*, and most archived weeks predate the retention fix — a line at
+    /// 0% would claim an untouched allowance for every one of them.
+    private func percentCurves(in archive: Archive,
+                               slots: [HistoryOverlay.Slot]) -> [HistoryPercentCurve] {
+        slots.compactMap { slot in
             let series = HistoryQuery.percentCurve(tracking: archive.tracking,
-                                                   start: week.start, end: week.end)
+                                                   start: slot.start, end: slot.end)
             guard !series.isEmpty else { return nil }
-            return HistoryPercentCurve(label: week.label, rampIndex: index, series: series)
+            return HistoryPercentCurve(label: slot.label, rampIndex: slot.rampIndex,
+                                       series: series)
         }
     }
 

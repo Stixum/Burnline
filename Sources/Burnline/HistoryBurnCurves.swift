@@ -12,7 +12,11 @@ import BurnlineCore
 /// in text: a legend and a label on the end of each line. Nothing here is
 /// distinguished by colour alone.
 struct HistoryBurnCurves: View {
-    let curves: [(label: String, points: [HistoryQuery.CurvePoint])]
+    /// Newest first among what is drawn. 🔴 Each entry carries its OWN ramp
+    /// position — this array is filtered (a week with one point or fewer is
+    /// omitted) and recency is not, so `enumerated()` is the wrong index. See
+    /// `HistoryOverlay`.
+    let curves: [HistoryUnitCurve]
     /// Where the live window is right now — the "you are here" line.
     let nowFraction: Double
 
@@ -56,9 +60,13 @@ struct HistoryBurnCurves: View {
     }
 
     private var endpoints: [Endpoint] {
-        curves.enumerated().compactMap { index, curve in
+        curves.compactMap { curve in
             guard let last = curve.points.last else { return nil }
-            return Endpoint(id: curve.label, color: Theme.curve(at: index),
+            // ⚠️ The slot's ramp position, never `enumerated()`. Colouring by
+            // array index paints the first prior week violet — "this is now" —
+            // for the first quarter-hour after a reset, when the live window
+            // has too few points to draw and is not in this array at all.
+            return Endpoint(id: curve.label, color: Theme.curve(at: curve.rampIndex),
                             fraction: last.elapsedFraction, units: last.units)
         }
     }
@@ -141,8 +149,12 @@ struct HistoryBurnCurves: View {
         // independently, and the entire point of the overlay is that they are
         // not — a curve above another curve has to mean more units.
         .chartXScale(domain: 0...1)
+        // ⚠️ Explicit range from each week's ramp position, never
+        // `prefix(count)`: `prefix` assumes the drawn array IS the recency
+        // order, which is exactly the assumption that fails when a week is
+        // filtered out of it.
         .chartForegroundStyleScale(domain: curves.map(\.label),
-                                   range: Array(Theme.curveRamp.prefix(curves.count)))
+                                   range: curves.map { Theme.curve(at: $0.rampIndex) })
         // Position first, visibility outermost. A single series is already
         // named by its direct label, and a one-entry legend is furniture.
         .chartLegend(position: .bottom, alignment: .leading, spacing: 10)
