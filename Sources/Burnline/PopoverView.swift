@@ -95,8 +95,15 @@ struct PopoverView: View {
         }
     }
 
+    /// ⚠️ Branches on the wiring state, because "usage appears after its next
+    /// response" is a promise only a configured status line can keep. Without a
+    /// status line no response ever produces a figure, and the panel sat there
+    /// waiting for something that was never coming.
     private var paceOnlyExplanation: String {
         if snapshot.isScanning { return "Scanning transcripts…" }
+        if store.wiringState != .configured {
+            return "No usage figure yet. Set up the status line, or run /usage in Claude Code."
+        }
         return "Waiting for Claude Code. Usage appears after its next response."
     }
 
@@ -170,7 +177,10 @@ struct PopoverView: View {
     private func rejectionRow(_ rejected: RateLimitHighWater.RejectedReading) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9))
-            Text("Stale session")
+            // ⚠️ `rejected.rowLabel`, not a literal. `Stale session` was
+            // unconditional across three branches, two of which have not
+            // checked a date — see `RejectedReading.rowLabel`.
+            Text(rejected.rowLabel)
             Spacer()
             Text(rejected.rowValue).monospacedDigit()
         }

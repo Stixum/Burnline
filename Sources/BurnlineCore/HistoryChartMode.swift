@@ -77,9 +77,13 @@ public enum HistoryChartMode: Hashable, CaseIterable, Sendable {
             return "Counts Claude Code on this Mac only; anything burned elsewhere is missing. "
                 + "Units never fall, so a mid-window re-grant leaves no mark here."
         case .percent:
-            return "Anthropic's own figure, so it counts every machine — but it is flat "
-                + "wherever nothing reported, and only weeks from this update forward have "
-                + "readings at all."
+            // ⚠️ "only recent weeks", never "from this update forward". The
+            // second is true on the day it ships and quietly false afterwards:
+            // a reader six months later has no idea which update, and the
+            // sentence describes a moment they were not present for. What they
+            // can check is which weeks have readings.
+            return "Anthropic's figure, so it counts every machine. It is flat wherever "
+                + "nothing reported, and only recent weeks have readings."
         }
     }
 
@@ -95,8 +99,12 @@ public enum HistoryChartMode: Hashable, CaseIterable, Sendable {
         case .units:
             return "Nothing archived for these weeks yet."
         case .percent:
-            return "No percentage readings for these weeks. Burnline keeps them from this "
-                + "update forward, so earlier weeks have none and cannot get any."
+            // Same rule as `caveat`: the permanence is the load-bearing half
+            // and it survives without dating itself to a release nobody
+            // remembers. `cannot` stays — a reader who thinks the data is
+            // still coming waits for something that can never arrive.
+            return "No percentage readings for these weeks. Burnline began keeping them "
+                + "recently; earlier weeks cannot get any."
         }
     }
 

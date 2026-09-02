@@ -81,7 +81,7 @@ public enum MenuBarFormatter {
             label = "Burnline: \(whole(estimated)) percent used, \(pace) percent \(frame), "
                 + "\(delta) points \(direction)"
         } else {
-            label = "Burnline: \(pace) percent \(frame), usage not yet calibrated"
+            label = "Burnline: \(pace) percent \(frame), no usage figure yet"
         }
 
         // A tilde is invisible to a screen reader, so the spoken label has to

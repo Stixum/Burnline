@@ -15,11 +15,31 @@ private func render(_ json: String) throws -> String {
      "rate_limits":{"seven_day":{"used_percentage":64.8,"resets_at":1786000000},
                     "five_hour":{"used_percentage":3.2,"resets_at":1785000000}}}
     """)
-    #expect(line == "Opus 5  ·  Burnline  ·  ctx 42%  ·  week 64%  ·  5h 3%  ·  $1.23")
+    #expect(line == "Opus 5  ·  Burnline  ·  ctx 43%  ·  week 65%  ·  5h 3%  ·  $1.23")
 }
 
-@Test func percentagesFloorRatherThanRound() throws {
-    #expect(try render(#"{"context_window":{"used_percentage":42.99}}"#) == "ctx 42%")
+/// ⚠️ **This test INVERTS the one it replaces**, kept in place the way
+/// `unchangedWeightsStillScanIncrementally` → `aWeightChangeNoLongerTriggersARescan`
+/// was, because the reasoning it overturns is what explains the change.
+///
+/// It used to be `percentagesFloorRatherThanRound`, asserting `42.99` → `ctx
+/// 42%`, and it was a faithful pin on a 1:1 port of the original jq filter. What
+/// it pinned was wrong in two ways at once: flooring understates usage, which is
+/// the unsafe direction for a budget tool, and it left the terminal a point below
+/// every figure the app itself shows — all of which round through
+/// `DisplayValue.whole`.
+@Test func percentagesRoundTheSameWayEverySurfaceOfTheAppDoes() throws {
+    #expect(try render(#"{"context_window":{"used_percentage":42.99}}"#) == "ctx 43%")
+    #expect(try render(#"{"context_window":{"used_percentage":42.4}}"#) == "ctx 42%")
+}
+
+/// The rule the inversion has to hold to: the terminal and the menu bar must not
+/// be able to name one figure two ways.
+@Test func theTerminalAgreesWithTheAppsOwnRounding() throws {
+    for value in [0.0, 3.2, 42.4, 42.99, 64.8, 99.5] {
+        let json = #"{"context_window":{"used_percentage":\#(value)}}"#
+        #expect(try render(json) == "ctx \(DisplayValue.whole(value))%")
+    }
 }
 
 @Test func directoryIsTheBasenameOnly() throws {

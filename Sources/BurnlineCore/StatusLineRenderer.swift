@@ -41,8 +41,23 @@ public enum StatusLineRenderer {
         return fields.isEmpty ? fallback : fields.joined(separator: separator)
     }
 
+    /// ⚠️ **Rounds, and used to floor.** This is the one string in the project
+    /// that renders in somebody's terminal on every response, so the change is
+    /// recorded rather than assumed obvious.
+    ///
+    /// Flooring understates usage — 64.8% printed as `week 64%` — and
+    /// understating is the unsafe direction for a budget tool: the error always
+    /// falls on the side of "you have more left than you do". It also put the
+    /// terminal a point below every surface of the app, which round through
+    /// `DisplayValue.whole`, and an app disagreeing with the terminal beside it
+    /// is a documented sore point on this project (CLAUDE.md, 2026-08-11). One
+    /// figure, one rounding rule.
+    ///
+    /// `floor` remains right for `money`, which is a different question: there
+    /// the value has already been rounded to two places and the floor only picks
+    /// the integer back out of it.
     private static func percent(_ value: Double) -> String {
-        "\(DisplayValue.floor(value))%"
+        "\(DisplayValue.whole(value))%"
     }
 
     /// Two decimal places with trailing zeros dropped, matching how jq prints

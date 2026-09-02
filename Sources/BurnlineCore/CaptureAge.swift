@@ -45,8 +45,13 @@ public enum CaptureAge {
         guard isStale(age), let age else { return nil }
         // `description` is phrased for a timestamp ("3h ago"); this is prose.
         let elapsed = description(age).replacingOccurrences(of: " ago", with: "")
+        // ⚠️ Not "only a terminal session". That was true when the capture was
+        // the single anchor, and the poller falsified it: Check now runs /usage
+        // in a brief session on demand, so the user has a remedy that does not
+        // involve going and doing some work first. The copy has to name it, or
+        // the row describes a wait rather than a choice.
         return "Carried forward for \(elapsed) from this Mac's token counts. "
-            + "Only a terminal session re-anchors it to Anthropic's own figure."
+            + "A terminal session or Check now re-anchors it to Anthropic's figure."
     }
 
     public static func description(_ age: TimeInterval?) -> String {

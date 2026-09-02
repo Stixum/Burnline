@@ -61,7 +61,7 @@ struct OnboardingView: View {
             case .configured:
                 statusRow(icon: "checkmark.circle.fill", tint: Theme.success,
                           state: store.wiringState,
-                          detail: "Claude Code is reporting usage after every response.")
+                          detail: "Claude Code reports usage after each response in a terminal session.")
                 captureAgeRow
 
             case .noSettingsFile, .notConfigured:
@@ -131,7 +131,7 @@ struct OnboardingView: View {
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(stale ? Theme.warning : Theme.textMuted)
         } else {
-            Text("No report yet. Send a message in Claude Code.")
+            Text("No report yet. Send a message in a terminal Claude Code session.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.textMuted)
         }
