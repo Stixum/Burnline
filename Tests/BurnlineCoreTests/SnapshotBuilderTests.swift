@@ -361,7 +361,7 @@ private let utc = TimeZone(identifier: "UTC")!
 @Test func theRegrantRowNamesTheInstantAndWhereTheAllowanceOpened() {
     let regrant = Snapshot.Regrant(startedAt: regrantInstant, startPercent: 0)
 
-    #expect(regrant.rowValue(in: utc) == "Mon 2:14 PM, was 0%")
+    #expect(regrant.rowValue(in: utc) == "Mon 2:14 PM, opened at 0%")
 }
 
 /// 🔴 The weekday is not decoration. An epoch can have opened days back inside a
@@ -370,7 +370,7 @@ private let utc = TimeZone(identifier: "UTC")!
     let regrant = Snapshot.Regrant(startedAt: regrantInstant.addingTimeInterval(-2 * 86_400),
                                    startPercent: 0)
 
-    #expect(regrant.rowValue(in: utc) == "Sat 2:14 PM, was 0%")
+    #expect(regrant.rowValue(in: utc) == "Sat 2:14 PM, opened at 0%")
 }
 
 /// The zone is honoured rather than ignored — the same instant, read on the
@@ -378,15 +378,15 @@ private let utc = TimeZone(identifier: "UTC")!
 @Test func theRegrantRowRendersOnTheGivenClock() {
     let regrant = Snapshot.Regrant(startedAt: regrantInstant, startPercent: 0)
 
-    #expect(regrant.rowValue(in: chicago) == "Mon 9:14 AM, was 0%")
+    #expect(regrant.rowValue(in: chicago) == "Mon 9:14 AM, opened at 0%")
 }
 
-/// `was 0%` is the ordinary case — the real 2026-09-01 event re-granted to zero
+/// `opened at 0%` is the ordinary case — the real 2026-09-01 event re-granted to zero
 /// — so a fixture at 0 alone cannot tell `startPercent` from a hardcoded 0.
 @Test func theRegrantRowReportsTheEpochsOwnStartPercent() {
     let regrant = Snapshot.Regrant(startedAt: regrantInstant, startPercent: 4)
 
-    #expect(regrant.rowValue(in: utc) == "Mon 2:14 PM, was 4%")
+    #expect(regrant.rowValue(in: utc) == "Mon 2:14 PM, opened at 4%")
 }
 
 /// Through `DisplayValue`, like every other figure: it rounds, and it saturates
@@ -394,9 +394,9 @@ private let utc = TimeZone(identifier: "UTC")!
 /// this app descends from JSON on disk.
 @Test func theRegrantRowRoundsAndSaturatesLikeEveryOtherFigure() {
     #expect(Snapshot.Regrant(startedAt: regrantInstant, startPercent: 51.6)
-        .rowValue(in: utc) == "Mon 2:14 PM, was 52%")
+        .rowValue(in: utc) == "Mon 2:14 PM, opened at 52%")
     #expect(Snapshot.Regrant(startedAt: regrantInstant, startPercent: 1e20)
-        .rowValue(in: utc) == "Mon 2:14 PM, was 999%")
+        .rowValue(in: utc) == "Mon 2:14 PM, opened at 999%")
 }
 
 // MARK: - The projection row names its denominator

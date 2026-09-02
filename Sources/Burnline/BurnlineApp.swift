@@ -41,7 +41,7 @@ struct BurnlineApp: App {
         .defaultSize(width: 780, height: 820)
         .defaultPosition(.center)
 
-        Window("Welcome to Burnline", id: OnboardingWindow.id) {
+        Window("Burnline Setup", id: OnboardingWindow.id) {
             OnboardingView(store: store)
                 .preferredColorScheme(.dark)
                 .windowBackground()

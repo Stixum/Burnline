@@ -61,18 +61,25 @@ public struct Snapshot: Equatable, Sendable {
             self.startPercent = startPercent
         }
 
-        /// The popover row's value: `"Mon 2:14 PM, was 0%"`.
+        /// The popover row's value: `"Mon 2:14 PM, opened at 0%"`.
         ///
         /// Assembled here, like `FiveHourStatus.rowValue` and
         /// `RejectedReading.rowValue`, because no view body in this codebase
         /// formats — and because `Sources/Burnline` has no test target, so a
         /// string built there is a string nothing can check.
         ///
-        /// 🔴 `was N%` is `startPercent`: where the figure stood when the NEW
-        /// allowance was issued, not the figure it replaced. That is the only
+        /// 🔴 `opened at N%` is `startPercent`: where the figure stood when the
+        /// NEW limit was granted, not the figure it replaced. That is the only
         /// percentage this type carries, and it is the one that makes the drop
         /// legible — the headline is measured up from it. It is routinely 0,
         /// which is correct and is why nothing keys off its value.
+        ///
+        /// ⚠️ **`opened at`, never a bare `was`.** The scoreboard's own re-grant
+        /// note reached this wording first and for a stronger reason — it sits
+        /// inches from a percent column reading 30% on the same row, where `at
+        /// 3%` parses as a restatement of it. The popover row is labelled
+        /// "Rate since re-grant" and so was getting away with `was 0%`, but two
+        /// notes about one event should not be worded two ways.
         public var rowValue: String { rowValue(in: .current) }
 
         /// The zone split out so the wording is testable without depending on
@@ -95,7 +102,7 @@ public struct Snapshot: Equatable, Sendable {
             // Through `DisplayValue`, which saturates: `Int(Double)` traps on a
             // value outside `Int`'s range, and every percentage here descends
             // from JSON on disk.
-            return "\(formatter.string(from: startedAt)), was \(DisplayValue.whole(startPercent))%"
+            return "\(formatter.string(from: startedAt)), opened at \(DisplayValue.whole(startPercent))%"
         }
     }
 

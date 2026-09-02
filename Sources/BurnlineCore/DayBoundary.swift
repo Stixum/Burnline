@@ -18,10 +18,13 @@ public enum DayBoundary: String, Equatable, Sendable, Codable, CaseIterable {
         }
     }
 
+    /// ⚠️ The calendar-day sentence deliberately ends without a full stop:
+    /// Settings appends the contrast with the reset clock to it, and only when
+    /// the two actually differ. A reset at midnight has no contrast to draw.
     public var explanation: String {
         switch self {
         case .windowDay: return "Days run from the reset time, matching the day counter."
-        case .calendarDay: return "Days end at midnight, matching the wall clock."
+        case .calendarDay: return "Days end at midnight, matching the wall clock"
         }
     }
 }

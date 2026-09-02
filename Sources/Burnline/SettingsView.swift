@@ -50,7 +50,11 @@ struct SettingsView: View {
                 .disabled(store.snapshot.isScheduleAutomatic)
 
                 if !store.snapshot.isScheduleAutomatic {
-                    Text("Resets \(weekdayNames[store.settings.resetSchedule.weekday - 1]) at \(String(format: "%02d:%02d", store.settings.resetSchedule.hour, store.settings.resetSchedule.minute)), \(store.settings.resetSchedule.timeZone.identifier). Fallback only, used until Claude Code reports the real reset time.")
+                    // Through `ResetSchedule.description()`, like every other
+                    // reset string in the app: this one printed a 24-hour clock
+                    // and a raw tzdata identifier while the popover row beside
+                    // it printed `Tue 9:00 PM`.
+                    Text("Resets \(store.settings.resetSchedule.description()). Used only until Claude Code reports the real reset.")
                         .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -59,7 +63,7 @@ struct SettingsView: View {
 
                 Text("Compare against").eyebrow()
 
-                Picker("", selection: $store.settings.targetMode) {
+                Picker("Compare against", selection: $store.settings.targetMode) {
                     ForEach(TargetMode.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
@@ -72,7 +76,7 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     Text("Today ends").font(.system(size: 11))
                         .foregroundStyle(Theme.textMuted)
-                    Picker("", selection: $store.settings.dayBoundary) {
+                    Picker("Today ends", selection: $store.settings.dayBoundary) {
                         ForEach(DayBoundary.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
@@ -89,7 +93,7 @@ struct SettingsView: View {
                 Text("Menu bar").eyebrow()
 
                 // Five options won't fit across 380pt as a segmented control.
-                Picker("", selection: $store.settings.menuBarMode) {
+                Picker("Menu bar shows", selection: $store.settings.menuBarMode) {
                     ForEach(MenuBarMode.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 .labelsHidden()
@@ -168,7 +172,7 @@ struct SettingsView: View {
                 if store.settings.refreshesUsageAutomatically {
                     HStack {
                         Text("Refresh at least every").font(.system(size: 11.5))
-                        Picker("", selection: Binding(
+                        Picker("Refresh interval", selection: Binding(
                             get: { store.settings.usageRefreshInterval },
                             set: { store.settings.usageRefreshInterval = $0 }
                         )) {
@@ -180,9 +184,11 @@ struct SettingsView: View {
                         .frame(width: 92)
                     }
                     // A ceiling, not a fixed cadence — worth saying, or the
-                    // observed rate looks like the setting being ignored.
-                    Text("A ceiling. Burnline checks more often than this as you approach a "
-                         + "limit, down to every 10 minutes, and never less often.")
+                    // observed rate looks like the setting being ignored. Said
+                    // in what it does rather than in the word "ceiling", which
+                    // is the implementer's name for it.
+                    Text("Burnline checks more often as you approach a limit, down to every "
+                         + "10 minutes, and never less often than this.")
                         .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -335,28 +341,28 @@ struct SettingsView: View {
         let today = DisplayValue.whole(store.snapshot.endOfDayPercent)
         switch store.settings.targetMode {
         case .realTime:
-            return "\(TargetMode.realTime.explanation) Right now that's \(now)%. The bar still shades today's allowance out to \(today)%."
+            return "\(TargetMode.realTime.explanation) Currently \(now)%; the bar still shades today's allowance to \(today)%."
         case .endOfDay:
-            return "\(TargetMode.endOfDay.explanation) Right now that's \(today)%, versus \(now)% this second. More forgiving during the day."
+            return "\(TargetMode.endOfDay.explanation) Currently \(today)%, against \(now)% this instant. Gentler during the day."
         }
     }
 
     /// Names the actual clock time each option resolves to, since the two only
     /// differ by however far the reset sits from midnight.
     private var dayBoundaryExplanation: String {
-        let schedule = store.settings.resetSchedule
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        formatter.timeZone = schedule.timeZone
-        let resetClock = formatter.string(from: store.snapshot.window.end)
-
+        let resetClock = store.settings.resetSchedule
+            .description(of: store.snapshot.window.end, .clock)
         let base = store.settings.dayBoundary.explanation
         let today = DisplayValue.whole(store.snapshot.endOfDayPercent)
         switch store.settings.dayBoundary {
         case .windowDay:
-            return "\(base) Yours end at \(resetClock), currently \(today)%."
+            return "\(base) Your days end at \(resetClock); currently \(today)%."
         case .calendarDay:
-            return "\(base) Yours end at 12:00 AM, \(resetClock.hasPrefix("12:00") ? "the same as the reset" : "not at the \(resetClock) reset"), currently \(today)%."
+            // The contrast only when there is one to draw. A reset at midnight
+            // makes the two options identical, and "not at the 12:00 AM reset"
+            // then invents a difference the user does not have.
+            let contrast = resetClock == "12:00 AM" ? "" : ", not at the \(resetClock) reset"
+            return "\(base)\(contrast). Currently \(today)%."
         }
     }
 
@@ -379,9 +385,7 @@ struct SettingsView: View {
     }
 
     private var automaticResetDescription: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE h:mm a"
-        return formatter.string(from: store.snapshot.window.end)
+        store.settings.resetSchedule.description(of: store.snapshot.window.end)
     }
 
     private func weightRow(_ label: String, _ value: Binding<Double>) -> some View {

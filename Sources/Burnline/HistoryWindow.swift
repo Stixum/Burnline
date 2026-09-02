@@ -275,10 +275,15 @@ struct HistoryView: View {
         }
     }
 
-    /// Nil while there is nothing honest to say, which is not the same as
-    /// nothing to show: "Nothing archived yet" is a claim of finality, and only
-    /// a finished fill settles it. Asserting it over a running progress bar is
-    /// how the first run contradicted itself.
+    /// The header's one line about how far back the history goes — nil unless
+    /// there is a date to name.
+    ///
+    /// It used to fall back to "Nothing archived yet" once the fill had
+    /// finished. That was already guarded against asserting finality over a
+    /// running progress bar, which was the first-run defect; what the guard
+    /// could not fix is that the *finished* case renders three lines above
+    /// `emptyArchive`'s own headline, so one state got announced twice in two
+    /// wordings. Absence is that state's to report, and it reports it better.
     private var coverageDescription: String? {
         if let begins = model?.coverageBegins {
             // Claude Code deletes transcripts after 30 days, so this is a real
@@ -286,8 +291,12 @@ struct HistoryView: View {
             return "Archived from \(HistoryLabels.day(begins)). Earlier weeks are gone: "
                 + "Claude Code deletes transcripts after 30 days."
         }
-        guard store.historyFillState.reloadPhase == .finished else { return nil }
-        return "Nothing archived yet."
+        // 🔴 Nil, not "Nothing archived yet." That headline could render three
+        // lines above `emptyArchive`'s own — two announcements of one state, in
+        // two wordings, one of them a subtitle to a heading it contradicts. The
+        // empty state below is the one that owns this, and it says what happens
+        // next rather than only what is absent.
+        return nil
     }
 
     // MARK: - States
@@ -350,8 +359,7 @@ struct HistoryView: View {
             Text("No completed weeks yet.")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
-            Text("Burnline writes a row when a weekly window closes, so the first one appears "
-                 + "after your next reset.")
+            Text("The first week appears after your next reset.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.textMuted)
                 .fixedSize(horizontal: false, vertical: true)

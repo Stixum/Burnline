@@ -150,7 +150,7 @@ struct PopoverView: View {
             // the statusline payload omits it entirely, which is why this was
             // recorded for months as impossible to obtain.
             if let scoped = snapshot.scopedWeekly {
-                row(scoped.modelName, scoped.rowValue)
+                row(scoped.rowLabel, scoped.rowValue)
             }
             // Exceptions-only, and above the rejection row on purpose: a
             // re-grant is the CAUSE of the disagreement the rejection row
@@ -362,10 +362,7 @@ struct PopoverView: View {
     }
 
     private var resetDescription: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE h:mm a"
-        formatter.timeZone = store.settings.resetSchedule.timeZone
-        return formatter.string(from: snapshot.window.end)
+        store.settings.resetSchedule.description(of: snapshot.window.end, .abbreviated)
     }
 
     private var remainingDescription: String {

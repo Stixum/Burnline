@@ -67,7 +67,8 @@ struct OnboardingView: View {
             case .noSettingsFile, .notConfigured:
                 statusRow(icon: "circle.dashed", tint: Theme.textMuted,
                           state: store.wiringState,
-                          detail: "Adds a status line to your Claude Code settings.")
+                          detail: "Set up adds a status line to ~/.claude/settings.json. "
+                                + "The file is backed up first.")
                 setUpButton("Set up automatically")
 
             case .stalePath(let current):
@@ -75,7 +76,7 @@ struct OnboardingView: View {
                           state: store.wiringState,
                           detail: "Your settings name a copy of Burnline other than this one.")
                 monospacedBox(current)
-                setUpButton("Update it")
+                setUpButton("Point it at this copy")
 
             case .conflict(let command):
                 statusRow(icon: "exclamationmark.triangle.fill", tint: Theme.warning,

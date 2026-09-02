@@ -21,8 +21,8 @@ public enum TargetMode: String, Equatable, Sendable, Codable, CaseIterable {
 
     public var explanation: String {
         switch self {
-        case .realTime: return "Are you on pace this second?"
-        case .endOfDay: return "What can you still spend today?"
+        case .realTime: return "Where you should be this instant."
+        case .endOfDay: return "What you may spend by the end of today."
         }
     }
 }

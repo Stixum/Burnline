@@ -60,7 +60,7 @@ struct HistoryBreakdown: View {
 
     private var controls: some View {
         HStack(spacing: 14) {
-            Picker("", selection: $dimension) {
+            Picker("Breakdown by", selection: $dimension) {
                 ForEach(HistoryQuery.Dimension.allCases, id: \.self) { option in
                     Text(option.title).tag(option)
                 }
@@ -79,7 +79,7 @@ struct HistoryBreakdown: View {
             .labelsHidden()
             .frame(width: 168)
 
-            Picker("", selection: $range) {
+            Picker("Period", selection: $range) {
                 ForEach(windows, id: \.start) { window in
                     Text(HistoryLabels.windowRange(start: window.start, end: window.end))
                         .tag(HistoryRange.window(start: window.start))
