@@ -167,7 +167,7 @@ struct SettingsView: View {
 
                 if store.settings.refreshesUsageAutomatically {
                     HStack {
-                        Text("Check at least every").font(.system(size: 11.5))
+                        Text("Refresh at least every").font(.system(size: 11.5))
                         Picker("", selection: Binding(
                             get: { store.settings.usageRefreshInterval },
                             set: { store.settings.usageRefreshInterval = $0 }
@@ -193,7 +193,7 @@ struct SettingsView: View {
 
                 // Routes through the store, not a direct binding: enabling
                 // requests notification permission the first time.
-                Toggle("Notify on thresholds", isOn: Binding(
+                Toggle("Send notifications", isOn: Binding(
                     get: { store.settings.notifications.enabled },
                     set: { store.setNotificationsEnabled($0) }
                 ))
@@ -201,7 +201,7 @@ struct SettingsView: View {
                 Group {
                     Stepper(value: $store.settings.notifications.behindPacePoints,
                             in: NotificationSettings.behindPaceRange) {
-                        Text("Behind pace by \(DisplayValue.whole(store.settings.notifications.behindPacePoints)) points")
+                        Text("Behind pace by \(DisplayValue.points(store.settings.notifications.behindPacePoints))")
                             .monospacedDigit()
                             .foregroundStyle(Theme.textSecondary)
                     }

@@ -76,10 +76,10 @@ public enum MenuBarFormatter {
 
         var label: String
         if let estimated = snapshot.estimatedPercent {
-            let delta = abs(whole(snapshot.delta(target) ?? 0))
-            let direction = (snapshot.isUnder(target) ?? true) ? "under budget" : "over budget"
+            let delta = abs(snapshot.delta(target) ?? 0)
+            let direction = (snapshot.isUnder(target) ?? true) ? "ahead of pace" : "behind pace"
             label = "Burnline: \(whole(estimated)) percent used, \(pace) percent \(frame), "
-                + "\(delta) points \(direction)"
+                + "\(DisplayValue.points(delta)) \(direction)"
         } else {
             label = "Burnline: \(pace) percent \(frame), no usage figure yet"
         }

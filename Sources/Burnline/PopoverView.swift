@@ -83,7 +83,13 @@ struct PopoverView: View {
                 Text("\(DisplayValue.whole(abs(delta)))")
                     .font(.system(size: 34, weight: .heavy)).monospacedDigit()
                     .foregroundStyle(Theme.textPrimary)
-                Text(under ? "points under budget" : "points over budget")
+                // The noun agrees with the figure beside it: the hero renders
+                // the number at 34pt and the words at 12pt, so it takes the
+                // unit alone rather than the whole `DisplayValue.points`
+                // string. "ahead of / behind pace" is the app's one vocabulary
+                // for this comparison — the menu bar's spoken label, the
+                // notification body and the Settings stepper all use it.
+                Text("\(DisplayValue.pointsUnit(delta)) \(under ? "ahead of pace" : "behind pace")")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.textMuted)
             }
@@ -211,7 +217,7 @@ struct PopoverView: View {
         }
         .font(.system(size: 11.5))
         .foregroundStyle(Theme.accent)
-        .help("Anthropic re-issued the weekly allowance inside this window, "
+        .help("Anthropic re-granted the weekly limit inside this window, "
               + "without moving the reset. The rate above is measured from "
               + "there; the pace target still runs from the window's own start.")
     }
@@ -322,9 +328,11 @@ struct PopoverView: View {
             .buttonStyle(.plain)
             .disabled(store.isPolling)
             .foregroundStyle(Theme.accent)
-            .help("Check now. Runs /usage in a brief Claude Code session to "
-                  + "refresh the figure. Uses no message quota, and takes about "
-                  + "half a minute.")
+            // A glyph button has no text to derive an accessible name from, so
+            // the name is stated. The History button beside it already does.
+            .accessibilityLabel("Refresh now")
+            .help("Refresh now: runs /usage in a brief Claude Code session. "
+                  + "No message quota; about half a minute.")
         }
     }
 

@@ -36,12 +36,12 @@ private func snapshot(estimated: Double?, target: Double, scanning: Bool = false
     let label = MenuBarFormatter.accessibilityLabel(for: snapshot(estimated: 40, target: 71))
     #expect(label.contains("40"))
     #expect(label.contains("71"))
-    #expect(label.lowercased().contains("under budget"))
+    #expect(label.lowercased().contains("ahead of pace"))
 }
 
 @Test func accessibilityLabelSaysOverBudgetWhenOver() {
     let label = MenuBarFormatter.accessibilityLabel(for: snapshot(estimated: 90, target: 71))
-    #expect(label.lowercased().contains("over budget"))
+    #expect(label.lowercased().contains("behind pace"))
 }
 
 // MARK: - Staleness, without colour

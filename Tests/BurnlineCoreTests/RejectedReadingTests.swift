@@ -151,12 +151,12 @@ private func reading(_ percent: Double, at capturedAt: TimeInterval) -> RateLimi
 /// 2026-09-01 along with the copy; neither branch rests on the axiom now.
 @Test func neitherExplanationRestsOnTheAxiomARegrantFalsified() {
     let regrant = RateLimitHighWater.RejectedReading(reportedPercent: 51, usingPercent: 7)
-    #expect(regrant.explanation.contains("re-issued"))
+    #expect(regrant.explanation.contains("re-granted"))
     #expect(!regrant.explanation.contains("cannot go down"))
 
     let idleSession = RateLimitHighWater.RejectedReading(reportedPercent: 69, usingPercent: 74)
     #expect(!idleSession.explanation.contains("cannot go down"))
-    #expect(!idleSession.explanation.contains("re-issued"))
+    #expect(!idleSession.explanation.contains("re-granted"))
 }
 
 /// ⚠️ Anchored to the PHRASE around each figure, never merely to its presence.
@@ -248,7 +248,7 @@ private func reading(_ percent: Double, at capturedAt: TimeInterval) -> RateLimi
     let rejected = RateLimitHighWater.rejection(onDisk: statusline, resolved: utilization)
 
     #expect(rejected?.isFromAnEarlierWindow == false)
-    #expect(rejected?.explanation.contains("re-issued") == true)
+    #expect(rejected?.explanation.contains("re-granted") == true)
 }
 
 /// 🔴 The tolerance EDGE, both sides of it. `aSubSecondDifference…` above pins
@@ -269,7 +269,7 @@ private func reading(_ percent: Double, at capturedAt: TimeInterval) -> RateLimi
     let rejected = RateLimitHighWater.rejection(onDisk: onDisk, resolved: resolved)
 
     #expect(rejected?.isFromAnEarlierWindow == false)
-    #expect(rejected?.explanation.contains("re-issued") == true)
+    #expect(rejected?.explanation.contains("re-granted") == true)
 }
 
 /// The positive control for it: one second past the tolerance and the branch
@@ -294,7 +294,7 @@ private func reading(_ percent: Double, at capturedAt: TimeInterval) -> RateLimi
                                                       isFromAnEarlierWindow: true)
 
     #expect(rejected.explanation.contains("previous weekly window"))
-    #expect(!rejected.explanation.contains("re-issued"))
+    #expect(!rejected.explanation.contains("re-granted"))
     #expect(!rejected.explanation.contains("could not be shown"))
 }
 
@@ -358,5 +358,5 @@ private func reading(_ percent: Double, at capturedAt: TimeInterval) -> RateLimi
     let resolution = CaptureSelection.resolve([reading(51, at: 9_999)], against: mark)
 
     #expect(resolution.rejected?.isFromAnEarlierWindow == false)
-    #expect(resolution.rejected?.explanation.contains("re-issued") == true)
+    #expect(resolution.rejected?.explanation.contains("re-granted") == true)
 }

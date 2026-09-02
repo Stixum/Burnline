@@ -220,7 +220,7 @@ private func fiveHourAt(_ percent: Double, resetsIn: TimeInterval = 6_000) -> Fi
         timeZone: TimeZone(identifier: "America/Chicago")!)
     let emission = result.emissions[0]
     #expect(emission.title == "Behind pace")
-    #expect(emission.body.contains("16 points over target"))
+    #expect(emission.body.contains("16 points behind pace"))
     #expect(emission.body.contains("day 3 of 7"))
     #expect(emission.identifier == "burnline.behind-pace")
 }

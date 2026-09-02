@@ -16,7 +16,7 @@ import BurnlineCore
 struct HistoryBreakdown: View {
     let rows: [HistoryQuery.BreakdownRow]
     let total: Double
-    /// Newest first — the range control's options, beside "All coverage".
+    /// Newest first — the range control's options, beside "All weeks".
     let windows: [WindowRow]
     @Binding var dimension: HistoryQuery.Dimension
     @Binding var range: HistoryRange
@@ -85,7 +85,7 @@ struct HistoryBreakdown: View {
                         .tag(HistoryRange.window(start: window.start))
                 }
                 Divider()
-                Text("All coverage").tag(HistoryRange.allCoverage)
+                Text("All weeks").tag(HistoryRange.allCoverage)
             }
             .labelsHidden()
             .frame(width: 190)

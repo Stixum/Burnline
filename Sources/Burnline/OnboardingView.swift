@@ -170,7 +170,7 @@ struct OnboardingView: View {
                 }
                 .padding(.top, 8)
             } label: {
-                Text("Configure manually")
+                Text("Set up manually")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.textSecondary)
             }

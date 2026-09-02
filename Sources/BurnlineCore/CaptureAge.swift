@@ -51,7 +51,7 @@ public enum CaptureAge {
         // involve going and doing some work first. The copy has to name it, or
         // the row describes a wait rather than a choice.
         return "Carried forward for \(elapsed) from this Mac's token counts. "
-            + "A terminal session or Check now re-anchors it to Anthropic's figure."
+            + "A terminal session or Refresh now re-anchors it to Anthropic's figure."
     }
 
     public static func description(_ age: TimeInterval?) -> String {

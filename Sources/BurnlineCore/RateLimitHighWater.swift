@@ -147,10 +147,10 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
                        """
             }
             return """
-                   Another Claude Code session reported \(said)%, but the weekly allowance was \
-                   re-issued inside this window and that reading could not be shown to \
+                   Another Claude Code session reported \(said)%, but the weekly limit was \
+                   re-granted inside this window and that reading could not be shown to \
                    postdate it, so it was ignored. The \(kept)% shown is measured against the \
-                   new allowance.
+                   new limit.
                    """
         }
     }

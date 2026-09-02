@@ -50,16 +50,22 @@ public enum HistoryChartMode: Hashable, CaseIterable, Sendable {
 
     /// What the chart plots, printed beside the section heading.
     ///
-    /// 🔴 **Required mitigation, not a caption.** The units line is verbatim
-    /// what the History window printed before the toggle existed, so switching
-    /// to units changes nothing a reader had learned to rely on — and switching
-    /// away visibly replaces it.
+    /// 🔴 **Required mitigation, not a caption.** Each line names its own
+    /// quantity and its own axis, so switching modes visibly replaces the claim
+    /// rather than leaving one that fits either series.
+    ///
+    /// ⚠️ The units line used to be pinned as *verbatim what the History window
+    /// printed before the toggle existed* — continuity through the transition,
+    /// which mattered while readers were carrying an expectation across it. That
+    /// transition is over; both lines were reworded together in the 2026-09-01
+    /// copy review, into the History window's own vocabulary (a **week**, not a
+    /// window) and the app's one name for what Anthropic caps (a **limit**).
     public var subtitle: String {
         switch self {
         case .units:
-            return "cumulative units against how far through the window you were"
+            return "cumulative units by fraction of the week elapsed"
         case .percent:
-            return "Anthropic's own percentage of the weekly allowance, as it was captured"
+            return "Anthropic's percentage of the weekly limit, as captured"
         }
     }
 

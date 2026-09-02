@@ -35,15 +35,15 @@ public enum MenuBarMode: String, Equatable, Sendable, Codable, CaseIterable {
     public var explanation: String {
         switch self {
         case .usedOverTarget:
-            return "Consumption over the pace target."
+            return "Used over the pace target."
         case .delta:
-            return "Points over or under pace. A leading + means over budget."
+            return "Points ahead of or behind pace; + means behind."
         case .projection:
             return "Where the week lands if you carry on at this rate."
         case .fiveHour:
             return "The 5-hour limit instead of the weekly one. Blank on plans that don't report it."
         case .used:
-            return "Consumption on its own, with no target to compare against."
+            return "Used alone, with no target."
         }
     }
 }

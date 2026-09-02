@@ -56,7 +56,7 @@ public enum NotificationDecision {
             emissions.append(Emission(
                 signal: .behindPace,
                 title: "Behind pace",
-                body: "\(DisplayValue.whole(-delta)) points over target, day \(day) of 7"))
+                body: "\(DisplayValue.points(-delta)) behind pace, day \(day) of 7"))
             updated.behindPace = NotificationMarks.Mark(
                 resetsAt: weeklyReset, threshold: settings.behindPacePoints,
                 epochStartedAt: weeklyEpoch)

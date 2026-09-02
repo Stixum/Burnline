@@ -107,13 +107,13 @@ public enum HistoryQuery {
                 // describe the last of them, so the wording says "last" rather
                 // than letting a three-allowance week read as a two.
                 label = "Re-granted \(regrant.observed)×, last day \(day), opened at \(percent)"
-                help = "Anthropic re-issued this week's allowance \(regrant.observed) times "
+                help = "Anthropic re-granted this week's limit \(regrant.observed) times "
                     + "without moving the reset. The percentage beside this is the climb "
                     + "since the last of them, on day \(day), not the week's usage. The "
                     + "units are unaffected."
             } else {
                 label = "Re-granted day \(day), opened at \(percent)"
-                help = "Anthropic re-issued this week's allowance part-way through, without "
+                help = "Anthropic re-granted this week's limit part-way through, without "
                     + "moving the reset. The percentage beside this is the climb since then, "
                     + "not the week's usage. The units are unaffected."
             }

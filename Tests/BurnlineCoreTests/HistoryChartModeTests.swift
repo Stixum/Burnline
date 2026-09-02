@@ -130,11 +130,28 @@ private func series(_ percentages: [Double]) -> HistoryQuery.PercentSeries {
     }
 }
 
-@Test func theUnitsSubtitleIsTheOneTheWindowAlreadyPrinted() {
-    // Switching to units must change nothing a reader had already learned to
-    // rely on — the toggle is an addition, not a rewording of what was there.
-    #expect(HistoryChartMode.units.subtitle
-            == "cumulative units against how far through the window you were")
+/// ⚠️ **Reworded 2026-09-01, and its stated intent retired with it.** It used to
+/// be `theUnitsSubtitleIsTheOneTheWindowAlreadyPrinted`, pinning "cumulative
+/// units against how far through the window you were" on the grounds that
+/// "switching to units must change nothing a reader had already learned to rely
+/// on — the toggle is an addition, not a rewording of what was there".
+///
+/// That was a promise about a transition, not a property of the type, and the
+/// transition is over: the toggle has shipped and nobody is carrying an
+/// expectation across it any more. What replaces it is a property that does not
+/// expire — each subtitle names the quantity AND the axis of its own series, in
+/// the History window's vocabulary (a **week**) and the app's one word for what
+/// Anthropic caps (a **limit**). A subtitle that named neither would leave the
+/// two series describable by one caption, which is the misread this whole type
+/// exists to prevent.
+@Test func eachSubtitleNamesItsOwnQuantityAndItsOwnAxis() {
+    #expect(HistoryChartMode.units.subtitle == "cumulative units by fraction of the week elapsed")
+    #expect(HistoryChartMode.percent.subtitle
+            == "Anthropic's percentage of the weekly limit, as captured")
+
+    // Neither line may be true of the other series.
+    #expect(!HistoryChartMode.units.subtitle.contains("percent"))
+    #expect(!HistoryChartMode.percent.subtitle.contains("units"))
 }
 
 @Test func neitherEmptyMessageReadsAsAWeekOfNoUsage() {
