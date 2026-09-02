@@ -255,9 +255,9 @@ struct HistoryView: View {
             // means nothing on its own. The absolute value is arbitrary by
             // construction — calibration divides it out — so the only claim
             // being made is that one week compares to another.
-            Text("Units are Burnline's weighted measure of consumption, not tokens and not "
-                 + "percent. The scale is arbitrary; only the comparison between weeks means "
-                 + "anything. Transcripts see Claude Code on this Mac alone.")
+            Text("Units are Burnline's own weighted measure, not tokens or percent. The "
+                 + "scale is arbitrary; only week-to-week comparison means anything. "
+                 + "This Mac's Claude Code only.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -268,7 +268,7 @@ struct HistoryView: View {
                         symbol: "exclamationmark.triangle.fill")
             }
             if let model, model.skippedLines > 0 {
-                warning("\(model.skippedLines) archive lines could not be read and were "
+                warning("\(model.skippedLines) archive entries could not be read and were "
                         + "skipped. Everything else is intact.",
                         symbol: "exclamationmark.triangle.fill")
             }
@@ -310,12 +310,11 @@ struct HistoryView: View {
     /// single file.
     private func filling(_ progress: HistoryFill.Progress) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text("Building your history archive")
+            Text("Building your usage history")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
-            Text("Burnline is reading the transcripts Claude Code still has, so past weeks can "
-                 + "be charted. This happens once and takes about 20 seconds. You can close "
-                 + "this window; it carries on either way.")
+            Text("Reading the transcripts Claude Code still has. One-time, about 20 "
+                 + "seconds. You can close this window.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -334,8 +333,8 @@ struct HistoryView: View {
     /// held, and nothing else on screen would say so.
     @ViewBuilder private var fillFailure: some View {
         if case .failed(let message) = store.historyFillState {
-            warning("Some transcripts could not be read this launch, so parts of the archive "
-                    + "may be missing. It retries next launch. (\(message))",
+            warning("Some transcripts could not be read, so the history may have gaps. "
+                    + "Burnline retries next launch. (\(message))",
                     symbol: "exclamationmark.triangle.fill")
         }
     }

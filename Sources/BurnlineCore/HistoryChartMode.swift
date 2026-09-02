@@ -80,8 +80,8 @@ public enum HistoryChartMode: Hashable, CaseIterable, Sendable {
     public var caveat: String {
         switch self {
         case .units:
-            return "Counts Claude Code on this Mac only; anything burned elsewhere is missing. "
-                + "Units never fall, so a mid-window re-grant leaves no mark here."
+            return "This Mac's Claude Code only; anything burned elsewhere is missing. "
+                + "Units never fall, so a re-grant leaves no mark."
         case .percent:
             // ⚠️ "only recent weeks", never "from this update forward". The
             // second is true on the day it ships and quietly false afterwards:

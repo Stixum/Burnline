@@ -163,7 +163,7 @@ struct SettingsView: View {
                 // default for that reason.
                 Text("Runs /usage in a brief Claude Code session when the figure goes "
                      + "stale. Uses no message quota. Without it, usage updates only while "
-                     + "you are working in a terminal session.")
+                     + "you work in a terminal session.")
                     .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -264,7 +264,7 @@ struct SettingsView: View {
                 DisclosureGroup("Advanced") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Weights").eyebrow().padding(.top, 6)
-                        Text("Relative only. Calibration divides out the absolute scale.")
+                        Text("Only the ratios matter; calibration sets the scale.")
                             .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
 
                         weightRow("Input", $store.settings.weights.input)
@@ -318,18 +318,15 @@ struct SettingsView: View {
             // real sessions, and that those sessions reach Anthropic. "Uses no
             // message quota" is measured — /usage produces no assistant turn —
             // but it is not the same as "does nothing".
-            Text("Burnline will start a brief Claude Code session running /usage when "
-                 + "the figure goes stale: normally no more often than every "
-                 + "\(store.settings.usageRefreshInterval.title.lowercased()), and as often "
-                 + "as every 10 minutes when you are close to a limit.\n\n"
-                 + "This uses no message quota, but it does start real Claude Code "
-                 + "sessions, which contact Anthropic.\n\n"
-                 + "The first time, macOS will ask for folder access and name Claude "
-                 + "Code: Documents, Downloads, any cloud drives. That is Claude Code "
-                 + "looking at your home directory when it starts, which it does "
-                 + "whenever you run it.\n\n"
-                 + "Decline all of them. It still works, and Burnline never wanted "
-                 + "them.\n\n"
+            Text("Burnline will run /usage in a brief Claude Code session when the figure "
+                 + "goes stale: no more than every "
+                 + "\(store.settings.usageRefreshInterval.prose) normally, up to every "
+                 + "10 minutes near a limit.\n\n"
+                 + "This uses no message quota, but it starts real Claude Code sessions, "
+                 + "which contact Anthropic.\n\n"
+                 + "The first time, macOS will ask for folder access on Claude Code's "
+                 + "behalf (Documents, Downloads, cloud drives). Decline them all; "
+                 + "Burnline doesn't need them.\n\n"
                  + "You can turn this off at any time.")
         }
     }

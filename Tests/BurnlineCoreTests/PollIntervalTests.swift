@@ -76,3 +76,25 @@ private let relaxedInputs = (weekly: 20.0, fiveHour: 10.0, projected: 60.0)
         #expect(option.seconds <= 3_600)
     }
 }
+
+// MARK: - How the interval is named
+
+/// 🔴 The two forms exist because one sentence used both. The confirmation
+/// alert interpolated `title` and came out reading "no more often than every 15
+/// min, and as often as every 10 minutes" — one unit, two spellings, inside one
+/// comparison. A picker segment and a sentence want different things and only
+/// the sentence is allowed to be wordy.
+@Test func theProseFormSpellsTheUnitOutAndThePickerDoesNot() {
+    #expect(RefreshInterval.fifteen.title == "15 min")
+    #expect(RefreshInterval.fifteen.prose == "15 minutes")
+}
+
+/// Every case, not just the one the alert happens to show most often — the
+/// alert names whichever the user has selected.
+@Test func everyIntervalNamesItselfInBothForms() {
+    for interval in RefreshInterval.allCases {
+        #expect(interval.title == "\(interval.rawValue) min")
+        #expect(interval.prose == "\(interval.rawValue) minutes")
+        #expect(interval.seconds == TimeInterval(interval.rawValue) * 60)
+    }
+}

@@ -151,12 +151,12 @@ struct HistoryScoreboard: View {
                 EmptyView()
             case .extrapolated:
                 note("Dates inferred", "arrow.uturn.backward.circle", Theme.textMuted,
-                     help: "This week's reset was never seen. Its bounds are rolled back "
+                     help: "This week's reset was never seen. Its dates are counted back "
                          + "from a later reset that was, so they are right unless the "
                          + "reset has since moved.")
             case .schedule:
-                note("Dates from fallback schedule", "questionmark.circle", Theme.textMuted,
-                     help: "No reset has ever been observed on this Mac, so these bounds "
+                note("Dates from Settings schedule", "questionmark.circle", Theme.textMuted,
+                     help: "No reset has ever been observed on this Mac, so these dates "
                          + "come from the schedule in Settings. The totals are real; which "
                          + "seven days they cover is a guess.")
             }
@@ -181,9 +181,8 @@ struct HistoryScoreboard: View {
     private var missingPercentagesNote: some View {
         HStack(alignment: .top, spacing: 5) {
             Image(systemName: "info.circle").font(.system(size: 10))
-            Text("Anthropic's own weekly figure is recorded from now on. These weeks closed "
-                 + "before Burnline started keeping it, and it cannot be reconstructed — the "
-                 + "units are Burnline's own measure and are unaffected.")
+            Text("Anthropic's figure is recorded for new weeks. These weeks closed before "
+                 + "Burnline kept it, and it cannot be reconstructed. Units are unaffected.")
                 .fixedSize(horizontal: false, vertical: true)
         }
         .font(.system(size: 11))

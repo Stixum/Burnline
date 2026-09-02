@@ -290,9 +290,11 @@ struct PopoverView: View {
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(stale ? Theme.warning : Theme.success)
+            // The stale branch does not repeat the amber row directly above
+            // it, which already names the cause and the elapsed time.
             .help(stale
-                  ? "Claude Code hasn't reported in a while. This figure is carried forward from local token counts, which see only this Mac."
-                  : "Exact figure from Claude Code, carried forward by local token counts.")
+                  ? "Carried forward from local token counts, which see only this Mac."
+                  : "Exact figure from Claude Code, carried forward by local token counts. They see only this Mac.")
         case .calibrated, .paceOnly:
             Button(calibrationLabel) { isCalibrating = true }
                 .buttonStyle(.plain)
@@ -352,7 +354,7 @@ struct PopoverView: View {
         .buttonStyle(.plain)
         .foregroundStyle(Theme.textMuted)
         .accessibilityLabel("Usage history")
-        .help("Usage history. Past weeks, burn curves, and where the usage went.")
+        .help("Usage history: past weeks, burn curves, and where it went.")
     }
 
     private var calibrationLabel: String {

@@ -139,11 +139,11 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
             }
             if usingPercent > reportedPercent {
                 return """
-                       Another Claude Code session reported \(said)%, which is lower than the \
-                       \(kept)% already seen this window and could not be shown to have been \
-                       taken later, so it was ignored. Usually that is an idle session \
-                       republishing what it cached — but a reading whose time can be proven \
-                       replaces this one whichever way it moves the figure.
+                       Another Claude Code session reported \(said)%, lower than the \(kept)% \
+                       already seen this window, and could not be shown to have been taken \
+                       later, so it was ignored. Usually an idle session republishing what it \
+                       cached. A reading with a proven time replaces this one whichever way it \
+                       moves the figure.
                        """
             }
             return """

@@ -13,5 +13,16 @@ public enum RefreshInterval: Int, Codable, CaseIterable, Sendable {
     case sixty = 60
 
     public var seconds: TimeInterval { TimeInterval(rawValue * 60) }
+
+    /// The picker's segment, where the control is 92pt wide and the unit is
+    /// established by every other option beside it.
     public var title: String { "\(rawValue) min" }
+
+    /// The same interval inside a sentence.
+    ///
+    /// ⚠️ Not `title`. The confirmation alert interpolated it and came out
+    /// reading "no more often than every 15 min, and as often as every 10
+    /// minutes" — one sentence, one unit, two spellings, which reads as two
+    /// different quantities being compared.
+    public var prose: String { "\(rawValue) minutes" }
 }
