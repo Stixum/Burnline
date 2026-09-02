@@ -141,9 +141,22 @@ public enum HistoryChartMode: Hashable, CaseIterable, Sendable {
     public static func percentDomain(
         for series: [HistoryQuery.PercentSeries]
     ) -> ClosedRange<Double> {
-        // Non-finite readings are filtered rather than clamped: `Int(Double)`
-        // traps and a NaN propagates through `max` in a way that depends on
-        // argument order. The same class of defect `DisplayValue` exists for.
+        // Non-finite readings are FILTERED, not clamped, for two reasons that
+        // are both about this function and neither about `Int`:
+        //
+        // - `max` propagates a NaN in a way that depends on argument order, so
+        //   one poisoned reading could hand back `0...nan` — a domain Charts
+        //   divides the axis by — and whether it did would depend on where in
+        //   the array the reading happened to sit.
+        // - an infinite reading lifts the ceiling to infinity, which collapses
+        //   every real curve onto the baseline.
+        //
+        // ⚠️ Nothing on disk can reach this: `HistoryStore.JSON.decoder` keeps
+        // the default `.throw` strategy for non-conforming floats, so a NaN in
+        // `tracking.json` fails its line rather than arriving here. This is
+        // defence for a PUBLIC entry point — `PercentSeries` can be built by
+        // any caller — and it is written down because otherwise the next reader
+        // deletes it as dead code.
         let observed = series
             .flatMap(\.points)
             .map(\.percent)

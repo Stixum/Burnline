@@ -92,6 +92,23 @@ private func series(_ percentages: [Double]) -> HistoryQuery.PercentSeries {
     #expect(HistoryLabels.percent(100) == "100%")
 }
 
+@Test func aWindowsFinalReadingIsFormattedByTheOnePercentRule() {
+    // `finalReading` hand-rolled `"\(DisplayValue.whole(percent))%"` — a third
+    // copy of what `percent(_:)` owns, and the classic way a column ends up
+    // disagreeing with the chart beside it.
+    let end = Date(timeIntervalSince1970: 1_786_024_800)
+    #expect(HistoryLabels.finalReading(percent: 61, at: end, windowEnd: end).value
+            == HistoryLabels.percent(61))
+
+    // Routing it there also buys the non-finite guard, which is a behaviour
+    // change and a deliberate one: `DisplayValue.whole` alone rendered a NaN
+    // reading as `0%`, and a figure nobody can compute is not a week of no
+    // usage. Unreachable from disk — `HistoryStore.JSON.decoder` keeps the
+    // default `.throw` strategy — so this pins the public entry point.
+    #expect(HistoryLabels.finalReading(percent: .nan, at: end, windowEnd: end).value == "—")
+    #expect(HistoryLabels.finalReading(percent: .nan, at: end, windowEnd: end).isRecorded)
+}
+
 // MARK: - The subtitle is the other tell
 
 @Test func theTwoModesNeverDescribeThemselvesTheSameWay() {

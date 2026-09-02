@@ -202,7 +202,10 @@ struct HistoryView: View {
     }
 
     private var modePicker: some View {
-        Picker("", selection: $chartMode) {
+        // ⚠️ A real label, then `.labelsHidden()`. Visually identical to an
+        // empty string and the difference is the whole accessible name: an
+        // unnamed segmented control announces only its selected segment.
+        Picker("Chart series", selection: $chartMode) {
             ForEach(HistoryChartMode.allCases, id: \.self) { mode in
                 Text(mode.title).tag(mode)
             }

@@ -49,6 +49,11 @@ struct HistoryPercentTrend: View {
         /// segment plunging 51% → 3%, a descent that never happened. The
         /// allowance is `HistoryQuery`'s to decide and is read, never measured
         /// here.
+        ///
+        /// A `#` separator is safe even though a week's label is free text: the
+        /// suffix is an `Int` and contains no `#`, so **the last `#` is always
+        /// the separator** and two distinct (week, allowance) pairs cannot spell
+        /// one key.
         let segment: String
         let fraction: Double
         let percent: Double
@@ -85,6 +90,18 @@ struct HistoryPercentTrend: View {
         let color: Color
         let fraction: Double
         let percent: Double
+        /// Which side of the point the label hangs on.
+        ///
+        /// ⚠️ **Layout geometry, not a figure** — nothing a reader is shown
+        /// comes from this, the same standing this has in
+        /// `HistoryBreakdown.xDomain`. A fixed `.trailing` always reaches back
+        /// LEFT over the stretch the line just came from, and for the live
+        /// week that stretch is where a re-grant's ring and dashed drop sit: a
+        /// week ending a few hours after a re-grant printed its name straight
+        /// across the event. Hanging the label on the side the line has not
+        /// reached yet clears it, and only a right-half endpoint keeps
+        /// `.trailing`, where extending right would run off the plot.
+        let alignment: Alignment
     }
 
     /// Two vertices of the pace diagonal. A `RuleMark` draws verticals and
@@ -146,7 +163,8 @@ struct HistoryPercentTrend: View {
         curves.compactMap { curve in
             guard let last = curve.series.points.last else { return nil }
             return Endpoint(id: curve.label, color: Theme.curve(at: curve.rampIndex),
-                            fraction: last.elapsedFraction, percent: last.percent)
+                            fraction: last.elapsedFraction, percent: last.percent,
+                            alignment: last.elapsedFraction < 0.5 ? .leading : .trailing)
         }
     }
 
@@ -200,10 +218,17 @@ struct HistoryPercentTrend: View {
         // A zero-area point carrying nothing but the label. An unlabelled
         // diagonal across a chart is a mystery, and the legend below names
         // weeks only.
-        PointMark(x: .value("Elapsed", 1.0),
-                  y: .value("Percent", HistoryChartMode.fullAllowance))
+        //
+        // ⚠️ **At the diagonal's MIDPOINT, not its top end.** Hung at (1, 100)
+        // it landed on any prior week that finished near its allowance — a full
+        // week is the common case, not an edge — and rendered `Aug 20 – Aug
+        // 2pace7`. Every series' direct label is at ITS OWN endpoint, and no
+        // series ends in the middle of the plot, so the centre of the diagonal
+        // is the one place on it that nothing else can claim.
+        PointMark(x: .value("Elapsed", 0.5),
+                  y: .value("Percent", HistoryChartMode.fullAllowance / 2))
             .symbolSize(0)
-            .annotation(position: .leading, alignment: .bottom, spacing: 2,
+            .annotation(position: .topLeading, spacing: 2,
                         overflowResolution: AnnotationOverflowResolution(
                             x: .fit(to: .chart), y: .fit(to: .chart))) {
                 Text("pace")
@@ -228,19 +253,6 @@ struct HistoryPercentTrend: View {
             RectangleMark(xStart: .value("Elapsed", span.fromFraction),
                           xEnd: .value("Elapsed", span.toFraction))
                 .foregroundStyle(Theme.textMuted.opacity(0.12))
-                // A real span is narrow — 97 minutes of a 168-hour week is
-                // under 1% of the plot — so the label is always wider than the
-                // band it names and always needs resolving back inside.
-                .annotation(position: .top, alignment: .center, spacing: 1,
-                            overflowResolution: AnnotationOverflowResolution(
-                                x: .fit(to: .chart), y: .disabled)) {
-                    // ⚠️ A text token, NOT the series colour. Two of the three
-                    // ramp colours are below the contrast floor for text at
-                    // this size — legible as lines, not as labels.
-                    Text("re-granted")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Theme.textSecondary)
-                }
         }
 
         ForEach(spans) { span in
@@ -282,6 +294,23 @@ struct HistoryPercentTrend: View {
                         .overlay(Circle().strokeBorder(ring.color, lineWidth: 2))
                         .frame(width: 10, height: 10)
                 }
+                // ⚠️ **On the ring, not above the band.** Hung off the band's
+                // top edge the word shared a row with the `now` rule's label
+                // and rendered `re-grantednow` — and a re-grant is always
+                // recent just after it happens, so that was the first thing a
+                // user would ever see. Beside the ring it names the event it
+                // belongs to, in the emptiest part of the plot: the first
+                // reading of a new allowance is low by definition.
+                .annotation(position: .trailing, spacing: 5,
+                            overflowResolution: AnnotationOverflowResolution(
+                                x: .fit(to: .chart), y: .fit(to: .chart))) {
+                    // ⚠️ A text token, NOT the series colour. Two of the three
+                    // ramp colours are below the contrast floor for text at
+                    // this size — legible as lines, not as labels.
+                    Text("re-granted")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                }
         }
     }
 
@@ -293,7 +322,7 @@ struct HistoryPercentTrend: View {
                       y: .value("Percent", endpoint.percent))
                 .symbolSize(18)
                 .foregroundStyle(endpoint.color)
-                .annotation(position: .top, alignment: .trailing, spacing: 3,
+                .annotation(position: .top, alignment: endpoint.alignment, spacing: 3,
                             overflowResolution: AnnotationOverflowResolution(
                                 x: .fit(to: .chart), y: .fit(to: .chart))) {
                     // ⚠️ A text token, NOT the series colour. Same rule, same

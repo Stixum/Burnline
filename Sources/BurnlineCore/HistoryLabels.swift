@@ -152,7 +152,11 @@ public enum HistoryLabels {
         guard let percent else {
             return FinalReading(value: "—", note: "not recorded", isRecorded: false)
         }
-        let value = "\(DisplayValue.whole(percent))%"
+        // Through `percent(_:)`, not a third hand-rolled copy of it. That also
+        // buys the non-finite guard: a reading that is not a number is not
+        // `0%`, which is what `DisplayValue.whole` alone would have printed.
+        // `Self.`, because the parameter shadows the function.
+        let value = Self.percent(percent)
         guard let at else {
             // The two are written together by `WindowLedger`, so this pairing
             // means a hand-edited or partially-decoded row. Say so rather than
