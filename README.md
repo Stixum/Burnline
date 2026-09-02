@@ -13,7 +13,7 @@ A macOS menu bar app that shows where you *should* be in your Claude weekly usag
 
 64% used, 65% of the week gone. One point ahead of pace. Settings can put the delta, the projection or the 5-hour figure there instead.
 
-<img src="docs/images/popover.png" alt="Burnline popover: 0 points ahead of pace, running cool, with a usage bar showing 84% used against an 85% end-of-day target" width="300">
+<img src="docs/images/popover.png" alt="Burnline popover: 66 points ahead of pace, running cool, with a usage bar showing 18% used against an 85% end-of-day target" width="300">
 
 - **Violet fill** is what you've spent.
 - **Solid marker** is where you should be right now.
