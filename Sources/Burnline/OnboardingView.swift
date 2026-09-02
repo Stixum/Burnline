@@ -41,15 +41,23 @@ struct OnboardingView: View {
             // Deliberately not "the app cannot work without this" — it can.
             // ~/.claude.json supplies a figure on its own; what it will not do
             // is keep itself current.
+            // 🔴 This paragraph carried NO font and NO colour, so it rendered at
+            // the system default — 13pt primary white — while the one-line
+            // footnote beneath it carried two conflicting `.font` /
+            // `.foregroundStyle` pairs. The second pair was meant for this
+            // paragraph and landed one Text too far down, where the inner pair
+            // wins anyway, so it did nothing there and left the body copy
+            // shouting. Invisible in review; obvious in a screenshot.
             Text("Burnline reads your usage from files Claude Code already keeps, "
                  + "so it works now. Adding a status line keeps it current: Claude Code "
-                 + "reports after every response. Without one, the figure goes stale.")
-            Text("Nothing here asks macOS for permission.")
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.textMuted)
+                 + "reports after each response in a terminal session. Without one, the "
+                 + "figure goes stale.")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Text("Nothing here asks macOS for permission.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textMuted)
         }
     }
 
