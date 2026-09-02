@@ -11,9 +11,9 @@ A macOS menu bar app that shows where you *should* be in your Claude weekly usag
 64/65
 ```
 
-64% used, 65% of the week gone. One point under budget.
+64% used, 65% of the week gone. One point ahead of pace.
 
-<img src="docs/images/popover.png" alt="Burnline popover: 0 points under budget, running cool, with a usage bar showing 84% used against an 85% end-of-day target" width="300">
+<img src="docs/images/popover.png" alt="Burnline popover: 0 points ahead of pace, running cool, with a usage bar showing 84% used against an 85% end-of-day target" width="300">
 
 - **Violet fill** is what you've spent.
 - **Solid marker** is where you should be right now.
@@ -29,7 +29,7 @@ Burnline builds this from the transcripts Claude Code still has, once, on first 
 
 Two honest limits worth knowing:
 
-- **Anthropic's own percentage is recorded from the day you install this, not before.** Earlier weeks show Burnline's own unit total instead, marked "not recorded" — the real figure for a week that has already closed exists nowhere on your Mac and cannot be reconstructed.
+- **Anthropic's figure is recorded from the day you install this, not before.** Earlier weeks show Burnline's own unit total instead, marked "not recorded" — the real figure for a week that has already closed exists nowhere on your Mac and cannot be reconstructed.
 - **Weeks when Burnline wasn't running are drawn as gaps, not as zero usage.** Those are different things and the chart says which.
 
 ## Why
@@ -52,7 +52,7 @@ Or with Homebrew:
 brew install --cask stixum/tap/burnline
 ```
 
-Burnline keeps itself up to date. It checks for new versions and offers them in place, and both the check and the automatic checking can be turned off in Settings. Updates are signed, and one that fails signature verification is refused. Homebrew installs can keep using `brew upgrade --cask burnline` instead.
+Burnline keeps itself up to date: it checks for new versions and offers them in place. Automatic checking can be turned off in Settings. Updates are signed, and one that fails signature verification is refused. Homebrew installs can keep using `brew upgrade --cask burnline` instead.
 
 ## Setup
 
@@ -80,7 +80,7 @@ Claude Code then reports usage after every response. Skip it and the figure goes
 
 **The usage half has three sources, and the popover always names the one in play.**
 
-1. **Live.** Anthropic's own percentage and the real reset time, from whichever is fresher:
+1. **Live.** Anthropic's figure and the real reset time, from whichever is fresher:
    - the [status line](https://code.claude.com/docs/en/statusline), which fires after every response
    - `~/.claude.json`, which also carries the per-model weekly limit
 2. **Calibrated.** No reading available, but you've typed `/usage` numbers in by hand.
@@ -119,9 +119,9 @@ Leave the setting off and the only network request left is the update check, whi
 
 ## Notifications
 
-**"Notify on thresholds" is off by default.** Turn it on in Settings and Burnline posts a macOS notification when you slip a set number of points behind pace, or when weekly or 5-hour usage reaches a percentage you pick. macOS asks for notification permission the first time you enable it.
+**"Send notifications" is off by default.** Turn it on in Settings and Burnline posts a macOS notification when you slip a set number of points behind pace, or when weekly or 5-hour usage reaches a percentage you pick. macOS asks for notification permission the first time you enable it.
 
-Each threshold fires once per allowance and re-arms when a new one starts — at its own reset, or if Anthropic re-issues your weekly limits mid-window. A nudge, not a nag.
+Each threshold fires once per allowance and re-arms when a new one starts — at its own reset, or when Anthropic re-grants the weekly limit mid-window. A nudge, not a nag.
 
 ## Build from source
 
