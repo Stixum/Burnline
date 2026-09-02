@@ -19,21 +19,6 @@ A macOS menu bar app that shows where you *should* be in your Claude weekly usag
 - **Solid marker** is where you should be right now.
 - **Translucent band** runs out to the end-of-day target. Spend into it and the day finishes level.
 
-## History
-
-Click the chart icon in the popover for past weeks: totals week over week, this week's burn curve laid over the last two, and where the usage actually went by project and by model.
-
-<img src="docs/images/history.png" alt="Burnline History window: three completed weeks with unit totals, burn curves for this week against the previous two on a shared window-elapsed axis, and a sorted breakdown of usage by project" width="620">
-
-Burnline builds this from the transcripts Claude Code still has, once, on first launch — about twenty seconds. **It keeps them, which matters, because Claude Code deletes its own transcripts after 30 days.** From then on it records each week as it closes.
-
-**The curves toggle between Units and Percent, and the two know different things.** Units are counted from this Mac's transcripts: every retained week, and they never fall, so a re-grant leaves no mark on them. Percent is Anthropic's figure: every machine, but flat wherever nothing reported. A re-grant shows only in Percent. The line breaks rather than plunging, a ring marks the first reading after it, and a band spans the stretch it is known to lie in.
-
-Two honest limits worth knowing:
-
-- **Anthropic's figure is recorded from the day you install this, not before.** Earlier weeks show Burnline's own unit total instead, marked "not recorded" — the real figure for a week that has already closed exists nowhere on your Mac and cannot be reconstructed.
-- **Weeks when Burnline wasn't running are drawn as gaps, not as zero usage.** Those are different things and the chart says which.
-
 ## Why
 
 Your weekly limit resets on a fixed day and time. Seven days is 100%, so each day is about 14.3%, and on day 5 you're roughly 71% through.
@@ -55,6 +40,21 @@ brew install --cask stixum/tap/burnline
 ```
 
 Burnline keeps itself up to date: it checks for new versions and offers them in place. Automatic checking can be turned off in Settings. Updates are signed, and one that fails signature verification is refused. Homebrew installs can keep using `brew upgrade --cask burnline` instead.
+
+## What it reads
+
+Local files. No credentials, no telemetry, and no usage data ever leaves your Mac. The only request Burnline makes on its own is an update check against GitHub — no system profile is sent with it (`SUSendProfileInfo` is explicitly false).
+
+| Path | Access | Why |
+|---|---|---|
+| `~/.claude/projects/**/*.jsonl` | read | Token counts between readings |
+| `~/Library/Application Support/Burnline/` | read/write | Its own cache and settings |
+| `~/.claude.json` | read | **One field**, `cachedUsageUtilization` |
+| `~/.claude/settings.json` | read, and write on your click | The status line, backed up first |
+
+`~/.claude.json` also lists every project path on your machine. Burnline keeps nothing from it except that one field.
+
+**Unsandboxed, on purpose.** `~/.claude` is a home dotfolder, not a TCC-protected location like Documents. An unsandboxed app reads it with no prompt and no Full Disk Access. Sandboxing would cut off the only data source.
 
 ## Setup
 
@@ -102,20 +102,20 @@ A drop of two points or more opens a new allowance. The **At this rate** row, wh
 
 **The instant itself is unrecoverable.** It fell between two readings, and the popover dates it to the later one.
 
-## What it reads
+## History
 
-Local files. No credentials, no telemetry, and no usage data ever leaves your Mac. The only request Burnline makes on its own is an update check against GitHub — no system profile is sent with it (`SUSendProfileInfo` is explicitly false).
+Click the chart icon in the popover for past weeks: totals week over week, this week's burn curve laid over the last two, and where the usage actually went by project and by model.
 
-| Path | Access | Why |
-|---|---|---|
-| `~/.claude/projects/**/*.jsonl` | read | Token counts between readings |
-| `~/Library/Application Support/Burnline/` | read/write | Its own cache and settings |
-| `~/.claude.json` | read | **One field**, `cachedUsageUtilization` |
-| `~/.claude/settings.json` | read, and write on your click | The status line, backed up first |
+<img src="docs/images/history.png" alt="Burnline History window: three completed weeks with unit totals, burn curves for this week against the previous two on a shared window-elapsed axis, and a sorted breakdown of usage by project" width="620">
 
-`~/.claude.json` also lists every project path on your machine. Burnline keeps nothing from it except that one field.
+Burnline builds this from the transcripts Claude Code still has, once, on first launch — about twenty seconds. **It keeps them, which matters, because Claude Code deletes its own transcripts after 30 days.** From then on it records each week as it closes.
 
-**Unsandboxed, on purpose.** `~/.claude` is a home dotfolder, not a TCC-protected location like Documents. An unsandboxed app reads it with no prompt and no Full Disk Access. Sandboxing would cut off the only data source.
+**The curves toggle between Units and Percent, and the two know different things.** Units are counted from this Mac's transcripts: every retained week, and they never fall, so a re-grant leaves no mark on them. Percent is Anthropic's figure: every machine, but flat wherever nothing reported. A re-grant shows only in Percent. The line breaks rather than plunging, a ring marks the first reading after it, and a band spans the stretch it is known to lie in.
+
+Two honest limits worth knowing:
+
+- **Anthropic's figure is recorded from the day you install this, not before.** Earlier weeks show Burnline's own unit total instead, marked "not recorded" — the real figure for a week that has already closed exists nowhere on your Mac and cannot be reconstructed.
+- **Weeks when Burnline wasn't running are drawn as gaps, not as zero usage.** Those are different things and the chart says which.
 
 ## Automatic refresh
 
