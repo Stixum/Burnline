@@ -98,7 +98,7 @@ Every real reading is account-wide and corrects for all of it. Only the forward 
 
 It now believes a lower reading when its date is proven later than the one it replaces, by an explicit `fetchedAtMs` or the exact transcript turn that minted it. An inferred date still cannot.
 
-A drop of two points or more opens a new allowance. The **At this rate** row, which projects where the week lands, is measured from it and becomes **Rate since re-grant**. **The pace target does not move**, because the window did not. The popover says **Limits re-granted**, and the week's row in History reads `Re-granted day 4, opened at 3%`.
+A drop of two points or more opens a new allowance. The **At this rate** row, which projects where the week lands, is measured from it and becomes **Rate since re-grant**. **The pace target does not move**, because the window did not. The popover says **Re-granted**, and the week's row in History reads `Re-granted day 4, opened at 3%`.
 
 **The instant itself is unrecoverable.** It fell between two readings, and the popover dates it to the later one.
 
