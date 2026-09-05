@@ -26,6 +26,10 @@ struct MenuBarLabel: View {
                 // render for light mode and come out near-black on near-black.
                 NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
                 store.start()
+                // Sparkle starts on first access and nothing else accesses it
+                // until Settings opens — which for most people is never. Here,
+                // or the scheduled update check exists only in the README.
+                Updater.startAtLaunch()
                 // Lets the settings window be opened without a click, so it can
                 // be verified from a terminal.
                 if ProcessInfo.processInfo.environment["BURNLINE_OPEN_SETTINGS"] == "1" {
