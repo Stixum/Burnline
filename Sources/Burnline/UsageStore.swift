@@ -476,6 +476,20 @@ final class UsageStore {
         refreshWiringState()
     }
 
+    /// Reconciles the stored launch-at-login flag with what macOS reports.
+    ///
+    /// The flag is written on the success path of `register()` and nowhere
+    /// else, so a user who switches the item off in System Settings leaves the
+    /// app believing it is on. Settings reads `SMAppService.mainApp.status` and
+    /// hands the verdict here; the rule for what counts as "on" is
+    /// `LoginItemRegistration.isOn`, tested in Core.
+    func syncLaunchAtLogin(_ registration: LoginItemRegistration) {
+        guard storedSettings.launchAtLogin != registration.isOn else { return }
+        var updated = storedSettings
+        updated.launchAtLogin = registration.isOn
+        settings = updated
+    }
+
     /// Marks onboarding as offered. Called once at launch whatever the user
     /// then does — declining is an answer.
     func markOnboardingSeen() {

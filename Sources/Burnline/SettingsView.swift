@@ -7,6 +7,10 @@ struct SettingsView: View {
     @Bindable var store: UsageStore
     @Environment(\.openWindow) private var openWindow
     @State private var launchAtLoginFailed = false
+    /// The system's answer about the login item, read on appear and after each
+    /// change; `nil` until read. Only its `note` is rendered — the toggle itself
+    /// reads the stored flag, which `syncLoginItem` has reconciled to this.
+    @State private var loginItem: LoginItemRegistration?
     @State private var confirmingPoller = false
     /// Seeded from Sparkle in `onAppear`, because `Updater.shared` starts the
     /// updater on first access and a property initialiser would do that while
@@ -74,6 +78,7 @@ struct SettingsView: View {
             store.refreshClaudeExecutable()
             store.refreshWiringState()
             store.refreshNotificationAuthorization()
+            syncLoginItem()
             automaticUpdates = Updater.shared.automaticallyChecks
         }
         .alert("Let Burnline refresh your usage?", isPresented: $confirmingPoller) {
@@ -231,6 +236,11 @@ struct SettingsView: View {
             // right-hand eyebrow rhythm breaks against the left's.
             Text("General").eyebrow()
 
+            // The stored flag is what the user asked for; `SMAppService` is
+            // what macOS did with it, and the two drift — the item can be
+            // switched off in System Settings without the app hearing about
+            // it. `syncLoginItem` reconciles the flag to the system's answer
+            // on appear and after every change, so the toggle shows the truth.
             Toggle("Launch at login", isOn: Binding(
                 get: { store.settings.launchAtLogin },
                 set: { setLaunchAtLogin($0) }
@@ -240,6 +250,8 @@ struct SettingsView: View {
                 Text("Couldn't register at login. Move Burnline to /Applications and try again.")
                     .font(.system(size: 11)).foregroundStyle(Theme.danger)
             }
+
+            loginItemNote
 
             // Enabling asks first. Off-by-default protects someone who
             // never touches this; it says nothing to someone who flips it
@@ -571,6 +583,52 @@ struct SettingsView: View {
         } catch {
             // Registration fails for unsigned or non-/Applications builds.
             launchAtLoginFailed = true
+        }
+        // A successful `register()` can still leave the item awaiting approval,
+        // in which case the toggle goes back off and the note says why.
+        syncLoginItem()
+    }
+
+    /// Reads the system's answer and reconciles the stored flag to it. The rule
+    /// — which states count as on, which carry a note — is
+    /// `LoginItemRegistration`'s and is tested in Core; this only converts.
+    private func syncLoginItem() {
+        let registration = LoginItemRegistration(SMAppService.mainApp.status)
+        loginItem = registration
+        store.syncLaunchAtLogin(registration)
+    }
+
+    /// Exceptions only, like `notificationPermissionStatus` above it: shown for
+    /// the one state the user can do something about. Word and icon, never
+    /// colour alone.
+    @ViewBuilder private var loginItemNote: some View {
+        if let note = loginItem?.note {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .top, spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10)).foregroundStyle(Theme.warning)
+                    Text(note)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+}
+
+extension LoginItemRegistration {
+    /// Case for case. `@unknown default` lands on "off, no note": a status
+    /// this build has never heard of is not evidence the item is running.
+    init(_ status: SMAppService.Status) {
+        switch status {
+        case .enabled: self = .enabled
+        case .requiresApproval: self = .requiresApproval
+        case .notFound: self = .notFound
+        case .notRegistered: self = .notRegistered
+        @unknown default: self = .notRegistered
         }
     }
 }
