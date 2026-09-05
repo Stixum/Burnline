@@ -61,6 +61,17 @@ public struct Snapshot: Equatable, Sendable {
             self.startPercent = startPercent
         }
 
+        /// The popover row's label.
+        ///
+        /// One word, because the row is 272pt wide and the VALUE is the part
+        /// that carries information. As `Limits re-granted` the row rendered
+        /// `Fri 3:06 PM, opened at…` on the real 2026-09-04 re-grant — the
+        /// truncated half being exactly the one `rowValue`'s note below says
+        /// makes the drop legible. The row directly above it reads "Rate since
+        /// re-grant", so the word is not standing alone. Measured against the
+        /// widest value the format can produce in `RegrantRowTests`.
+        public static let rowLabel = "Re-granted"
+
         /// The popover row's value: `"Mon 2:14 PM, opened at 0%"`.
         ///
         /// Assembled here, like `FiveHourStatus.rowValue` and

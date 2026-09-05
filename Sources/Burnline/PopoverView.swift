@@ -206,12 +206,15 @@ struct PopoverView: View {
     /// rejection row can sit directly beneath it. Symbol + word + colour, never
     /// colour alone.
     ///
-    /// The value string is `Snapshot.Regrant.rowValue`; this target has no
-    /// tests, so nothing is assembled here.
+    /// Both strings are `Snapshot.Regrant`'s; this target has no tests, so
+    /// nothing is assembled here. ⚠️ The label was `Limits re-granted` and the
+    /// value truncated to `Fri 3:06 PM, opened at…` on the real 2026-09-04
+    /// re-grant. `RegrantRowTests` now measures label plus widest value against
+    /// this row's geometry — keep the two in step if the layout here changes.
     private func regrantRow(_ regrant: Snapshot.Regrant) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "arrow.counterclockwise.circle.fill").font(.system(size: 9))
-            Text("Limits re-granted")
+            Text(Snapshot.Regrant.rowLabel)
             Spacer()
             Text(regrant.rowValue).monospacedDigit()
         }
