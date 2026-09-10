@@ -167,6 +167,13 @@ public struct Snapshot: Equatable, Sendable {
     /// `window.start`, so an epoch beside it would describe nothing.
     public let regrant: Regrant?
 
+    /// Why the anchor has stopped moving, when the cause is Claude Code's own
+    /// ability to reach Anthropic rather than an idle machine.
+    ///
+    /// `nil` is both "healthy" and "never probed", and the two render
+    /// identically on purpose — see `AuthBlock`.
+    public let authBlock: AuthBlock?
+
     public init(window: Window, targetPercent: Double, estimatedPercent: Double?,
                 capturedPercent: Double? = nil,
                 projectedPercent: Double?, unitsInWindow: Double,
@@ -177,7 +184,8 @@ public struct Snapshot: Equatable, Sendable {
                 fiveHour: FiveHourStatus? = nil,
                 rejectedReading: RateLimitHighWater.RejectedReading? = nil,
                 scopedWeekly: UsageUtilization.ScopedLimit? = nil,
-                regrant: Regrant? = nil) {
+                regrant: Regrant? = nil,
+                authBlock: AuthBlock? = nil) {
         self.window = window
         self.targetPercent = targetPercent
         self.estimatedPercent = estimatedPercent
@@ -194,6 +202,7 @@ public struct Snapshot: Equatable, Sendable {
         self.rejectedReading = rejectedReading
         self.scopedWeekly = scopedWeekly
         self.regrant = regrant
+        self.authBlock = authBlock
     }
 
     /// Age of the live capture, when there is one.
@@ -252,6 +261,36 @@ public struct Snapshot: Equatable, Sendable {
 
     /// No calibration yet — show the pace target alone.
     public var isPaceOnly: Bool { estimatedPercent == nil }
+
+    /// The block, but only when it has something to explain.
+    ///
+    /// ⚠️ **A block never surfaces while the anchor is still fresh.** The
+    /// utilization cache is throttled to five minutes, so a poll can legitimately
+    /// refresh nothing and set a block seconds after a capture landed — and a red
+    /// banner beside a green `Live · 30s ago` is the self-contradicting picture
+    /// this whole feature exists to remove, not to create. A stale or absent
+    /// anchor is the precondition for saying anything at all.
+    public var visibleAuthBlock: AuthBlock? {
+        guard let authBlock else { return nil }
+        if let liveAge, !CaptureAge.isStale(liveAge) { return nil }
+        return authBlock
+    }
+
+    public var isAuthBlocked: Bool { visibleAuthBlock != nil }
+
+    /// Why the figure has stopped moving, in the popover's own words — or `nil`
+    /// when there is nothing to say.
+    ///
+    /// 🔴 **Mutually exclusive with the auth banner, and that is a rule with a
+    /// test rather than a view branch.** `CaptureAge.scarcityExplanation` offers
+    /// two remedies — "a terminal session or Refresh now" — and while an auth
+    /// block stands, both are dead: a terminal session lands on the login
+    /// picker, and Refresh is gated. Showing it there sends the user to do
+    /// something that cannot work.
+    public var scarcityExplanation: String? {
+        guard !isAuthBlocked else { return nil }
+        return CaptureAge.scarcityExplanation(liveAge)
+    }
 
     public var isCalibrationStale: Bool {
         guard let age = calibrationAge else { return false }

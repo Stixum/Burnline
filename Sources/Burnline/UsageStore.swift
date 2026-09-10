@@ -102,6 +102,15 @@ final class UsageStore {
     /// on the capture timer; it only changes when the user acts.
     private(set) var notificationAuthorization: UNAuthorizationStatus?
 
+    /// Why the anchor has stopped moving, when Claude Code itself is the reason.
+    ///
+    /// Held here rather than derived, because the evidence arrives in pieces —
+    /// a probe, a poll, a capture — and `AuthReducer` folds them one at a time.
+    /// Deliberately NOT persisted: a stale block read off disk at launch would
+    /// assert something about credentials nothing has checked this run.
+    private(set) var authBlock: AuthBlock?
+    @ObservationIgnored private var lastAuthProbeAt: Date?
+
     /// The archive's sole writer, built once and never replaced. Two paths feed
     /// it — the launch fill and the 60s flush — and the serialization that makes
     /// them safe is a property of this one instance.
@@ -379,10 +388,63 @@ final class UsageStore {
                                    interval: interval,
                                    now: Date()) {
             lastPollAt = Date()
-            await poller.poll()
+            await runPollGatheringAuthEvidence()
             // The poll refreshed ~/.claude.json, not our own files.
             rebuild()
+        } else if AuthProbeDecision.shouldProbe(anchorAge: snapshot.liveAge,
+                                                lastProbeAt: lastAuthProbeAt,
+                                                isBlocked: authBlock != nil,
+                                                now: Date()) {
+            // ⚠️ Not an `else` for tidiness. `refreshesUsageAutomatically`
+            // defaults to **false**, so for most users no poll ever runs — and
+            // without this branch a blocked machine would never learn why its
+            // figure froze, nor ever discover that it had been fixed.
+            await probeAuthorization()
+            rebuild()
         }
+    }
+
+    /// Runs a poll and folds what it revealed into `authBlock`.
+    ///
+    /// ⚠️ **The `fetchedAtMs` diff is only evidence when it MOVED.** The CLI
+    /// throttles that write to five minutes, and every non-auth failure —
+    /// network, 429, 5xx, timeout — leaves it unmoved too. So an unmoved cache
+    /// is not a verdict; it is a reason to ask the adjudicator again, which is
+    /// what `discoveredByPoll` marks.
+    private func runPollGatheringAuthEvidence() async {
+        let before = utilizationStore.load()?.fetchedAt
+        let outcome = await poller.poll()
+
+        switch outcome {
+        case let .skippedSignedOut(kind):
+            // The poller's own pre-spawn probe already answered; folding it here
+            // saves asking twice for one finding.
+            lastAuthProbeAt = Date()
+            authBlock = AuthReducer.reduce(authBlock, .probe(.blocked(kind), discoveredByPoll: false),
+                                           now: Date())
+
+        case .completed:
+            if let after = utilizationStore.load()?.fetchedAt, after != before {
+                // `poll()` probes before it spawns, so a completed poll has
+                // already asked — recording that keeps the standalone trigger
+                // from asking again a second later.
+                lastAuthProbeAt = Date()
+                authBlock = AuthReducer.reduce(authBlock, .pollRefreshedCache, now: Date())
+            } else {
+                await probeAuthorization(discoveredByPoll: true)
+            }
+
+        case .skippedBusy, .failed:
+            break
+        }
+    }
+
+    /// Asks Claude Code about its credentials and folds the answer in.
+    private func probeAuthorization(discoveredByPoll: Bool = false) async {
+        lastAuthProbeAt = Date()
+        let result = await poller.probeAuthorization()
+        authBlock = AuthReducer.reduce(authBlock, .probe(result, discoveredByPoll: discoveredByPoll),
+                                       now: Date())
     }
 
     /// Where `claude` was found, or nil if it wasn't.
@@ -418,7 +480,7 @@ final class UsageStore {
         defer { isPolling = false }
 
         lastPollAt = Date()
-        await poller.poll()
+        await runPollGatheringAuthEvidence()
         // The poll refreshes ~/.claude.json, not our own files, so a rebuild is
         // what surfaces it.
         rebuild()
@@ -563,6 +625,14 @@ final class UsageStore {
         // `resolution.rejected` is kept so the popover can say the file was
         // overridden. Silently disagreeing with the user's own terminal status
         // line reads as a broken app rather than as the protection it is.
+        // 🔴 Read off the DATED CANDIDATES, before selection — never off
+        // `resolution.trusted`, which `reconcile` rebuilds without `provenAt`.
+        // The obvious version compiles and never clears a block. Pinned by
+        // `theTrustedCaptureDoesNotCarryProofWhichIsWhyCandidatesAreRead`.
+        if let proof = AuthEvidence.fromCaptures(dated) {
+            authBlock = AuthReducer.reduce(authBlock, proof, now: Date())
+        }
+
         let resolution = CaptureSelection.resolve(dated, against: highWater)
         let capture = resolution.trusted
         if resolution.highWater != highWater {
@@ -580,7 +650,8 @@ final class UsageStore {
                                          now: Date(), isScanning: isScanning,
                                          rejected: resolution.rejected,
                                          scopedWeekly: utilization?.scopedWeekly,
-                                         regrant: resolution.regrant)
+                                         regrant: resolution.regrant,
+                                         authBlock: authBlock)
 
         // Before the observation feed's guards: the evaluation must run on
         // every rebuild, and the block below returns early.

@@ -21,7 +21,8 @@ public enum SnapshotBuilder {
                              isScanning: Bool,
                              rejected: RateLimitHighWater.RejectedReading? = nil,
                              scopedWeekly: UsageUtilization.ScopedLimit? = nil,
-                             regrant: RateLimitHighWater.Regrant? = nil) -> Snapshot {
+                             regrant: RateLimitHighWater.Regrant? = nil,
+                             authBlock: AuthBlock? = nil) -> Snapshot {
 
         // A capture pins the window exactly: its resets_at IS the boundary, so
         // no user-configured schedule is involved.
@@ -115,7 +116,8 @@ public enum SnapshotBuilder {
             fiveHour: fiveHour,
             rejectedReading: rejected,
             scopedWeekly: scopedWeekly,
-            regrant: epoch
+            regrant: epoch,
+            authBlock: authBlock
         )
     }
 

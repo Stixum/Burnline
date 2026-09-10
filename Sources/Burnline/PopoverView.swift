@@ -24,10 +24,16 @@ struct PopoverView: View {
 
             hero
 
-            // Exceptions-only. Names the cause of a frozen figure instead of
-            // leaving the user to infer it from an age string — which is what
-            // made "stuck at 69%" read as a broken app.
-            if let explanation = CaptureAge.scarcityExplanation(snapshot.liveAge) {
+            // Exceptions-only, and mutually exclusive with each other: the
+            // scarcity copy offers "a terminal session or Refresh now", and
+            // while an auth block stands both are dead. `Snapshot` owns that
+            // rule so it can be tested; this only renders the outcome.
+            authBanner
+
+            // Names the cause of a frozen figure instead of leaving the user to
+            // infer it from an age string — which is what made "stuck at 69%"
+            // read as a broken app.
+            if let explanation = snapshot.scarcityExplanation {
                 Text(explanation)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.warning)
@@ -58,6 +64,32 @@ struct PopoverView: View {
             // configured user would see a spurious "Set up" until something else
             // refreshed it. One small file read per popover open, not on a timer.
             store.refreshWiringState()
+        }
+    }
+
+    /// Why the figure stopped, when Claude Code itself is the reason.
+    ///
+    /// The view itself is `AuthBanner`, which takes no store — so it can be put
+    /// through `ImageRenderer` in a throwaway target and checked pixel by pixel
+    /// without a running app or an awake display. That is the only technique on
+    /// this project that has ever proven a *drawing* rejects a defect.
+    @ViewBuilder private var authBanner: some View {
+        if let block = snapshot.visibleAuthBlock {
+            AuthBanner(block: block, anchorAge: snapshot.liveAge) { remedy(block.kind) }
+        }
+    }
+
+    /// Hands the user a terminal, or the command, and never runs it unasked.
+    private func remedy(_ kind: AuthBlock.Kind) {
+        let executable = store.claudeExecutable ?? "claude"
+        // Option-click copies instead — the fallback for a machine whose
+        // `.command` handler is an editor rather than a terminal.
+        guard !NSEvent.modifierFlags.contains(.option) else {
+            AuthRemedy.copy(kind, claudeExecutable: executable)
+            return
+        }
+        if !AuthRemedy.open(kind, claudeExecutable: executable) {
+            AuthRemedy.copy(kind, claudeExecutable: executable)
         }
     }
 
@@ -313,7 +345,11 @@ struct PopoverView: View {
     /// dead control in a 300pt panel is worse than no control, and Settings
     /// already explains why it could not be found.
     @ViewBuilder private var checkNowButton: some View {
-        if store.claudeExecutable != nil {
+        // ⚠️ Hidden while blocked as well as while `claude` is missing, and for
+        // the same reason the comment above gives: `ClaudeAuthStatus.blocksPolling`
+        // gates every poll in that state, so the glyph could only ever spin and
+        // refresh nothing. The banner's own button takes over the job.
+        if store.claudeExecutable != nil, !snapshot.isAuthBlocked {
             // A glyph, not a label. "Check now" as text cost ~70pt in a 300pt
             // footer that already carries the source label, Settings and Quit,
             // and it pushed both itself and "Live · 5m ago" into truncation.
