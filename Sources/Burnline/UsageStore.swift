@@ -412,6 +412,22 @@ final class UsageStore {
     /// is not a verdict; it is a reason to ask the adjudicator again, which is
     /// what `discoveredByPoll` marks.
     private func runPollGatheringAuthEvidence() async {
+        // 🔴 **`isPolling` is owned HERE, not by `pollNow()` alone.** It drives
+        // the Refresh glyph's spinner and its disabled state, and a background
+        // poll started from the scan path used to leave it `false`. The glyph
+        // therefore looked ready during a poll that was already running: the
+        // click passed `pollNow`'s guard, reached `UsagePoller`, and was refused
+        // by that type's separate `running` guard — instantly, with no feedback.
+        // Reported as "refresh doesn't work"; the log showed five clicks inside
+        // one second, every one answered "skipped: already running".
+        //
+        // ⚠️ Two guards for one condition is the shape of the bug. This one is
+        // the user-visible state, so it has to be set wherever a poll actually
+        // begins, not only where a person asked for it.
+        guard !isPolling else { return }
+        isPolling = true
+        defer { isPolling = false }
+
         let before = utilizationStore.load()?.fetchedAt
         let outcome = await poller.poll()
 
@@ -503,9 +519,6 @@ final class UsageStore {
     /// in that case rather than leaving a control that cannot work.
     func pollNow() async {
         guard !isPolling, ClaudeExecutable.resolve() != nil else { return }
-        isPolling = true
-        defer { isPolling = false }
-
         lastPollAt = Date()
         await runPollGatheringAuthEvidence()
         // The poll refreshes ~/.claude.json, not our own files, so a rebuild is
