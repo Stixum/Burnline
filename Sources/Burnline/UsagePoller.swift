@@ -23,6 +23,25 @@ import BurnlineCore
 final class UsagePoller {
     private var running: pid_t?
 
+    /// 🔴 The gate. Asked BEFORE a pty is opened — see `poll()`.
+    private let authProbe = ClaudeAuthProbe()
+
+    /// What a poll did, for a caller that needs to tell "refreshed nothing"
+    /// apart from "deliberately refused to run".
+    enum Outcome: Equatable {
+        /// Ran to completion. Says nothing about whether the cache moved.
+        case completed
+        /// 🔴 Refused: Claude Code has no usable credential, so spawning a
+        /// session would have opened its login picker. Carries the finding so
+        /// the caller can fold it into the standing `AuthBlock` rather than
+        /// probing a second time.
+        case skippedSignedOut(AuthBlock.Kind)
+        /// A poll was already in flight.
+        case skippedBusy
+        /// Could not run: no `claude`, no pty, or the spawn failed.
+        case failed
+    }
+
     /// Diagnostics for a path that is deliberately silent in normal operation:
     /// it runs behind the user's back and must never print. Without this the
     /// only symptom of a broken poll is a figure that quietly never refreshes,
@@ -60,12 +79,47 @@ final class UsagePoller {
     /// has to cover the round trip.
     private static let settleDelay: TimeInterval = 8
 
+    /// Asks Claude Code about its credentials without polling.
+    ///
+    /// The store's own triggers — launch, the anchor going stale, the popover
+    /// opening while blocked — need the answer without the ~27s session. Shares
+    /// this poller's probe instance so the two cannot overlap.
+    func probeAuthorization() async -> AuthProbeResult {
+        guard let executable = Self.resolveClaude() else { return .noAnswer }
+        return await authProbe.probe(executable: executable)
+    }
+
     /// Refreshes the cache, or returns having done nothing. Never throws: this
     /// runs on a timer behind the user's back and a failure must cost nothing
     /// more than a stale figure, which is the state it was already in.
-    func poll() async {
+    @discardableResult
+    func poll() async -> Outcome {
         Self.log("poll requested")
-        guard running == nil else { Self.log("skipped: already running"); return }
+        guard running == nil else { Self.log("skipped: already running"); return .skippedBusy }
+
+        guard let executable = Self.resolveClaude() else {
+            Self.log("FAILED: claude not found on PATH or in any known location")
+            return .failed
+        }
+
+        // 🔴 **The gate, and it must come before `openpty`, not before the
+        // write.** Signed out, Claude Code boots to `Select login method:`
+        // rather than a prompt, and the `/usage\r` below is then an Enter
+        // keypress on that picker: it starts an OAuth flow and opens a browser
+        // the user never asked for. Worse on a managed Mac, where
+        // `forceLoginMethod` puts the login component into `ready_to_start` at
+        // boot and the browser opens ~18 seconds before anything is typed —
+        // so gating the keystroke alone would not have been enough.
+        //
+        // ⚠️ `.signInExpired` deliberately does not gate; that credential boots
+        // to a normal prompt, and a poll is the only in-app proof of recovery.
+        // `ClaudeAuthStatus.blocksPolling` owns that distinction and is tested.
+        let probed = await authProbe.probe(executable: executable)
+        let finding: AuthBlock.Kind? = if case let .blocked(kind) = probed { kind } else { nil }
+        if let finding, ClaudeAuthStatus.blocksPolling(finding) {
+            Self.log("REFUSED: \(finding) — not spawning a session")
+            return .skippedSignedOut(finding)
+        }
 
         var primary: Int32 = 0
         var replica: Int32 = 0
@@ -76,14 +130,7 @@ final class UsagePoller {
         var size = winsize(ws_row: 40, ws_col: 120, ws_xpixel: 0, ws_ypixel: 0)
         guard openpty(&primary, &replica, nil, nil, &size) == 0 else {
             Self.log("FAILED: openpty")
-            return
-        }
-
-        guard let executable = Self.resolveClaude() else {
-            Self.log("FAILED: claude not found on PATH or in any known location")
-            close(primary)
-            close(replica)
-            return
+            return .failed
         }
 
 
@@ -122,7 +169,7 @@ final class UsagePoller {
             Self.log("FAILED to spawn \(executable)")
             close(primary)
             close(replica)
-            return
+            return .failed
         }
         Self.log("launched pid \(pid): \(executable) --model haiku"
                  + " (disclaimed: \(DisclaimedSpawn.isAvailable))")
@@ -217,5 +264,6 @@ final class UsagePoller {
                 .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
             Self.log("tui tail: " + plain.suffix(6).joined(separator: " | ").suffix(600))
         }
+        return .completed
     }
 }
