@@ -8,12 +8,26 @@ import Foundation
 /// after launch.
 public enum AuthProbeDecision {
 
-    /// Never more often than this, whatever else is true.
+    /// The floor while nothing is wrong.
     ///
-    /// The probe is ~0.17s, so the floor is not about cost — it is about a
-    /// rebuild timer that ticks every 10 seconds. Without it a blocked machine
-    /// would spawn six processes a minute for as long as it stayed blocked.
+    /// The probe is ~0.17s, so this is not about cost — it is about a rebuild
+    /// timer that ticks every 10 seconds. Without a floor a machine would spawn
+    /// six processes a minute forever.
     public static let minimumInterval: TimeInterval = 15 * 60
+
+    /// The floor while a block stands.
+    ///
+    /// 🔴 **A cadence for a timer is the wrong cadence for a person.** This was
+    /// 15 minutes, shared with the healthy case, and it produced the defect this
+    /// constant exists to fix: the user clicked `Sign in…`, signed in, came
+    /// back — and the banner still said they were signed out, for up to a
+    /// quarter of an hour, with nothing on screen able to hurry it.
+    ///
+    /// A blocked machine is already not working, so asking once a minute is
+    /// proportionate; it also aligns with the 60s scan tick that hosts the
+    /// check, so in practice this costs one extra process per scan while
+    /// blocked and none at all otherwise.
+    public static let blockedInterval: TimeInterval = 60
 
     /// - Parameters:
     ///   - anchorAge: how old the live capture is; `nil` when there is none,
@@ -26,7 +40,10 @@ public enum AuthProbeDecision {
                                    now: Date) -> Bool {
         // Launch. The baseline is established once, before the user looks.
         guard let lastProbeAt else { return true }
-        guard now.timeIntervalSince(lastProbeAt) >= minimumInterval else { return false }
+        // ⚠️ The floor depends on the state, and picking the wrong one is how
+        // recovery stalls. See `blockedInterval`.
+        let floor = isBlocked ? blockedInterval : minimumInterval
+        guard now.timeIntervalSince(lastProbeAt) >= floor else { return false }
 
         // 🔴 A standing block keeps probing, and this is the recovery path.
         // Every kind gates polling, so a poll can never be the proof; and a user

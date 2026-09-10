@@ -64,6 +64,9 @@ struct PopoverView: View {
             // configured user would see a spurious "Set up" until something else
             // refreshed it. One small file read per popover open, not on a timer.
             store.refreshWiringState()
+            // Only does anything while blocked — the recovery route for someone
+            // who has just used the banner's button. See `probeAuthorizationIfBlocked`.
+            store.probeAuthorizationIfBlocked()
         }
     }
 
@@ -81,6 +84,9 @@ struct PopoverView: View {
 
     /// Hands the user a terminal, or the command, and never runs it unasked.
     private func remedy(_ kind: AuthBlock.Kind) {
+        // They are about to change the answer; don't make them wait out a
+        // cadence sized for an idle machine before we ask again.
+        store.expectAuthorizationChange()
         let executable = store.claudeExecutable ?? "claude"
         // Option-click copies instead — the fallback for a machine whose
         // `.command` handler is an editor rather than a terminal.

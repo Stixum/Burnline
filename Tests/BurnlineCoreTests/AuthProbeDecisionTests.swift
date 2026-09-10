@@ -8,18 +8,35 @@ import Foundation
 // any rule that forgets a floor spawns six processes a minute forever.
 
 private let now = Date(timeIntervalSince1970: 1_000_000)
-private let justNow = now.addingTimeInterval(-60)
 private let longAgo = now.addingTimeInterval(-AuthProbeDecision.minimumInterval - 1)
+private let justNow = now.addingTimeInterval(-5)
 
 @Test func probesAtLaunch() {
     #expect(AuthProbeDecision.shouldProbe(anchorAge: 0, lastProbeAt: nil,
                                           isBlocked: false, now: now))
 }
 
-/// The floor, and it outranks every other trigger — including a standing block.
-@Test func neverProbesTwiceInsideTheMinimumInterval() {
-    #expect(AuthProbeDecision.shouldProbe(anchorAge: nil, lastProbeAt: justNow,
+/// A floor still applies while blocked — the rebuild timer ticks every 10s and
+/// must not spawn six processes a minute.
+@Test func neverProbesTwiceInsideTheBlockedInterval() {
+    let justProbed = now.addingTimeInterval(-(AuthProbeDecision.blockedInterval - 1))
+    #expect(AuthProbeDecision.shouldProbe(anchorAge: nil, lastProbeAt: justProbed,
                                           isBlocked: true, now: now) == false)
+}
+
+/// 🔴 **The defect this constant was added for, asserted directly.** A user who
+/// clicks `Sign in…`, signs in, and comes back must not be told they are signed
+/// out because a cadence sized for an idle machine has not elapsed. Blocked and
+/// healthy do NOT share a floor.
+@Test func aBlockedMachineRechecksFarSoonerThanAHealthyOne() {
+    let aMinuteAgo = now.addingTimeInterval(-AuthProbeDecision.blockedInterval)
+    #expect(AuthProbeDecision.shouldProbe(anchorAge: nil, lastProbeAt: aMinuteAgo,
+                                          isBlocked: true, now: now),
+            "a standing block rechecks on the blocked cadence")
+    #expect(AuthProbeDecision.shouldProbe(anchorAge: nil, lastProbeAt: aMinuteAgo,
+                                          isBlocked: false, now: now) == false,
+            "a healthy machine still waits out the long floor")
+    #expect(AuthProbeDecision.blockedInterval < AuthProbeDecision.minimumInterval)
 }
 
 /// A fresh anchor means something is publishing, which is its own answer.

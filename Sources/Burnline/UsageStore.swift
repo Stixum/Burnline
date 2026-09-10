@@ -439,6 +439,33 @@ final class UsageStore {
         }
     }
 
+    /// Probes because the user is looking, not because a timer fired.
+    ///
+    /// 🔴 **The design specified this trigger and an earlier revision shipped
+    /// without it.** Opening the popover is what a person does immediately after
+    /// acting on the banner's own button, and with no probe wired to it the only
+    /// route back was a background timer — so the banner went on saying "signed
+    /// out" to someone who had just signed in. Reported from a real session.
+    ///
+    /// Only while blocked: probing on every popover open would spawn a process
+    /// for a question already answered.
+    func probeAuthorizationIfBlocked() {
+        guard authBlock != nil else { return }
+        Task { @MainActor in
+            await probeAuthorization()
+            rebuild()
+        }
+    }
+
+    /// The user has gone off to fix it, so drop the floor.
+    ///
+    /// Pressing the remedy button is a statement that the answer is about to
+    /// change. Making them wait out a cadence sized for an idle machine is how
+    /// a working fix looks broken.
+    func expectAuthorizationChange() {
+        lastAuthProbeAt = nil
+    }
+
     /// Asks Claude Code about its credentials and folds the answer in.
     private func probeAuthorization(discoveredByPoll: Bool = false) async {
         lastAuthProbeAt = Date()
