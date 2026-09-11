@@ -3,7 +3,16 @@ import BurnlineCore
 
 @main
 struct BurnlineApp: App {
-    @State private var store = UsageStore()
+    @State private var store: UsageStore
+
+    init() {
+        // 🔴 Before `UsageStore()`, not after. That initialiser reads settings
+        // and the scan cache and creates the history directory, so a duplicate
+        // that reaches it has already written to the directory this guard keeps
+        // one writer on. A property default (`= UsageStore()`) would run first.
+        SingleInstanceGuard.standDownIfAnotherIsRunning()
+        _store = State(initialValue: UsageStore())
+    }
 
     var body: some Scene {
         MenuBarExtra {
