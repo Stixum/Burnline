@@ -134,11 +134,28 @@ struct OnboardingView: View {
     /// Reuses the same tested age vocabulary as the popover rather than
     /// formatting a second time — no arithmetic in a view body.
     @ViewBuilder private var captureAgeRow: some View {
+        // ⚠️ `visibleAuthBlock`, not `store.authBlock`. This row is about the
+        // *figure*, and while the anchor is still fresh a standing block has
+        // nothing to say about it — same rule the popover banner follows. The
+        // Settings row is about whether refresh runs, so it uses the other one.
+        let block = store.snapshot.visibleAuthBlock
         if case .live = store.snapshot.source {
             let stale = CaptureAge.isStale(store.snapshot.liveAge)
-            Text("Last report \(CaptureAge.description(store.snapshot.liveAge))")
+            let age = CaptureAge.description(store.snapshot.liveAge)
+            Text(block.map { "\($0.kind.title). Last report \(age)." }
+                 ?? "Last report \(age)")
                 .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(stale ? Theme.warning : Theme.textMuted)
+                .foregroundStyle(stale || block != nil ? Theme.warning : Theme.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if let block {
+            // 🔴 The instruction below is DEAD while signed out — a terminal
+            // session cannot produce a report without a credential, so telling
+            // someone to send a message is the same class of false remedy this
+            // whole feature exists to remove. Name the cause instead.
+            Text("\(block.kind.title). No report yet.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.warning)
+                .fixedSize(horizontal: false, vertical: true)
         } else {
             Text("No report yet. Send a message in a terminal Claude Code session.")
                 .font(.system(size: 11))

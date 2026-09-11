@@ -92,7 +92,9 @@ struct SettingsView: View {
             // real sessions, and that those sessions reach Anthropic. "Uses no
             // message quota" is measured — /usage produces no assistant turn —
             // but it is not the same as "does nothing".
-            Text("Burnline will run /usage in a brief Claude Code session when the figure "
+            Text((store.authBlock.map { "\($0.kind.title), so nothing will run until "
+                      + "that is fixed.\n\n" } ?? "")
+                 + "Burnline will run /usage in a brief Claude Code session when the figure "
                  + "goes stale: no more than every "
                  + "\(store.settings.usageRefreshInterval.prose) normally, up to every "
                  + "10 minutes near a limit.\n\n"
@@ -516,7 +518,26 @@ struct SettingsView: View {
     /// colour alone.
     @ViewBuilder private var claudeExecutableStatus: some View {
         if store.settings.refreshesUsageAutomatically {
-            if let path = store.claudeExecutable {
+            // ⚠️ `store.authBlock`, NOT `snapshot.visibleAuthBlock`. The popover
+            // banner is suppressed while the anchor is still fresh, because
+            // there is nothing yet to explain about the figure — but polling is
+            // gated by `ClaudeAuthStatus.blocksPolling` the moment a block
+            // exists, fresh anchor or not. This row is about whether refresh
+            // runs, so it follows the block itself.
+            //
+            // Parallel to the "Claude Code not found" branch below, deliberately:
+            // both say the same thing — automatic refresh is not going to happen
+            // — and they should not read as two unrelated problems.
+            if let block = store.authBlock {
+                HStack(alignment: .top, spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10)).foregroundStyle(Theme.warning)
+                    Text("\(block.kind.title). Automatic refresh is paused.")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else if let path = store.claudeExecutable {
                 HStack(alignment: .top, spacing: 5) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 10)).foregroundStyle(Theme.success)
