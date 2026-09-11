@@ -9,16 +9,16 @@
     <description>Updates for Burnline</description>
     <language>en</language>
     <item>
-      <title>1.3.1</title>
-      <pubDate>Sat, 05 Sep 2026 18:09:08 +0000</pubDate>
-      <sparkle:version>5</sparkle:version>
-      <sparkle:shortVersionString>1.3.1</sparkle:shortVersionString>
+      <title>1.4</title>
+      <pubDate>Fri, 11 Sep 2026 14:58:25 +0000</pubDate>
+      <sparkle:version>6</sparkle:version>
+      <sparkle:shortVersionString>1.4</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://github.com/Stixum/Burnline/releases/tag/v1.3.1</sparkle:releaseNotesLink>
+      <sparkle:releaseNotesLink>https://github.com/Stixum/Burnline/releases/tag/v1.4</sparkle:releaseNotesLink>
       <enclosure
-        url="https://github.com/Stixum/Burnline/releases/download/v1.3.1/Burnline.dmg"
-        sparkle:edSignature="+Nrixr2EbrRje/5LKWP34xPj0fkVi/1eSYPL6u7jDKpI0uuHG1AropklBTvj2fyoIBq00kdNApRcFiEWkB5fDw=="
-        length="3857314"
+        url="https://github.com/Stixum/Burnline/releases/download/v1.4/Burnline.dmg"
+        sparkle:edSignature="osNYnhBR+DWgqDAvp6A12ZkuRe8sLlGr+vUtLXmsYrtiQYJl6DGxt/9Sx/pzuuE18RR8UY3LSwvo4baeXDjCDA=="
+        length="3957665"
         type="application/octet-stream"/>
     </item>
   </channel>
