@@ -11,11 +11,23 @@ import Darwin
 /// its exit code. That is the whole mechanism. `ClaudeAuthStatus` — pure, in
 /// Core — decides what the code means; this type only obtains it.
 ///
-/// 🔴 **This runs BEFORE `UsagePoller` opens a pty, and that ordering is the
-/// feature.** A signed-out Claude Code boots to `Select login method:`, not to a
-/// prompt, and on a machine whose managed settings pin `forceLoginMethod` the
-/// login component opens a browser at boot without waiting to be typed at.
-/// Probing after the spawn would be probing after the harm.
+/// **This runs before `UsagePoller` opens a pty.** Polling while signed out is a
+/// ~27 second session that cannot refresh anything, so refusing to spawn it is
+/// worth doing on those grounds alone.
+///
+/// ⚠️ **An earlier version of this comment justified the ordering with a harm
+/// that does not exist, and said so in 🔴.** It claimed a signed-out Claude Code
+/// boots to `Select login method:` and that the `/usage\r` written 18s later is
+/// an Enter on that picker, opening a browser nobody asked for. That was read
+/// out of the CLI binary's strings, never observed. **Measured 2026-09-10
+/// against a genuinely signed-out CLI (2.1.228, existing install):** it booted
+/// to an ordinary prompt with a `Not logged in · Run /login` footer badge, the
+/// carriage return hit that prompt harmlessly, and no browser opened. The picker
+/// strings exist but appear to belong to first-run onboarding.
+///
+/// So this is a precaution, not a defence against a known harm. A fresh install
+/// or a managed `forceLoginMethod` may still reach the picker; nobody has seen
+/// it.
 ///
 /// ⚠️ **Nothing here may start a login flow, ever.** The probe is read-only by
 /// construction: `auth status` has no side effect on credentials. Do not
