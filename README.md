@@ -92,6 +92,8 @@ Between readings it extrapolates from token counts in `~/.claude/projects/**/*.j
 
 Every real reading is account-wide and corrects for all of it. Only the forward guess is blind, and past an hour the popover says "Extrapolated" instead of "Live" and the menu bar figure gains a `~`. A reading dies with its window: past the reset it describes a period that no longer exists, so it is discarded.
 
+If the figure stops because **Claude Code is signed out**, the menu bar figure gains a `!` instead of a `~` — an extrapolation that can never correct itself is a stronger statement than one that will — and the popover says so, with a button that opens a Terminal window running `claude auth login`. Burnline never starts a sign-in on its own; you click, or nothing happens.
+
 ## Re-grants
 
 **Anthropic sometimes re-grants the weekly limit mid-window, without moving the reset.** Seen 2026-09-01: 51% to 0%, same reset. Burnline used to read a falling figure as a stale session and freeze for days.
@@ -122,6 +124,8 @@ Two honest limits worth knowing:
 **"Refresh usage automatically" is off by default.** Turn it on and Burnline runs `/usage` in a brief Claude Code session when the figure goes stale, because otherwise nothing corrects it.
 
 It uses no message quota. `/usage` produces no assistant turn.
+
+Before starting a session it runs `claude auth status`, which reads no network and spends nothing, and skips the session entirely if there is no usable credential — a signed-out session cannot refresh anything. While that is true the Refresh control is hidden rather than left to spin.
 
 **macOS will ask for folder access the first time, naming Claude Code.** Documents, Downloads, whatever cloud drives you have. That is Claude Code looking at your home directory when it starts, which it does whenever you run it.
 
