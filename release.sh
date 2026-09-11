@@ -254,6 +254,26 @@ cat > docs/appcast.xml <<APPCAST
 APPCAST
 echo "    docs/appcast.xml written for ${VERSION} (build ${BUILD_NUMBER})"
 
+# --- 9. drop the staged bundle --------------------------------------------
+#
+# 🔴 The DMG is the artefact; the .app has served its purpose and must not be
+# left behind. On 2026-09-11 the copy this step now deletes -- left from the
+# 1.4 release six days earlier -- was found RUNNING alongside the installed
+# app, started 14 seconds after it at login. Only /Applications has a login
+# item; the best explanation is macOS restoring it from a previous session.
+#
+# Both bundles carry the same CFBundleIdentifier, so ApplicationSupport
+# resolves to the same directory for both: two writers on the high-water mark,
+# the scan cache, settings and the history archive, plus two pollers and two
+# notification evaluators. `build.sh --install` already deletes it for the
+# related reason its own comment gives -- two registered bundles make a bare
+# `open -a Burnline` ambiguous.
+#
+# Deliberately only on success: an aborted release leaves the bundle in place,
+# which is what you want when working out why it aborted.
+echo "==> Removing the staged app (the DMG is the artefact)"
+rm -rf "${APP}"
+
 echo
 echo "==> Done: ${DMG}"
 shasum -a 256 "${DMG}"

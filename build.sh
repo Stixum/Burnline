@@ -142,4 +142,12 @@ if [ "${1:-}" = "--install" ]; then
   echo "    Installed. Launch with: open -a ${APP_NAME}"
 else
   echo "==> Built at ${APP} (pass --install to copy to /Applications)"
+  echo
+  echo "    ⚠️  Launchable, and it carries the installed app's own bundle id, so"
+  echo "        it shares one Application Support directory with it. Two copies"
+  echo "        running means two writers on the high-water mark, scan cache,"
+  echo "        settings and history archive. The single-instance guard makes the"
+  echo "        newcomer exit, but a bare 'open -a ${APP_NAME}' can still resolve"
+  echo "        here, and a copy left running is restored at your next login."
+  echo "        Delete it when you are done:  rm -rf ${APP}"
 fi
