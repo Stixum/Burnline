@@ -108,3 +108,43 @@ private func tempDirectory() -> URL {
 
     #expect(store.load().hasSeenOnboarding == true)
 }
+
+// Model multipliers are not editable in Settings, so a stored list identical
+// to an old default is the old default, not a choice. Without this, a price
+// update to `Weights.default` never reaches an existing install — every
+// settings.json written before it carries the old list forward forever.
+private func settingsJSON(multipliers: String) -> String {
+    """
+    {"resetSchedule":{"weekday":6,"hour":2,"minute":0,"timeZoneIdentifier":"America/Chicago"},
+     "weights":{"input":1,"cacheWrite":1.25,"cacheRead":0.1,"output":5,"defaultMultiplier":1,
+                "modelMultipliers":\(multipliers)},
+     "calibrationAnchors":[],"launchAtLogin":true}
+    """
+}
+
+@Test func legacyDefaultModelMultipliersMigrateToCurrentDefaults() throws {
+    let dir = tempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    // Byte-for-byte the list every install before 2026-09-22 saved.
+    let legacy = #"[{"match":"opus","multiplier":5},{"match":"sonnet","multiplier":1},{"match":"haiku","multiplier":0.27}]"#
+    try settingsJSON(multipliers: legacy).write(to: dir.appendingPathComponent("settings.json"),
+                                                atomically: true, encoding: .utf8)
+
+    let loaded = SettingsStore(directory: dir).load()
+    #expect(loaded.weights.modelMultipliers == Weights.default.modelMultipliers)
+    // Positive control: the file decoded, rather than falling back to .default.
+    #expect(loaded.launchAtLogin == true)
+    #expect(loaded.resetSchedule.weekday == 6)
+}
+
+@Test func handEditedModelMultipliersAreKept() throws {
+    let dir = tempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let custom = #"[{"match":"opus","multiplier":3},{"match":"sonnet","multiplier":1}]"#
+    try settingsJSON(multipliers: custom).write(to: dir.appendingPathComponent("settings.json"),
+                                                atomically: true, encoding: .utf8)
+
+    let loaded = SettingsStore(directory: dir).load()
+    #expect(loaded.weights.modelMultipliers == [ModelMultiplier(match: "opus", multiplier: 3),
+                                                ModelMultiplier(match: "sonnet", multiplier: 1)])
+}

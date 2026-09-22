@@ -61,7 +61,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         resetSchedule = try container.decode(ResetSchedule.self, forKey: .resetSchedule)
-        weights = try container.decode(Weights.self, forKey: .weights)
+        weights = try container.decode(Weights.self, forKey: .weights).migrated()
         calibrationAnchors = try container.decode([CalibrationAnchor].self, forKey: .calibrationAnchors)
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
         targetMode = try container.decodeIfPresent(TargetMode.self, forKey: .targetMode) ?? .realTime

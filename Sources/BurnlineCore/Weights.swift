@@ -66,15 +66,44 @@ public struct Weights: Equatable, Sendable, Codable {
         )
     }
 
+    /// Every `modelMultipliers` list `default` has ever shipped, oldest first.
+    /// Multipliers are not editable in Settings, so a stored list equal to one
+    /// of these is a default the user never chose, and `migrated()` replaces
+    /// it. ⚠️ When `default` changes, append the outgoing list here, or every
+    /// existing install keeps it forever: settings.json persists the whole list.
+    static let retiredDefaultModelMultipliers: [[ModelMultiplier]] = [
+        // Opus 4-era prices, shipped until 2026-09-22.
+        [
+            ModelMultiplier(match: "opus", multiplier: 5.0),
+            ModelMultiplier(match: "sonnet", multiplier: 1.0),
+            ModelMultiplier(match: "haiku", multiplier: 0.27),
+        ],
+    ]
+
+    /// Replaces a retired default multiplier list with the current one, and
+    /// leaves any other list alone — a hand-edited file is a choice.
+    public func migrated() -> Weights {
+        guard Weights.retiredDefaultModelMultipliers.contains(modelMultipliers) else { return self }
+        var copy = self
+        copy.modelMultipliers = Weights.default.modelMultipliers
+        return copy
+    }
+
     public static let `default` = Weights(
         input: 1.0,
         cacheWrite: 1.25,
         cacheRead: 0.1,
         output: 5.0,
+        // List price relative to Sonnet 5 ($2 / $10 per 1M), checked 2026-09-22.
+        // ⚠️ "opus-5-5" must precede "opus" — it is a substring match and the
+        // first match wins. Fable 5 and 5.1 share a price, so one entry covers
+        // both and the bare `fable` alias.
         modelMultipliers: [
-            ModelMultiplier(match: "opus", multiplier: 5.0),
+            ModelMultiplier(match: "opus-5-5", multiplier: 2.0),
+            ModelMultiplier(match: "opus", multiplier: 2.5),
+            ModelMultiplier(match: "fable", multiplier: 5.0),
             ModelMultiplier(match: "sonnet", multiplier: 1.0),
-            ModelMultiplier(match: "haiku", multiplier: 0.27),
+            ModelMultiplier(match: "haiku", multiplier: 0.5),
         ],
         defaultMultiplier: 1.0
     )

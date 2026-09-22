@@ -106,8 +106,8 @@ private func state(at date: Date, counts: TokenCounts) -> FileState {
         cells: [key: ["claude-opus-5": TokenCounts(output: 10),
                       "claude-sonnet-5": TokenCounts(output: 10)]]
     )
-    // opus 5.0x vs sonnet 1.0x, output weight 5.0 → 10*5*5 + 10*5*1 = 300
+    // opus 2.5x vs sonnet 1.0x, output weight 5.0 → 10*5*2.5 + 10*5*1 = 175
     let total = cache.units(from: anchorDate, to: anchorDate.addingTimeInterval(86_400),
                             weights: .default)
-    #expect(abs(total - 300) < 1e-9)
+    #expect(abs(total - 175) < 1e-9)
 }

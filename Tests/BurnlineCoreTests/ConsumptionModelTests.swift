@@ -17,13 +17,36 @@ private func record(model: String, input: Int = 0, output: Int = 0,
     #expect(abs(ConsumptionModel.units(for: sonnet, weights: weights) - 300) < 1e-9)
 }
 
-@Test func opusCostsFiveTimesSonnet() {
+// Price-proportional against Sonnet 5 ($2 / $10 per 1M). Every current model
+// id, plus the bare aliases Claude Code writes into transcripts. Fable 5 and
+// 5.1 share one price, so one "fable" entry covers both.
+@Test(arguments: [
+    ("claude-sonnet-5", 1.0), ("sonnet", 1.0),
+    ("claude-opus-5", 2.5), ("claude-opus-4-8", 2.5), ("opus", 2.5),
+    ("claude-opus-5-5", 2.0),
+    ("claude-fable-5", 5.0), ("claude-fable-5-1", 5.0), ("fable", 5.0),
+    ("claude-haiku-4-5-20251001", 0.5),
+])
+func defaultMultiplierFollowsCurrentPrices(model: String, expected: Double) {
+    #expect(ConsumptionModel.multiplier(for: model, weights: .default) == expected)
+}
+
+// "opus" is a substring of "claude-opus-5-5" and the first match wins, so the
+// more specific entry must come first or Opus 5.5 silently prices as Opus 5.
+@Test func opus55IsMatchedBeforeGenericOpus() throws {
+    let matches = Weights.default.modelMultipliers.map(\.match)
+    let specific = try #require(matches.firstIndex(of: "opus-5-5"))
+    let generic = try #require(matches.firstIndex(of: "opus"))
+    #expect(specific < generic)
+}
+
+@Test func opusCostsTwoAndAHalfTimesSonnet() {
     let weights = Weights.default
     let sonnet = record(model: "claude-sonnet-5", output: 100)
     let opus = record(model: "claude-opus-5", output: 100)
     let ratio = ConsumptionModel.units(for: opus, weights: weights)
         / ConsumptionModel.units(for: sonnet, weights: weights)
-    #expect(abs(ratio - 5.0) < 1e-9)
+    #expect(abs(ratio - 2.5) < 1e-9)
 }
 
 @Test func unknownModelFallsBackToDefaultMultiplier() {
@@ -36,7 +59,7 @@ private func record(model: String, input: Int = 0, output: Int = 0,
 @Test func modelMatchingIsCaseInsensitive() {
     let weights = Weights.default
     let shouty = record(model: "CLAUDE-OPUS-5", output: 100)
-    #expect(abs(ConsumptionModel.units(for: shouty, weights: weights) - 2500) < 1e-9)
+    #expect(abs(ConsumptionModel.units(for: shouty, weights: weights) - 1250) < 1e-9)
 }
 
 @Test func modelMatchingIsDeterministicallyOrdered() {

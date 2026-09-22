@@ -153,11 +153,11 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
     #expect(abs(row.units - breakdown.reduce(0) { $0 + $1.units }) < 1e-9)
 
     // The fixture's teeth: weighting the WindowRow's own counts — the same
-    // tokens, with the model dimension summed away — is five times smaller.
+    // tokens, with the model dimension summed away — is 2.5 times smaller.
     let fromWindowCounts = ConsumptionModel.units(for: counts,
                                                   multiplier: Weights.default.defaultMultiplier,
                                                   weights: .default)
-    #expect(isClose(row.units, fromWindowCounts * 5))
+    #expect(isClose(row.units, fromWindowCounts * 2.5))
 }
 
 @Test func scoreboardCountsOnlyTheCellsInsideItsOwnWindow() {
@@ -570,7 +570,7 @@ private func regrantedWeek(start: Date, duration: TimeInterval = sevenDays,
     let rows = HistoryQuery.breakdown(cells: cells, by: .model, weights: .default, limit: 10)
 
     #expect(rows.map(\.label) == ["claude-opus-5", "claude-sonnet-5"])
-    #expect(isClose(rows[0].units, 10 * Weights.default.output * 5))
+    #expect(isClose(rows[0].units, 10 * Weights.default.output * 2.5))
 }
 
 // MARK: - Percent of allowance

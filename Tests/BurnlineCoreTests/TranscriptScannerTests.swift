@@ -129,8 +129,8 @@ private let scanTime = Date()
     _ = dir.write(line(output: 100, model: "claude-opus-5"), to: "proj/a.jsonl")
     let scanner = TranscriptScanner(rootURL: dir.url)
     let cache = try scanner.scan(cache: ScanCache(), now: scanTime)
-    // 100 x 5.0 output x 5.0 opus
-    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 2500) < 1e-9)
+    // 100 x 5.0 output x 2.5 opus
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 1250) < 1e-9)
 }
 
 @Test func missingRootDirectoryYieldsAnEmptyCache() throws {
