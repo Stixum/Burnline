@@ -67,7 +67,11 @@ final class UsageStore {
             sanitized.notifications = newValue.notifications.sanitized()
             withMutation(keyPath: \.settings) { storedSettings = sanitized }
             try? settingsStore.save(sanitized)
-            rebuild()
+            // Coalesced, not awaited: a SwiftUI binding writes here on every
+            // keystroke in a weights field, and a rebuild gathers captures off
+            // the main actor. One in flight at a time; the apply step reads
+            // `storedSettings` when it lands, so the latest edit always wins.
+            scheduleRebuild()
         }
     }
 
@@ -86,9 +90,18 @@ final class UsageStore {
     @ObservationIgnored private var cache: ScanCache
     @ObservationIgnored private let settingsStore = SettingsStore()
     @ObservationIgnored private let cacheStore = CacheStore()
-    @ObservationIgnored private let rateLimitStore = RateLimitStore()
+    /// Gathers and dates every capture candidate, off the main actor.
+    @ObservationIgnored private let captureLoader = CaptureLoader()
+    /// For pruning only; loading goes through `captureLoader`.
     @ObservationIgnored private let captureDirectory = CaptureDirectory()
+    /// For the poll's before/after `fetchedAt` check only; loading goes
+    /// through `captureLoader`.
     @ObservationIgnored private let utilizationStore = UtilizationStore()
+    /// Supersession for overlapping rebuilds: the timer, a refresh and a
+    /// settings edit can all have a load in flight, and a result that arrives
+    /// after a later rebuild started is stale and discarded.
+    @ObservationIgnored private var rebuildGeneration = 0
+    @ObservationIgnored private var scheduledRebuild: Task<Void, Never>?
     @ObservationIgnored private let poller = UsagePoller()
     @ObservationIgnored private var lastPollAt: Date?
     @ObservationIgnored private let highWaterStore = HighWaterStore()
@@ -138,9 +151,10 @@ final class UsageStore {
 
     /// The transcript scan — the expensive half, 36ms warm and ~6s cold.
     private static let scanInterval: Duration = .seconds(60)
-    /// Re-reading the capture: 141 bytes and a pure rebuild. It used to be
-    /// welded to the scan, so a capture landing just after a tick sat unread for
-    /// most of a minute even though the statusline writes every 30s.
+    /// Re-reading the captures. It used to be welded to the scan, so a capture
+    /// landing just after a tick sat unread for most of a minute even though
+    /// the statusline writes every 30s. The gathering is I/O (`CaptureLoader`)
+    /// and runs off the main actor; only the pure selection and build run on it.
     private static let captureInterval: Duration = .seconds(10)
     /// Floor between popover-triggered refreshes.
     private static let manualRefreshFloor: TimeInterval = 5
@@ -180,18 +194,16 @@ final class UsageStore {
             }
         }
 
-        // Decoupled from the scan on purpose. Rebuilding is a 141-byte read and
-        // a pure snapshot build, so pacing it to the cost of the scan was
-        // wasting most of a minute of freshness for nothing. It also makes the
-        // pace target advance smoothly instead of stepping once a minute.
-        // Sleeps first: `refresh()` above already rebuilds at launch.
+        // Decoupled from the scan on purpose. Pacing the capture read to the
+        // cost of the scan was wasting most of a minute of freshness for
+        // nothing. It also makes the pace target advance smoothly instead of
+        // stepping once a minute. Sleeps first: `refresh()` above already
+        // rebuilds at launch.
         captureTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: UsageStore.captureInterval)
                 guard !Task.isCancelled else { return }
-                // No `await`: `Task {}` inherits this class's MainActor
-                // isolation, so `rebuild()` is already on the right actor.
-                self?.rebuild()
+                await self?.rebuild()
             }
         }
     }
@@ -333,7 +345,7 @@ final class UsageStore {
         defer { isRefreshing = false }
 
         isScanning = true
-        rebuild()
+        await rebuild()
 
         let scanner = TranscriptScanner()
         let current = cache
@@ -356,7 +368,7 @@ final class UsageStore {
         cache = updated
         lastRefresh = Date()
         isScanning = false
-        rebuild()
+        await rebuild()
 
         // After the rebuild, so the observation handed to the writer is the one
         // that matches the snapshot now on screen. `now` is the scan's clock,
@@ -390,7 +402,7 @@ final class UsageStore {
             lastPollAt = Date()
             await runPollGatheringAuthEvidence()
             // The poll refreshed ~/.claude.json, not our own files.
-            rebuild()
+            await rebuild()
         } else if AuthProbeDecision.shouldProbe(anchorAge: snapshot.liveAge,
                                                 lastProbeAt: lastAuthProbeAt,
                                                 isBlocked: authBlock != nil,
@@ -400,7 +412,7 @@ final class UsageStore {
             // without this branch a blocked machine would never learn why its
             // figure froze, nor ever discover that it had been fixed.
             await probeAuthorization()
-            rebuild()
+            await rebuild()
         }
     }
 
@@ -469,7 +481,7 @@ final class UsageStore {
         guard authBlock != nil else { return }
         Task { @MainActor in
             await probeAuthorization()
-            rebuild()
+            await rebuild()
         }
     }
 
@@ -523,7 +535,7 @@ final class UsageStore {
         await runPollGatheringAuthEvidence()
         // The poll refreshes ~/.claude.json, not our own files, so a rebuild is
         // what surfaces it.
-        rebuild()
+        await rebuild()
     }
 
     // MARK: - Statusline wiring
@@ -625,31 +637,41 @@ final class UsageStore {
         settings = updated
     }
 
-    private func rebuild() {
-        // Re-read every time: the statusline script rewrites this file from
-        // another process whenever Claude Code produces a response.
-        //
-        // Reconcile against the high-water mark before trusting it. Every open
-        // Claude Code session writes this same file on its own timer, and an idle
-        // one keeps publishing the stale rate_limits snapshot it started with —
-        // so the last writer is routinely not the freshest.
-        //
-        // Dating happens here, not in the helper: reading a transcript is file
-        // I/O, and the helper runs every 30s in every open session under a
-        // contract that it never fails and never delays the user's prompt.
-        // Per-session files plus the shared one, all dated, freshest wins. The
-        // shared file competes on equal terms rather than being preferred or
-        // ignored: the rollback script writes only it, and so does a payload
-        // that carries no session_id.
-        // Three sources now, competing on age with no precedence between them:
-        // per-session statusline captures, the shared statusline file, and
-        // `cachedUsageUtilization` from ~/.claude.json. The last carries its own
-        // explicit `fetchedAtMs` and no session, so dating leaves it alone.
-        let utilization = utilizationStore.load()
-        let dated = (captureDirectory.load()
-                     + [rateLimitStore.load()].compactMap { $0 }
-                     + [utilization?.asCapture()].compactMap { $0 })
-            .map { $0.dated(using: TranscriptDating.mintedAt) }
+    /// One rebuild at a time per trigger, for callers that cannot await —
+    /// the settings setter. A rebuild already scheduled covers the new edit:
+    /// `apply` reads `storedSettings` after the load lands.
+    private func scheduleRebuild() {
+        guard scheduledRebuild == nil else { return }
+        scheduledRebuild = Task { [weak self] in
+            await self?.rebuild()
+            self?.scheduledRebuild = nil
+        }
+    }
+
+    private func rebuild() async {
+        // Re-read every time: the statusline helper rewrites these files from
+        // another process whenever Claude Code produces a response. Gathering
+        // and dating is I/O and runs on the loader's actor; everything below
+        // the await is pure and runs here.
+        rebuildGeneration += 1
+        let generation = rebuildGeneration
+        let loaded = await captureLoader.load()
+        // A later rebuild started while this one was loading. Its result is
+        // the fresher one and it will apply itself; this one is stale.
+        guard generation == rebuildGeneration else { return }
+        apply(loaded)
+    }
+
+    /// The pure half of a rebuild: reconcile against the high-water mark, build
+    /// the snapshot, evaluate notifications, feed the archive's observation.
+    ///
+    /// Reconcile before trusting. Every open Claude Code session writes the
+    /// shared file on its own timer, and an idle one keeps publishing the stale
+    /// rate_limits snapshot it started with — so the last writer is routinely
+    /// not the freshest.
+    private func apply(_ loaded: CaptureLoader.Loaded) {
+        let utilization = loaded.utilization
+        let dated = loaded.candidates
         // Select, then reconcile, then report — one pure step, in
         // `CaptureSelection.resolve`, because the ORDER of those three is
         // load-bearing and this target has no tests. Selection is what refuses a
@@ -710,7 +732,7 @@ final class UsageStore {
                                   resetsAt: capture.sevenDay.resetsDate)
         currentObservation = entry
 
-        // Fire and forget. `rebuild()` is @MainActor and runs every 10 seconds
+        // Fire and forget. `apply` is @MainActor and runs every 10 seconds
         // plus on every settings mutation — it may never wait on the actor, and
         // it may never write a file itself.
         guard entry != lastObservationSent else { return }
