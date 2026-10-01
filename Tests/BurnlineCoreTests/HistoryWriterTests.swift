@@ -555,8 +555,11 @@ private func covered(_ from: Date, _ through: Date) -> CoverageRecord {
     CoverageRecord(from: bucketStart(from), through: bucketStart(through),
                    filledBy: "test", truncated: false)
 }
+/// Bucket-aligned, like every real row: `readStart` steps a row only when
+/// `row.start <= from`, and `from` begins at a bucket start.
+private func aligned(_ date: Date) -> Date { Date(timeIntervalSince1970: Double(bucketStart(date))) }
 private func writtenRow(_ start: Date, _ end: Date) -> WindowRow {
-    WindowRow(start: start, end: end, counts: .zero,
+    WindowRow(start: aligned(start), end: aligned(end), counts: .zero,
               finalPercent: nil, finalPercentAt: nil, finalPercentSource: nil,
               boundsSource: .observed, observedResetsAt: end)
 }
@@ -574,11 +577,32 @@ private let day: TimeInterval = 86_400
         covered(now.addingTimeInterval(-60 * day), now.addingTimeInterval(-45 * day)),
         covered(now.addingTimeInterval(-31 * day), now.addingTimeInterval(-hour)),
     ])
-    let written = [writtenRow(now.addingTimeInterval(-60 * day), now.addingTimeInterval(-53 * day))]
+    // Everything before the hole that could be written has been: the last row
+    // ends a day short of it, and no complete window fits in that day.
+    let written = [writtenRow(now.addingTimeInterval(-60 * day), now.addingTimeInterval(-46 * day))]
 
     let start = HistoryWriter.readStart(coverage: coverage, written: written, now: now)
 
     #expect(start == Date(timeIntervalSince1970: Double(bucketStart(now.addingTimeInterval(-31 * day)))))
+}
+
+/// The jump may not discard a window that is still writable. A covered,
+/// unwritten window before the hole is handed no cells if the read starts
+/// after it, and the ledger — which checks coverage, not cells — then totals
+/// it from nothing and writes a zero row, permanently. Reading from `from`
+/// costs one extra pass; once that window is written the next flush jumps.
+@Test func aCoveredUnwrittenWindowBeforeAPermanentHoleIsStillRead() {
+    let now = Date()
+    let coverage = Coverage(records: [
+        covered(now.addingTimeInterval(-60 * day), now.addingTimeInterval(-45 * day)),
+        covered(now.addingTimeInterval(-31 * day), now.addingTimeInterval(-hour)),
+    ])
+    // The 53d→46d window is fully covered and unwritten.
+    let written = [writtenRow(now.addingTimeInterval(-60 * day), now.addingTimeInterval(-53 * day))]
+
+    let start = HistoryWriter.readStart(coverage: coverage, written: written, now: now)
+
+    #expect(start == aligned(now.addingTimeInterval(-53 * day)))
 }
 
 /// The backfill case this must not break: a first launch writes the newest

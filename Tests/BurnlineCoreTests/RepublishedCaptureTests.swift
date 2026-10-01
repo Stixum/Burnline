@@ -186,3 +186,22 @@ private func republishable(capturedAt: TimeInterval,
     let replay = republishable(capturedAt: weekReset + 5_000, fiveHourResetsAt: weekReset - 3_600)
     #expect(replay.correctedForRepublishing().capturedAt == weekReset - 3_600)
 }
+
+/// `provenAt <= capturedAt`, always. A proof later than the instant the reset
+/// blocks prove the payload predates is contradicted evidence: the utilization
+/// cache fetched after the reset but still describing the old window is the
+/// case. Contradicted evidence proves nothing, so the proof is dropped — never
+/// kept above the bound, never pulled down to it and called proven.
+@Test func clampingAReplayDropsAProofTheClampContradicts() {
+    var replay = republishable(capturedAt: weekReset + 5_000, fiveHourResetsAt: nil)
+    replay.provenAt = weekReset + 5_000
+    let corrected = replay.correctedForRepublishing()
+    #expect(corrected.capturedAt == weekReset)
+    #expect(corrected.provenAt == nil)
+}
+
+@Test func aProofWithinTheBoundSurvivesTheClamp() {
+    var replay = republishable(capturedAt: weekReset + 5_000, fiveHourResetsAt: nil)
+    replay.provenAt = weekReset - 100
+    #expect(replay.correctedForRepublishing().provenAt == weekReset - 100)
+}

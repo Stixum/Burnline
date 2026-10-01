@@ -39,7 +39,7 @@ private let farFuture: TimeInterval = 4_000_000_000
 
 @Test func theLoaderGathersAllThreeSourcesAndDatesThem() async throws {
     let directory = scratchDirectory()
-    let lastTurn = ISO8601DateFormatter().date(from: "2026-08-11T20:30:00Z")!.timeIntervalSince1970
+    let lastTurn = try #require(ISO8601DateFormatter().date(from: "2026-08-11T20:30:00Z")).timeIntervalSince1970
     let session = RateLimitCapture(
         version: 1, capturedAt: lastTurn + 600,
         sevenDay: .init(usedPercent: 40, resetsAt: farFuture), fiveHour: nil,
@@ -52,7 +52,10 @@ private let farFuture: TimeInterval = 4_000_000_000
     let loader = CaptureLoader(directory: directory, configPath: config(fetchedAtMs: 1_786_542_556_418))
     let loaded = await loader.load()
 
-    #expect(Set(loaded.candidates.map(\.sevenDay.usedPercent)) == [40, 30, 75])
+    // Order is load-bearing: `CaptureSelection` breaks a complete tie on
+    // position, so directory, shared, utilization — the order `UsageStore`
+    // always assembled them in.
+    #expect(loaded.candidates.map(\.sevenDay.usedPercent) == [40, 30, 75])
     let dated = try #require(loaded.candidates.first { $0.sessionId == "abc" })
     #expect(dated.capturedAt == lastTurn)
     #expect(dated.provenAt == lastTurn)

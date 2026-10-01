@@ -11,20 +11,21 @@ public struct FileState: Equatable, Sendable, Codable {
     /// Nested rather than a `"\(bucket)|\(model)"` composite: a delimiter
     /// appearing in a model id would silently corrupt the key.
     public var cells: [String: [String: TokenCounts]]
-    /// `message.id` of the last usage-bearing line consumed, so a message whose
-    /// content blocks straddle `offset` is not counted again on the next read.
-    /// Optional with no version bump: a v2 cache predating it decodes with
-    /// `nil`, which at worst counts one straddling message twice, once.
-    public var lastMessageId: String?
+    /// The last message consumed and the counts already credited to it, so a
+    /// message whose lines straddle `offset` is neither counted again nor
+    /// left at its provisional figure. Optional with no version bump: a v2
+    /// cache predating it decodes with `nil`, which at worst miscounts one
+    /// straddling message, once.
+    public var lastMessage: TranscriptParser.Continuation?
 
     public init(modifiedAt: Date = .distantPast, size: Int = 0, offset: Int = 0,
                 cells: [String: [String: TokenCounts]] = [:],
-                lastMessageId: String? = nil) {
+                lastMessage: TranscriptParser.Continuation? = nil) {
         self.modifiedAt = modifiedAt
         self.size = size
         self.offset = offset
         self.cells = cells
-        self.lastMessageId = lastMessageId
+        self.lastMessage = lastMessage
     }
 }
 

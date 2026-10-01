@@ -59,11 +59,9 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
     /// `RateLimitStore.save` and `CaptureDirectory.save` are helper-side, and
     /// `UsageStore.rebuild` re-dates every candidate on every pass.
     ///
-    /// Invariant: `provenAt <= capturedAt`. `dated(mintedAt:)` enforces it —
-    /// a mint time the reset blocks contradict is recorded as no proof at all,
-    /// never as a proof later than the bound. `correctedForRepublishing()`
-    /// leaves this field alone because the only value it can hold before
-    /// dating is `fetchedAtMs`, which is the same instant as `capturedAt`.
+    /// Invariant: `provenAt <= capturedAt`. Both `correctedForRepublishing()`
+    /// and `dated(mintedAt:)` enforce it — a proof the reset blocks contradict
+    /// is recorded as no proof at all, never as a proof later than the bound.
     public var provenAt: TimeInterval?
 
     private enum CodingKeys: String, CodingKey {
@@ -125,6 +123,11 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
         guard isRepublishedCache else { return self }
         var corrected = self
         corrected.capturedAt = latestPossibleMint
+        // `provenAt <= capturedAt`, always. A proof later than the bound —
+        // the utilization cache fetched after the reset but still describing
+        // the old window — is contradicted evidence, and contradicted evidence
+        // proves nothing. Dropped, never pulled down to the bound and kept.
+        if let provenAt, provenAt > corrected.capturedAt { corrected.provenAt = nil }
         return corrected
     }
 

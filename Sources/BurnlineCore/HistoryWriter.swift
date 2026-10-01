@@ -293,12 +293,21 @@ public actor HistoryWriter {
         // read stuck at that window's start forever — every 60s flush
         // decoding the whole archive from there. Jump to the range after each
         // permanent hole; a hole the next fill can still close is left alone.
+        //
+        // 🔴 Only when no complete window can still fit between `from` and
+        // the hole. The ledger checks COVERAGE, not cells: a covered, unwritten
+        // window it was handed no cells for totals to zero and is written that
+        // way, permanently. So while a week or more of covered, unwritten
+        // buckets sits before the hole, read from `from` — one extra pass —
+        // and jump only once those windows are written and `from` has
+        // stepped past them.
         let permanentBefore = now.addingTimeInterval(-fillHorizon)
         let ranges = coverage.ranges
         for (earlier, later) in zip(ranges, ranges.dropFirst()) {
             let holeStart = Date(timeIntervalSince1970: Double(earlier.upperBound) + Bucket.seconds)
             let nextStart = Date(timeIntervalSince1970: Double(later.lowerBound))
             guard holeStart < permanentBefore, nextStart > from else { continue }
+            guard holeStart.timeIntervalSince(from) < 7 * 86_400 else { break }
             from = nextStart
             stepOverWrittenRows()
         }

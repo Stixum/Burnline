@@ -368,6 +368,12 @@ final class UsageStore {
         cache = updated
         lastRefresh = Date()
         isScanning = false
+        // If the 10s timer's rebuild started while this one was loading, this
+        // one is discarded as superseded and the flush and prune below run
+        // against the timer's apply instead — one tick's difference in the
+        // observation and the prune cutoff, which is harmless. Impossible
+        // while `rebuild()` was synchronous; noted so it is not mistaken for
+        // a race when it shows up in a log.
         await rebuild()
 
         // After the rebuild, so the observation handed to the writer is the one

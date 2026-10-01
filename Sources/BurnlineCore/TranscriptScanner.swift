@@ -65,7 +65,7 @@ public struct TranscriptScanner: Sendable {
             }
 
             let (parsed, newOffset) = readAppended(at: url, from: state.offset,
-                                                  after: state.lastMessageId, parser: parser)
+                                                  after: state.lastMessage, parser: parser)
             for record in parsed.records {
                 let key = String(Bucket.key(for: record.timestamp))
                 let counts = TokenCounts(input: record.inputTokens,
@@ -75,7 +75,7 @@ public struct TranscriptScanner: Sendable {
                 state.cells[key, default: [:]][record.model, default: .zero] += counts
             }
             state.offset = newOffset
-            state.lastMessageId = parsed.lastMessageId
+            state.lastMessage = parsed.lastMessage
             state.size = size
             state.modifiedAt = modifiedAt
             cache.files[path] = state
@@ -89,9 +89,9 @@ public struct TranscriptScanner: Sendable {
 
     /// Reads from `offset` to the last complete line. Never advances past a
     /// partial trailing write — sessions are appended to live.
-    private func readAppended(at url: URL, from offset: Int, after lastMessageId: String?,
+    private func readAppended(at url: URL, from offset: Int, after continuation: TranscriptParser.Continuation?,
                               parser: TranscriptParser) -> (TranscriptParser.Parsed, Int) {
-        let nothing = TranscriptParser.Parsed(records: [], lastMessageId: lastMessageId)
+        let nothing = TranscriptParser.Parsed(records: [], lastMessage: continuation)
         guard let handle = try? FileHandle(forReadingFrom: url) else { return (nothing, offset) }
         defer { try? handle.close() }
 
@@ -102,6 +102,6 @@ public struct TranscriptScanner: Sendable {
         guard let lastNewline = data.lastIndex(of: UInt8(ascii: "\n")) else { return (nothing, offset) }
 
         let complete = data[data.startIndex...lastNewline]
-        return (parser.parse(Data(complete), after: lastMessageId), offset + complete.count)
+        return (parser.parse(Data(complete), after: continuation), offset + complete.count)
     }
 }

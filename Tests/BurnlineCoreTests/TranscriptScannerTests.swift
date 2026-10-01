@@ -244,3 +244,18 @@ private func blockLine(id: String, output: Int) -> String {
     cache = try scanner.scan(cache: cache, now: scanTime)
     #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 1000) < 1e-9)
 }
+
+/// The provisional-then-final shape across the scan boundary: the first scan
+/// sees 8 output tokens, the next sees the same message's final 5,527. The
+/// total must be 5,527 — not 8 (first wins) and not 5,535 (counted twice).
+@Test func aFinalFigureLandingAfterTheScanBoundaryReplacesTheProvisionalOne() throws {
+    let dir = TempDir()
+    _ = dir.write(blockLine(id: "msg_a", output: 8), to: "proj/a.jsonl")
+    let scanner = TranscriptScanner(rootURL: dir.url)
+    var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 40) < 1e-9)
+
+    dir.append(blockLine(id: "msg_a", output: 5_527), to: "proj/a.jsonl")
+    cache = try scanner.scan(cache: cache, now: scanTime)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 5_527 * 5) < 1e-9)
+}

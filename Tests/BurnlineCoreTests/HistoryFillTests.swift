@@ -305,3 +305,21 @@ private final class ProgressLog: @unchecked Sendable {
     #expect(filled.rows.count == 1)
     #expect(filled.rows.first?.output == 100)
 }
+
+@Test func fillTakesTheFinalFigureOfAMultiBlockMessage() throws {
+    let tree = FillTree()
+    let stamp = clock.addingTimeInterval(-2 * day)
+    func block(_ output: Int) -> String {
+        """
+        {"type":"assistant","timestamp":"\(iso(stamp))","message":{"id":"msg_a","model":"claude-sonnet-5","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":\(output)}}}\n
+        """
+    }
+    tree.session(block(8) + block(8) + block(5_527),
+                 at: "projects/-Users-me-Projects-Burnline/a.jsonl", modified: stamp)
+
+    let filled = try HistoryFill(rootURL: tree.root)
+        .cells(from: clock.addingTimeInterval(-5 * day), to: clock)
+
+    #expect(filled.rows.count == 1)
+    #expect(filled.rows.first?.output == 5_527)
+}
