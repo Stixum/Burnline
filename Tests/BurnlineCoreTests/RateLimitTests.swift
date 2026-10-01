@@ -253,3 +253,54 @@ private func cache(_ entries: [(Date, Int)]) -> ScanCache {
                                    fiveHour: .init(usedPercent: 5, resetsAt: 4_000))
     #expect(capture.dated(mintedAt: 7_000).capturedAt == 4_000)
 }
+
+/// `provenAt` is an instant the reading can be PROVEN minted. A transcript
+/// mint time later than the instant the five-hour block proves the payload
+/// predates is contradicted evidence, and contradicted evidence proves nothing:
+/// the earlier bound still dates the capture, but no proof is recorded.
+@Test func aMintTimeLaterThanTheReplayEvidenceProvesNothing() {
+    let capture = RateLimitCapture(version: 1, capturedAt: 9_000,
+                                   sevenDay: .init(usedPercent: 69, resetsAt: 90_000),
+                                   fiveHour: .init(usedPercent: 5, resetsAt: 4_000))
+    let dated = capture.dated(mintedAt: 7_000)
+    #expect(dated.capturedAt == 4_000)
+    #expect(dated.provenAt == nil)
+}
+
+@Test func aConsistentMintTimeIsRecordedAsProof() {
+    let capture = RateLimitCapture(version: 1, capturedAt: 9_000,
+                                   sevenDay: .init(usedPercent: 69, resetsAt: 90_000),
+                                   fiveHour: .init(usedPercent: 5, resetsAt: 4_000))
+    let dated = capture.dated(mintedAt: 3_000)
+    #expect(dated.capturedAt == 3_000)
+    #expect(dated.provenAt == 3_000)
+}
+
+/// The transcript is searched for the last assistant turn at or before the
+/// observation. That observation must be the CORRECTED one: searching up to
+/// the raw wall-clock stamp finds turns the five-hour block has already proven
+/// the payload predates.
+@Test func transcriptDatingIsAskedAboutTheCorrectedObservation() {
+    let capture = RateLimitCapture(version: 1, capturedAt: 9_000,
+                                   sevenDay: .init(usedPercent: 69, resetsAt: 90_000),
+                                   fiveHour: .init(usedPercent: 5, resetsAt: 4_000),
+                                   sessionId: "s", transcriptPath: "/t.jsonl")
+    var askedAbout: TimeInterval?
+    let dated = capture.dated { _, observedAt in
+        askedAbout = observedAt
+        return 3_500
+    }
+    #expect(askedAbout == 4_000)
+    #expect(dated.capturedAt == 3_500)
+    #expect(dated.provenAt == 3_500)
+}
+
+@Test func aCaptureWithNoTranscriptIsNotAskedAboutOne() {
+    let capture = RateLimitCapture(version: 1, capturedAt: 9_000,
+                                   sevenDay: .init(usedPercent: 69, resetsAt: 90_000),
+                                   fiveHour: nil)
+    var asked = false
+    let dated = capture.dated { _, _ in asked = true; return 1 }
+    #expect(asked == false)
+    #expect(dated == capture)
+}

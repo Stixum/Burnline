@@ -59,10 +59,11 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
     /// `RateLimitStore.save` and `CaptureDirectory.save` are helper-side, and
     /// `UsageStore.rebuild` re-dates every candidate on every pass.
     ///
-    /// Deliberately survives `correctedForRepublishing()` untouched: that
-    /// method only ever narrows `capturedAt` to a more conservative estimate,
-    /// while `provenAt` is the one honest fact and must never be narrowed
-    /// alongside it. The two are allowed to diverge there.
+    /// Invariant: `provenAt <= capturedAt`. `dated(mintedAt:)` enforces it —
+    /// a mint time the reset blocks contradict is recorded as no proof at all,
+    /// never as a proof later than the bound. `correctedForRepublishing()`
+    /// leaves this field alone because the only value it can hold before
+    /// dating is `fetchedAtMs`, which is the same instant as `capturedAt`.
     public var provenAt: TimeInterval?
 
     private enum CodingKeys: String, CodingKey {
@@ -96,8 +97,17 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
     /// replay less than five hours old hasn't outlived its own window yet. This
     /// catches the case that actually bites: a session idle for hours.
     public var isRepublishedCache: Bool {
-        guard let fiveHour else { return false }
-        return fiveHour.resetsAt < capturedAt
+        latestPossibleMint < capturedAt
+    }
+
+    /// The latest instant this payload could have been produced, from the
+    /// windows it describes: a payload describing a window that ended at `T`
+    /// cannot have been produced after `T`. Both blocks apply and the earlier
+    /// bound wins. The seven-day block is what dates an idle session with no
+    /// five-hour block republishing across the weekly reset — without it the
+    /// dead window's percentage passed every age check and rendered as live.
+    private var latestPossibleMint: TimeInterval {
+        min(sevenDay.resetsAt, fiveHour?.resetsAt ?? .infinity)
     }
 
     /// The same capture, dated to the latest instant it could actually have been
@@ -112,9 +122,9 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
     /// Idempotent: a corrected capture has `capturedAt == fiveHour.resetsAt`,
     /// and the test above is strict.
     public func correctedForRepublishing() -> RateLimitCapture {
-        guard isRepublishedCache, let fiveHour else { return self }
+        guard isRepublishedCache else { return self }
         var corrected = self
-        corrected.capturedAt = fiveHour.resetsAt
+        corrected.capturedAt = latestPossibleMint
         return corrected
     }
 
@@ -135,9 +145,25 @@ public struct RateLimitCapture: Equatable, Sendable, Codable {
         if let mintedAt {
             // A reading cannot have been minted after we saw it.
             result.capturedAt = min(result.capturedAt, mintedAt)
-            result.provenAt = mintedAt
+            // A mint time later than the instant the reset blocks prove the
+            // payload predates is contradicted evidence. The earlier bound
+            // still dates the capture; nothing is proven, so nothing is
+            // recorded as proof. `provenAt` never exceeds `capturedAt`.
+            result.provenAt = mintedAt <= result.capturedAt ? mintedAt : nil
         }
         return result
+    }
+
+    /// `dated(mintedAt:)` with the transcript consulted about the CORRECTED
+    /// observation. The one entry point for app and probe, so the two cannot
+    /// disagree about which instant the transcript is searched up to: asked
+    /// about the raw wall-clock stamp, `TranscriptDating` finds turns the
+    /// reset blocks have already proven the payload predates.
+    public func dated(using mint: (_ transcriptPath: String, _ observedAt: TimeInterval) -> TimeInterval?)
+        -> RateLimitCapture {
+        let corrected = correctedForRepublishing()
+        guard let transcriptPath else { return corrected }
+        return corrected.dated(mintedAt: mint(transcriptPath, corrected.capturedAt))
     }
 }
 

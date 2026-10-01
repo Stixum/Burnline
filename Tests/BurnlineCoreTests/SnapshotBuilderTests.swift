@@ -435,3 +435,23 @@ private let utc = TimeZone(identifier: "UTC")!
     #expect(snapshot.regrant != nil)
     #expect(snapshot.projectionLabel == "Rate since re-grant")
 }
+
+/// The builder's own guard, independent of whether a load path corrected the
+/// date: a reading whose weekly reset has passed describes a window that no
+/// longer exists, whatever its timestamp says. An undated replay (no five-hour
+/// block, stamped with the wall clock by an idle session) used to pass the
+/// age check and render the dead window's percentage as live.
+@Test func anUndatedReplayOfADeadWindowIsNotLive() {
+    let now = capturedBucketStart.addingTimeInterval(3 * 86_400)
+    let deadReset = capturedBucketStart.addingTimeInterval(60)
+    let replay = capture(percent: 64, at: now, resetsAt: deadReset)
+
+    let snapshot = SnapshotBuilder.build(
+        cache: cache([(capturedBucketStart, 9_000)]),
+        settings: settings(),
+        rateLimit: replay,
+        now: now, isScanning: false)
+
+    #expect(snapshot.source == .paceOnly)
+    #expect(snapshot.capturedPercent == nil)
+}

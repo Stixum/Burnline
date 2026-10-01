@@ -38,9 +38,7 @@ let drift = abs(warmCache.units(from: now.addingTimeInterval(-30 * 86_400), to: 
 // with the app the moment two sessions are open — which is the case the
 // per-session files exist for.
 func date(_ loaded: RateLimitCapture) -> RateLimitCapture {
-    loaded.dated(mintedAt: loaded.transcriptPath.flatMap {
-        TranscriptDating.mintedAt(transcriptPath: $0, observedAt: loaded.capturedAt)
-    })
+    loaded.dated(using: TranscriptDating.mintedAt)
 }
 
 // One formatter for every instant this probe prints, so two sections can never

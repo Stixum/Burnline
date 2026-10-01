@@ -63,7 +63,14 @@ public enum SnapshotBuilder {
         // The capture's percentage is only meaningful inside the window it was
         // taken in. Once that window resets, the number is about a period that
         // no longer exists.
+        // The reset instant is checked directly as well as the age: a replay
+        // stamped with the wall clock sits inside the rolled window by
+        // construction, but its reading describes the window that ended at
+        // `resets_at`. If that instant has passed, the number is dead whatever
+        // the timestamp says — the load paths correct the date, but this is
+        // the one place every candidate passes through.
         if let capture = rateLimit,
+           capture.sevenDay.resetsDate > now,
            capture.capturedDate >= window.start,
            capture.capturedDate < window.end {
             epoch = openEpoch(regrant, in: window)

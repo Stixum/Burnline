@@ -168,3 +168,21 @@ private func republishable(capturedAt: TimeInterval,
         RateLimitCapture.self, from: try JSONEncoder().encode(capture))
     #expect(round.provenAt == nil)
 }
+
+// MARK: - The seven-day block dates a replay too
+
+/// Same reasoning, one window up: a payload describing a weekly window that
+/// ended at W cannot have been produced after W. Without this, an idle session
+/// with no five-hour block that republishes across the weekly reset renders
+/// the DEAD window's percentage as live inside the new one.
+@Test func anExpiredSevenDayWindowProvesThePayloadIsARepublishedCache() {
+    let replay = republishable(capturedAt: weekReset + 5_000, fiveHourResetsAt: nil)
+    #expect(replay.isRepublishedCache)
+    #expect(replay.correctedForRepublishing().capturedAt == weekReset)
+    #expect(replay.correctedForRepublishing().sevenDay.usedPercent == 69)
+}
+
+@Test func theEarlierOfTheTwoExpiredResetInstantsDatesTheReplay() {
+    let replay = republishable(capturedAt: weekReset + 5_000, fiveHourResetsAt: weekReset - 3_600)
+    #expect(replay.correctedForRepublishing().capturedAt == weekReset - 3_600)
+}

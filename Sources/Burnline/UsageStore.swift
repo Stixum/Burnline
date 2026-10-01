@@ -649,11 +649,7 @@ final class UsageStore {
         let dated = (captureDirectory.load()
                      + [rateLimitStore.load()].compactMap { $0 }
                      + [utilization?.asCapture()].compactMap { $0 })
-            .map { loaded in
-                loaded.dated(mintedAt: loaded.transcriptPath.flatMap {
-                    TranscriptDating.mintedAt(transcriptPath: $0, observedAt: loaded.capturedAt)
-                })
-            }
+            .map { $0.dated(using: TranscriptDating.mintedAt) }
         // Select, then reconcile, then report — one pure step, in
         // `CaptureSelection.resolve`, because the ORDER of those three is
         // load-bearing and this target has no tests. Selection is what refuses a
