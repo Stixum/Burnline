@@ -68,8 +68,9 @@ public struct StatuslinePayload: Sendable, Decodable {
     public var cost: Cost?
     public var rateLimits: RateLimits?
     /// Identifies the session whose cached `rate_limits` this is, which is what
-    /// lets the app date the reading exactly. Documented, but never yet observed
-    /// at runtime — everything downstream treats it as optional.
+    /// lets the app date the reading exactly. Present on terminal sessions'
+    /// payloads (per-session capture files exist on disk); optional because a
+    /// payload may omit it and older files predate it.
     public var sessionId: String?
     public var transcriptPath: String?
 

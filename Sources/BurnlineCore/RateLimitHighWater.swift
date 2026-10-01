@@ -1,7 +1,8 @@
 import Foundation
 
-/// The highest reading seen inside a given window, so a stale capture can't drag
-/// the figure backwards.
+/// The highest reading seen inside the current allowance epoch — a window, or
+/// the part of one since a re-grant — so a stale capture can't drag the figure
+/// backwards. A mark can be demoted, but only by a *proven* later reading.
 ///
 /// **Why this is needed.** Several Claude Code sessions can be open at once, and
 /// every one of them runs the statusline script on its own `refreshInterval`

@@ -237,7 +237,7 @@ final class UsageStore {
         let fill = historyFill
         fillTask = Task.detached(priority: .utility) { [weak self] in
             let now = Date()
-            let horizon = Int(now.addingTimeInterval(-31 * 86_400).timeIntervalSince1970)
+            let horizon = Int(now.addingTimeInterval(-HistoryWriter.fillHorizon).timeIntervalSince1970)
             // A read hint only — it narrows which transcripts get opened. The
             // writer re-decides what is genuinely uncovered at commit, inside
             // the actor, so a range that went stale in between is harmless.

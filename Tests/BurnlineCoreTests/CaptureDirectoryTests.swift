@@ -138,3 +138,19 @@ private func sessionCapture(_ id: String?, percent: Double = 50,
     #expect(CaptureDirectory.freshest(of: [first, second])?.sevenDay.usedPercent == 70)
     #expect(CaptureDirectory.freshest(of: [second, first])?.sevenDay.usedPercent == 75)
 }
+
+/// Pruning by the raw stamp never removes the one file it was written for: an
+/// idle session republishing a dead window's reading restamps it with the wall
+/// clock every 30s, so it always looks current. Date it by its own window.
+@Test func pruneDatesAReplayByItsOwnWindowRatherThanItsStamp() throws {
+    let directory = CaptureDirectory(directory: directoryScratch())
+    try directory.save(RateLimitCapture(
+        version: RateLimitCapture.currentVersion, capturedAt: 5_000,
+        sevenDay: .init(usedPercent: 10, resetsAt: 500), fiveHour: nil,
+        sessionId: "idle", transcriptPath: nil))
+    try directory.save(sessionCapture("current", percent: 20, capturedAt: 5_000))
+
+    directory.prune(before: 1_000)
+
+    #expect(directory.load().map(\.sevenDay.usedPercent) == [20])
+}

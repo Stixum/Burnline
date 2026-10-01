@@ -187,8 +187,8 @@ public struct UsageUtilization: Sendable, Decodable {
     // MARK: - Into the existing pipeline
 
     /// The same `RateLimitCapture` shape the statusline produces, so this source
-    /// flows through `CaptureSelector.freshest` and `RateLimitHighWater` with no
-    /// changes to either.
+    /// flows through `CaptureLoader`, `CaptureSelection.resolve` and
+    /// `RateLimitHighWater` with no changes to any of them.
     ///
     /// **`sessionId` and `transcriptPath` stay `nil` deliberately.** No session
     /// produced this reading, and `fetchedAt` is already exact — dating it from

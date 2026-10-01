@@ -81,8 +81,13 @@ public struct CaptureDirectory: Sendable {
     /// window's start. A capture from a previous window describes a period that
     /// no longer exists and can never win selection again. Without this, files
     /// accumulate one per session forever.
+    ///
+    /// Dated by the capture's own windows, not its stamp: an idle session
+    /// republishing a dead window's reading restamps it with the wall clock
+    /// every 30s, so by the raw `capturedAt` it is always current — and that
+    /// replay is the one file this exists to remove.
     public func prune(before cutoff: TimeInterval) {
-        for capture in load() where capture.capturedAt < cutoff {
+        for capture in load() where capture.correctedForRepublishing().capturedAt < cutoff {
             guard let sessionId = capture.sessionId else { continue }
             try? FileManager.default.removeItem(
                 at: root.appendingPathComponent("\(sessionId).json"))

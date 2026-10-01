@@ -547,3 +547,63 @@ private func twoWeeksBeforeTheReset() -> HistoryArchive.Payload {
     // handed the cells the writer reads back, and that read is bounded too.
     #expect(written.map(\.counts.output) == [11, 13, 17])
 }
+
+// MARK: - Where the flush starts reading
+
+private func bucketStart(_ date: Date) -> Int { Bucket.key(for: date) * writerStep }
+private func covered(_ from: Date, _ through: Date) -> CoverageRecord {
+    CoverageRecord(from: bucketStart(from), through: bucketStart(through),
+                   filledBy: "test", truncated: false)
+}
+private func writtenRow(_ start: Date, _ end: Date) -> WindowRow {
+    WindowRow(start: start, end: end, counts: .zero,
+              finalPercent: nil, finalPercentAt: nil, finalPercentSource: nil,
+              boundsSource: .observed, observedResetsAt: end)
+}
+private let hour: TimeInterval = 3_600
+private let day: TimeInterval = 86_400
+
+/// The app was off for longer than the fill horizon. The launch fill claims
+/// back only to `now − fillHorizon`, so the hole before that is permanent, the
+/// window straddling it can never be fully covered, and the ledger never
+/// writes it. The read used to stick at that window's start forever — every
+/// 60s flush decoded the whole archive from there.
+@Test func theFlushSkipsAWindowStrandedOnAPermanentCoverageHole() {
+    let now = Date()
+    let coverage = Coverage(records: [
+        covered(now.addingTimeInterval(-60 * day), now.addingTimeInterval(-45 * day)),
+        covered(now.addingTimeInterval(-31 * day), now.addingTimeInterval(-hour)),
+    ])
+    let written = [writtenRow(now.addingTimeInterval(-60 * day), now.addingTimeInterval(-53 * day))]
+
+    let start = HistoryWriter.readStart(coverage: coverage, written: written, now: now)
+
+    #expect(start == Date(timeIntervalSince1970: Double(bucketStart(now.addingTimeInterval(-31 * day)))))
+}
+
+/// The backfill case this must not break: a first launch writes the newest
+/// window first, and the windows still missing are OLDER than it. With one
+/// contiguous range the read reaches back to its start.
+@Test func theFlushStillReachesBackForWindowsOlderThanTheNewestRow() {
+    let now = Date()
+    let coverage = Coverage(records: [covered(now.addingTimeInterval(-20 * day), now.addingTimeInterval(-hour))])
+    let written = [writtenRow(now.addingTimeInterval(-7 * day), now.addingTimeInterval(-hour))]
+
+    let start = HistoryWriter.readStart(coverage: coverage, written: written, now: now)
+
+    #expect(start == Date(timeIntervalSince1970: Double(bucketStart(now.addingTimeInterval(-20 * day)))))
+}
+
+/// A hole the next fill can still close is not permanent, and skipping past
+/// it would leave a writable window unwritten.
+@Test func aRecentCoverageHoleIsNotSkipped() {
+    let now = Date()
+    let coverage = Coverage(records: [
+        covered(now.addingTimeInterval(-10 * day), now.addingTimeInterval(-5 * day)),
+        covered(now.addingTimeInterval(-3 * day), now.addingTimeInterval(-hour)),
+    ])
+
+    let start = HistoryWriter.readStart(coverage: coverage, written: [], now: now)
+
+    #expect(start == Date(timeIntervalSince1970: Double(bucketStart(now.addingTimeInterval(-10 * day)))))
+}

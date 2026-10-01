@@ -263,16 +263,47 @@ public actor HistoryWriter {
     /// permanently, since a window row is written once. This is the same defect
     /// as the ledger's high-water skip and hides directly behind it.
     private func cells(notCoveredBy written: [WindowRow], now: Date) -> [HistoryRow] {
+        guard let from = Self.readStart(coverage: coverage, written: written, now: now) else { return [] }
+        return (try? store.rows(in: from...now).rows) ?? []
+    }
+
+    /// How far back the launch fill reaches: one day past Claude Code's 30-day
+    /// `cleanupPeriodDays` default. Coverage older than this can never be
+    /// claimed — the transcripts are gone.
+    public static let fillHorizon: TimeInterval = 31 * 86_400
+
+    /// The instant the flush reads cells from, or nil when nothing is readable.
+    /// Pure, so the rule has tests; `cells(notCoveredBy:)` is its only caller.
+    static func readStart(coverage: Coverage, written: [WindowRow], now: Date) -> Date? {
         guard var from = coverage.ranges.first
-            .map({ Date(timeIntervalSince1970: Double($0.lowerBound)) }) else { return [] }
+            .map({ Date(timeIntervalSince1970: Double($0.lowerBound)) }) else { return nil }
 
         // `end > from` is what makes this terminate: every step moves `from`
         // strictly forward, and there are finitely many rows.
-        while let row = written.first(where: { $0.start <= from && $0.end > from }) {
-            from = row.end
+        func stepOverWrittenRows() {
+            while let row = written.first(where: { $0.start <= from && $0.end > from }) {
+                from = row.end
+            }
+        }
+        stepOverWrittenRows()
+
+        // A hole older than the fill horizon is permanent: the transcripts
+        // that would fill it are gone. A window straddling one can never be
+        // fully covered, so the ledger never writes it, and without this the
+        // read stuck at that window's start forever — every 60s flush
+        // decoding the whole archive from there. Jump to the range after each
+        // permanent hole; a hole the next fill can still close is left alone.
+        let permanentBefore = now.addingTimeInterval(-fillHorizon)
+        let ranges = coverage.ranges
+        for (earlier, later) in zip(ranges, ranges.dropFirst()) {
+            let holeStart = Date(timeIntervalSince1970: Double(earlier.upperBound) + Bucket.seconds)
+            let nextStart = Date(timeIntervalSince1970: Double(later.lowerBound))
+            guard holeStart < permanentBefore, nextStart > from else { continue }
+            from = nextStart
+            stepOverWrittenRows()
         }
 
-        guard from <= now else { return [] }
-        return (try? store.rows(in: from...now).rows) ?? []
+        guard from <= now else { return nil }
+        return from
     }
 }

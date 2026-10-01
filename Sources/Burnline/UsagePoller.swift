@@ -102,18 +102,19 @@ final class UsagePoller {
             return .failed
         }
 
-        // 🔴 **The gate, and it must come before `openpty`, not before the
-        // write.** Signed out, Claude Code boots to `Select login method:`
-        // rather than a prompt, and the `/usage\r` below is then an Enter
-        // keypress on that picker: it starts an OAuth flow and opens a browser
-        // the user never asked for. Worse on a managed Mac, where
-        // `forceLoginMethod` puts the login component into `ready_to_start` at
-        // boot and the browser opens ~18 seconds before anything is typed —
-        // so gating the keystroke alone would not have been enough.
+        // The gate, before `openpty`. A signed-out poll is a ~27s session that
+        // cannot refresh anything, so refusing to spawn it is worth doing on
+        // its own. (The design's alarming justification — that a signed-out
+        // CLI boots to a login picker and the `/usage\r` below opens a browser
+        // — was measured false on 2026-09-10: it boots to a prompt with a
+        // `Not logged in` badge. A fresh install or a managed `forceLoginMethod`
+        // may still differ; nobody has seen it.)
         //
-        // ⚠️ `.signInExpired` deliberately does not gate; that credential boots
-        // to a normal prompt, and a poll is the only in-app proof of recovery.
-        // `ClaudeAuthStatus.blocksPolling` owns that distinction and is tested.
+        // Every `AuthBlock.Kind` gates, `.signInExpired` included — by the time
+        // that block exists the CLI has written its dead-credential marker.
+        // Recovery is the probe's job (`AuthProbeDecision`, 60s floor while
+        // blocked), not the poll's. `ClaudeAuthStatus.blocksPolling` owns the
+        // rule and is tested (`everyKindOfBlockGatesPolling`).
         let probed = await authProbe.probe(executable: executable)
         let finding: AuthBlock.Kind? = if case let .blocked(kind) = probed { kind } else { nil }
         if let finding, ClaudeAuthStatus.blocksPolling(finding) {

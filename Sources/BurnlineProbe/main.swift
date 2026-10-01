@@ -408,7 +408,7 @@ let fillAllowed = ProbeArchivePolicy.shouldFill(environment: ProcessInfo.process
 
 let fillStarted = Date()
 // One day past Claude Code's 30-day `cleanupPeriodDays` default, matching the app.
-let horizon = Int(now.addingTimeInterval(-31 * 86_400).timeIntervalSince1970)
+let horizon = Int(now.addingTimeInterval(-HistoryWriter.fillHorizon).timeIntervalSince1970)
 let uncovered = fillAllowed
     ? await writer.currentCoverage().uncovered(from: horizon, through: Int(now.timeIntervalSince1970))
     : []

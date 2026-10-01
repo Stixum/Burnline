@@ -4,9 +4,9 @@ public enum ApplicationSupport {
     /// Redirects every Burnline data file to another directory.
     ///
     /// This exists for one reason: the `burnline-statusline` helper writes
-    /// `rate-limits.json`, which is the only copy of the last real capture, and
-    /// there was previously no way to exercise the helper without overwriting
-    /// it. `env -i HOME=/tmp/…` does **not** work — `FileManager.urls(for:in:)`
+    /// `rate-limits.json` and `captures/<session>.json` — live data, with
+    /// `~/.claude.json` the only other source — and there was previously no
+    /// way to exercise the helper without overwriting them. `env -i HOME=/tmp/…` does **not** work — `FileManager.urls(for:in:)`
     /// resolves the real home directory and ignores `$HOME`. This did overwrite
     /// live data three times in one session on 2026-08-11, once producing a
     /// fabricated reading the app then latched and displayed as real.

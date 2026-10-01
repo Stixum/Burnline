@@ -151,8 +151,8 @@ public struct HistoryStore: Sendable {
     /// is the sole writer and calls this from inside the actor — but a caller
     /// reaching for this to "clean up" or "dedupe" is a caller about to lose a
     /// row that cannot be recomputed. Windows carry `finalPercent`, Anthropic's
-    /// own figure, which nothing can reconstruct once the tracking entry behind
-    /// it has been pruned.
+    /// own figure, which nothing but `tracking.json` can reconstruct — and
+    /// entries recorded before 2026-09-01 were pruned on write and are gone.
     public func replaceWindows(_ rows: [WindowRow]) throws {
         createDirectory()
         let encoder = JSON.encoder
