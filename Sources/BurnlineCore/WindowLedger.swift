@@ -157,14 +157,19 @@ public struct WindowLedger: Sendable {
 
             // Rule 2. Closed, unwritten, and every bucket in hand.
             guard end <= now else { continue }
-            // "In hand" means handed to us, not merely covered.
-            if let cellsFrom, start < cellsFrom.addingTimeInterval(-Self.sameResetTolerance) { continue }
 
             if Self.isAlreadyWritten(start: start, end: end, in: written) { continue }
 
             let firstBucket = Self.firstBucketStart(atOrAfter: start)
             let lastBucket = Self.lastBucketStart(before: end)
             guard firstBucket <= lastBucket else { continue }
+            // "In hand" means handed to us, not merely covered. Compared on the
+            // window's first OWNED bucket, not its start: a window begins at a
+            // reset instant, which sits inside a bucket, and the read begins
+            // at that bucket's start — up to 15 minutes later than the window.
+            if let cellsFrom, Double(firstBucket) < cellsFrom.timeIntervalSince1970 - Self.sameResetTolerance {
+                continue
+            }
             guard coverage.covers(from: firstBucket, through: lastBucket) else { continue }
 
             // 🔴 ONE series backs every reading this row reports, taken from
