@@ -32,7 +32,11 @@ public struct FileState: Equatable, Sendable, Codable {
 /// Persistent incremental scan state. Lives at
 /// `~/Library/Application Support/Burnline/scan-cache.json`.
 public struct ScanCache: Equatable, Sendable, Codable {
-    public static let currentVersion = 2
+    /// v3 (2026-10-01): cells are one record per MESSAGE, the per-field maximum
+    /// across its lines. v2 summed every line, two to three times per
+    /// tool-using turn, and an unchanged file is never re-read until it ages
+    /// out — so a v2 cache has to be discarded, not kept. One cold scan.
+    public static let currentVersion = 3
     /// Files untouched for longer than this are dropped.
     public static let retention: TimeInterval = 14 * 86_400
 

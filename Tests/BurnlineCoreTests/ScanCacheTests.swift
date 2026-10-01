@@ -111,3 +111,13 @@ private func state(at date: Date, counts: TokenCounts) -> FileState {
                             weights: .default)
     #expect(abs(total - 175) < 1e-9)
 }
+
+/// v2 cells were summed once per transcript LINE. Every install carries one,
+/// and unchanged files are never re-read until they age out, so without a
+/// version bump the inflated cells survive an upgrade for up to 14 days.
+/// Discarding costs one cold scan behind the existing spinner.
+@Test func aCacheSummedPerLineIsDiscarded() throws {
+    let json = #"{"version":2,"files":{}}"#.data(using: .utf8)!
+    let decoded = try JSONDecoder().decode(ScanCache.self, from: json)
+    #expect(decoded.isCompatible == false)
+}
