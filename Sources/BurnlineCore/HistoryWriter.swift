@@ -163,8 +163,10 @@ public actor HistoryWriter {
 
         let ledger = WindowLedger(anchor: anchor, schedule: schedule,
                                   hasEverObservedAReset: hasEverObservedAReset)
+        let readFrom = Self.readStart(coverage: coverage, written: windows, now: now)
+        let cells = readFrom.map { (try? store.rows(in: $0...now).rows) ?? [] } ?? []
         let rows = ledger.writableRows(coverage: coverage, written: windows,
-                                       cells: cells(notCoveredBy: windows, now: now),
+                                       cells: cells, cellsFrom: readFrom,
                                        tracking: tracking.entries, now: now)
         guard !rows.isEmpty else { return }
         do {
@@ -262,18 +264,15 @@ public actor HistoryWriter {
     /// totalled from nothing and the archive would record real weeks as zero —
     /// permanently, since a window row is written once. This is the same defect
     /// as the ledger's high-water skip and hides directly behind it.
-    private func cells(notCoveredBy written: [WindowRow], now: Date) -> [HistoryRow] {
-        guard let from = Self.readStart(coverage: coverage, written: written, now: now) else { return [] }
-        return (try? store.rows(in: from...now).rows) ?? []
-    }
-
     /// How far back the launch fill reaches: one day past Claude Code's 30-day
     /// `cleanupPeriodDays` default. Coverage older than this can never be
     /// claimed — the transcripts are gone.
     public static let fillHorizon: TimeInterval = 31 * 86_400
 
     /// The instant the flush reads cells from, or nil when nothing is readable.
-    /// Pure, so the rule has tests; `cells(notCoveredBy:)` is its only caller.
+    /// Pure, so the rule has tests; `writeCompletedWindows` is its only caller
+    /// and hands the same instant to the ledger as `cellsFrom`, so a window the
+    /// read skipped can never be written from no cells.
     static func readStart(coverage: Coverage, written: [WindowRow], now: Date) -> Date? {
         guard var from = coverage.ranges.first
             .map({ Date(timeIntervalSince1970: Double($0.lowerBound)) }) else { return nil }

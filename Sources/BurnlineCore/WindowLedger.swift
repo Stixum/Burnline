@@ -83,6 +83,23 @@ public struct WindowLedger: Sendable {
     public func writableRows(coverage: Coverage, written: [WindowRow],
                              cells: [HistoryRow], tracking: [TrackingEntry],
                              now: Date) -> [WindowRow] {
+        writableRows(coverage: coverage, written: written, cells: cells, cellsFrom: nil,
+                     tracking: tracking, now: now)
+    }
+
+    /// As above, where `cellsFrom` is the instant `cells` were read from.
+    ///
+    /// 🔴 This ledger checks COVERAGE, not the cells it was handed, so a
+    /// covered window the caller read no cells for totals to zero and is
+    /// written that way, permanently. The flush reads from
+    /// `HistoryWriter.readStart` onward; a window starting before that is one
+    /// the cells cannot speak for and is deferred, never written. An explicit
+    /// overload rather than a defaulted parameter, for the incremental-build
+    /// reason recorded on `ScanCache.units`.
+    public func writableRows(coverage: Coverage, written: [WindowRow],
+                             cells: [HistoryRow], cellsFrom: Date?,
+                             tracking: [TrackingEntry],
+                             now: Date) -> [WindowRow] {
         // Rule 1. Deferring a row costs nothing; a row written with placeholder
         // bounds is wrong forever.
         if anchor == nil && hasEverObservedAReset { return [] }
@@ -140,6 +157,8 @@ public struct WindowLedger: Sendable {
 
             // Rule 2. Closed, unwritten, and every bucket in hand.
             guard end <= now else { continue }
+            // "In hand" means handed to us, not merely covered.
+            if let cellsFrom, start < cellsFrom.addingTimeInterval(-Self.sameResetTolerance) { continue }
 
             if Self.isAlreadyWritten(start: start, end: end, in: written) { continue }
 

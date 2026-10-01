@@ -554,3 +554,23 @@ private func observed(_ percent: Double, dayIn days: Int) -> TrackingEntry {
     // The contradiction, stated as the invariant it is.
     #expect((first?.finalPercentAt ?? .distantPast) >= (first?.regrant?.at ?? .distantFuture))
 }
+
+/// The ledger checks COVERAGE, not the cells it was handed. The flush reads
+/// cells from `HistoryWriter.readStart` onward, so a covered window that
+/// starts before that point is one the ledger has no cells for — and would
+/// total from nothing and write as zero, permanently. The read start is the
+/// one fact that says which windows the cells can speak for.
+@Test func aWindowStartingBeforeTheCellsWereReadFromIsNotWritten() {
+    let start = plus(days: -28, from: anchorDate).addingTimeInterval(2 * 3_600)
+    let thirtyOneDays = coverage(from: start, through: anchorDate)
+    // Cells only from day −14; the −21 window is covered but was not read.
+    let cells = [cell(daysIn: -11, output: 13), cell(daysIn: -4, output: 17)]
+
+    let rows = anchored.writableRows(coverage: thirtyOneDays, written: [],
+                                     cells: cells, cellsFrom: plus(days: -14, from: anchorDate),
+                                     tracking: [], now: plus(days: 2, from: anchorDate))
+
+    #expect(rows.map(\.start) == [plus(days: -14, from: anchorDate),
+                                  plus(days: -7, from: anchorDate)])
+    #expect(rows.map(\.output) == [13, 17])
+}
