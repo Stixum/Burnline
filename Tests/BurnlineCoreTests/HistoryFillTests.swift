@@ -284,3 +284,24 @@ private final class ProgressLog: @unchecked Sendable {
     #expect(filled.filesOpened == 0)
     #expect(log.reports == [HistoryFill.Progress(filesOpened: 0, filesTotal: 0)])
 }
+
+// MARK: - One message, several content blocks
+
+/// The archive is permanent, so this is the one place a repeat must not slip
+/// through: a tool-using turn writes one line per content block, each with the
+/// same `message.id` and identical `usage`.
+@Test func fillCountsAMultiBlockMessageOnce() throws {
+    let tree = FillTree()
+    let stamp = clock.addingTimeInterval(-2 * day)
+    let block = """
+    {"type":"assistant","timestamp":"\(iso(stamp))","message":{"id":"msg_a","model":"claude-sonnet-5","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":100}}}\n
+    """
+    tree.session(block + block + block,
+                 at: "projects/-Users-me-Projects-Burnline/a.jsonl", modified: stamp)
+
+    let filled = try HistoryFill(rootURL: tree.root)
+        .cells(from: clock.addingTimeInterval(-5 * day), to: clock)
+
+    #expect(filled.rows.count == 1)
+    #expect(filled.rows.first?.output == 100)
+}

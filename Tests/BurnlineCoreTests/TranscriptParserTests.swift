@@ -79,3 +79,44 @@ private func parse(_ text: String) -> [UsageRecord] {
     #expect(records.count == 1)
     #expect(records[0].model == "")
 }
+
+// MARK: - One message, several content blocks
+
+/// Claude Code writes one assistant line per content block (text, tool_use…),
+/// each restating the same `message.id` and byte-identical `usage`. Measured on
+/// 40 real transcripts on 2026-10-01: 56% of usage-bearing lines were such
+/// repeats. The usage describes the whole message, so it counts once.
+private func block(id: String, output: Int = 135) -> String {
+    """
+    {"type":"assistant","timestamp":"2026-08-10T18:51:57.446Z","requestId":"req_\(id)","message":{"id":"\(id)","model":"claude-sonnet-5","usage":{"input_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":\(output)}}}\n
+    """
+}
+
+@Test func contentBlocksOfOneMessageCountOnce() {
+    let records = parse(block(id: "msg_a") + block(id: "msg_a") + block(id: "msg_a"))
+    #expect(records.count == 1)
+    #expect(records[0].outputTokens == 135)
+}
+
+@Test func distinctMessagesStillCountSeparately() {
+    let records = parse(block(id: "msg_a") + block(id: "msg_b"))
+    #expect(records.count == 2)
+}
+
+@Test func aLineWithNoMessageIdIsNeverCollapsed() {
+    // No id means no evidence of a repeat: counting is the safe default.
+    let records = parse(assistantLine + "\n" + assistantLine + "\n")
+    #expect(records.count == 2)
+}
+
+@Test func theMessageIdCarriesAcrossAnIncrementalBoundary() {
+    // A message's blocks can straddle the scanner's read boundary. The caller
+    // hands back the last id it saw so the continuation is not counted again.
+    let first = TranscriptParser().parse(Data(block(id: "msg_a").utf8), after: nil)
+    #expect(first.records.count == 1)
+    #expect(first.lastMessageId == "msg_a")
+    let second = TranscriptParser().parse(Data((block(id: "msg_a") + block(id: "msg_b")).utf8),
+                                          after: first.lastMessageId)
+    #expect(second.records.count == 1)
+    #expect(second.lastMessageId == "msg_b")
+}

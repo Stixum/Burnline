@@ -64,8 +64,9 @@ public struct TranscriptScanner: Sendable {
                 continue
             }
 
-            let (records, newOffset) = readAppended(at: url, from: state.offset, parser: parser)
-            for record in records {
+            let (parsed, newOffset) = readAppended(at: url, from: state.offset,
+                                                  after: state.lastMessageId, parser: parser)
+            for record in parsed.records {
                 let key = String(Bucket.key(for: record.timestamp))
                 let counts = TokenCounts(input: record.inputTokens,
                                          output: record.outputTokens,
@@ -74,6 +75,7 @@ public struct TranscriptScanner: Sendable {
                 state.cells[key, default: [:]][record.model, default: .zero] += counts
             }
             state.offset = newOffset
+            state.lastMessageId = parsed.lastMessageId
             state.size = size
             state.modifiedAt = modifiedAt
             cache.files[path] = state
@@ -87,18 +89,19 @@ public struct TranscriptScanner: Sendable {
 
     /// Reads from `offset` to the last complete line. Never advances past a
     /// partial trailing write — sessions are appended to live.
-    private func readAppended(at url: URL, from offset: Int,
-                              parser: TranscriptParser) -> ([UsageRecord], Int) {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return ([], offset) }
+    private func readAppended(at url: URL, from offset: Int, after lastMessageId: String?,
+                              parser: TranscriptParser) -> (TranscriptParser.Parsed, Int) {
+        let nothing = TranscriptParser.Parsed(records: [], lastMessageId: lastMessageId)
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return (nothing, offset) }
         defer { try? handle.close() }
 
         if offset > 0 {
-            guard (try? handle.seek(toOffset: UInt64(offset))) != nil else { return ([], offset) }
+            guard (try? handle.seek(toOffset: UInt64(offset))) != nil else { return (nothing, offset) }
         }
-        guard let data = try? handle.readToEnd(), !data.isEmpty else { return ([], offset) }
-        guard let lastNewline = data.lastIndex(of: UInt8(ascii: "\n")) else { return ([], offset) }
+        guard let data = try? handle.readToEnd(), !data.isEmpty else { return (nothing, offset) }
+        guard let lastNewline = data.lastIndex(of: UInt8(ascii: "\n")) else { return (nothing, offset) }
 
         let complete = data[data.startIndex...lastNewline]
-        return (parser.parse(Data(complete)), offset + complete.count)
+        return (parser.parse(Data(complete), after: lastMessageId), offset + complete.count)
     }
 }

@@ -218,3 +218,29 @@ private func weights(output: Double) -> Weights {
     #expect(abs(second.units(from: never, to: .distantFuture,
                              weights: weights(output: 50)) - 5_000) < 1e-9)
 }
+
+// MARK: - One message, several content blocks
+
+private func blockLine(id: String, output: Int) -> String {
+    """
+    {"type":"assistant","timestamp":"\(recentISO)","message":{"id":"\(id)","model":"claude-sonnet-5","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":\(output)}}}\n
+    """
+}
+
+@Test func aMultiBlockMessageIsCountedOnceAcrossIncrementalScans() throws {
+    let dir = TempDir()
+    _ = dir.write(blockLine(id: "msg_a", output: 100) + blockLine(id: "msg_a", output: 100),
+                  to: "proj/a.jsonl")
+    let scanner = TranscriptScanner(rootURL: dir.url)
+    var cache = try scanner.scan(cache: ScanCache(), now: scanTime)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 500) < 1e-9)
+
+    // The third block of the same message lands after the first scan.
+    dir.append(blockLine(id: "msg_a", output: 100), to: "proj/a.jsonl")
+    cache = try scanner.scan(cache: cache, now: scanTime)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 500) < 1e-9)
+
+    dir.append(blockLine(id: "msg_b", output: 100), to: "proj/a.jsonl")
+    cache = try scanner.scan(cache: cache, now: scanTime)
+    #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 1000) < 1e-9)
+}
