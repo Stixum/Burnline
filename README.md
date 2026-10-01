@@ -152,7 +152,7 @@ SwiftPM, no Xcode project. Four targets:
 
 - `BurnlineCore`: all the logic, no SwiftUI
 - `Burnline`: the app
-- `BurnlineProbe`: prints a snapshot from your real transcripts, the fastest way to see what the app sees
+- `BurnlineProbe`: prints a snapshot from your real transcripts, the fastest way to see what the app sees. Read-only against live data; it runs the archive fill only under `BURNLINE_DATA_DIR` or when `BURNLINE_PROBE_FILL=1` asks for it
 - `BurnlineStatusline`: the capture helper that ships inside the bundle
 
 ```bash
@@ -165,7 +165,7 @@ swift run BurnlineProbe
 BURNLINE_DATA_DIR=/tmp/burnline-test .build/debug/BurnlineStatusline < payload.json
 ```
 
-The probe's first line says which directory is in play. `BURNLINE_OPEN_SETTINGS=1` and `BURNLINE_OPEN_HISTORY=1` open those windows at launch, which is how they get checked from a terminal.
+The probe's first line says which directory is in play. `BURNLINE_OPEN_SETTINGS=1`, `BURNLINE_OPEN_HISTORY=1`, `BURNLINE_OPEN_POPOVER=1` and `BURNLINE_OPEN_ONBOARDING=1` open those windows at launch, which is how they get checked from a terminal. `BURNLINE_CLAUDE_DIR` redirects the `~/.claude/settings.json` the onboarding writes, and `BURNLINE_CLAUDE_CONFIG` the `~/.claude.json` the utilization source reads; `BURNLINE_POLL_LOG` names a file the `/usage` poll logs to.
 
 ### Where to start reading
 

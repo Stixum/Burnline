@@ -390,24 +390,28 @@ if noteSettings.enabled {
 
 // MARK: - Usage archive
 
-// 🔴 The probe DRIVES the archive rather than describing it: it runs exactly
+// The probe can DRIVE the archive rather than describe it: it runs exactly
 // the launch sequence `UsageStore.startHistoryFill()` runs — uncovered ranges,
 // fill, commit — against the resolved data directory. A print-only version
 // could not produce the figure this section exists for, which is what the fill
 // actually costs in wall-clock seconds on a real corpus.
 //
 // Writes land wherever the first line said they would. Under
-// `BURNLINE_DATA_DIR` that is a scratch archive; without it, the same files the
-// app itself maintains.
+// `BURNLINE_DATA_DIR` that is a scratch archive and the fill runs. Without it,
+// the same files the app itself maintains — a second writer on the archive
+// while the app is up — so the fill is skipped unless `BURNLINE_PROBE_FILL=1`
+// asks for it by name. `ProbeArchivePolicy` owns the rule.
 let historyStore = HistoryStore(directory: ApplicationSupport.historyDirectory())
 let writer = HistoryWriter(store: historyStore, schedule: settings.resetSchedule)
 let fill = HistoryFill(rootURL: TranscriptScanner.defaultRoot)
+let fillAllowed = ProbeArchivePolicy.shouldFill(environment: ProcessInfo.processInfo.environment)
 
 let fillStarted = Date()
 // One day past Claude Code's 30-day `cleanupPeriodDays` default, matching the app.
 let horizon = Int(now.addingTimeInterval(-31 * 86_400).timeIntervalSince1970)
-let uncovered = await writer.currentCoverage()
-    .uncovered(from: horizon, through: Int(now.timeIntervalSince1970))
+let uncovered = fillAllowed
+    ? await writer.currentCoverage().uncovered(from: horizon, through: Int(now.timeIntervalSince1970))
+    : []
 
 var filesOpened = 0
 var truncatedRanges = 0
@@ -456,9 +460,11 @@ print("""
 
 usage archive
   archive dir      \(historyStore.directory.path)
-  fill             \(String(format: "%.2f", fillElapsed))s   \
-(\(uncovered.count) uncovered range(s), \(filesOpened) transcript file(s) opened\
-\(truncatedRanges > 0 ? ", \(truncatedRanges) truncated" : ""))
+  fill             \(fillAllowed
+    ? String(format: "%.2f", fillElapsed) + "s   "
+        + "(\(uncovered.count) uncovered range(s), \(filesOpened) transcript file(s) opened"
+        + (truncatedRanges > 0 ? ", \(truncatedRanges) truncated)" : ")")
+    : "skipped   (live data — the app is the archive's writer; \(ProbeArchivePolicy.fillKey)=1 to run it here)")
   cell rows        \(archived.rows.count)
   skipped lines    \(archived.skipped)   (unreadable — never fatal, never silent)
   coverage begins  \(archiveStart.map(stamp.string(from:)) ?? "—   (nothing archived)")
