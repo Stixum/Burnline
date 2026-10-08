@@ -67,6 +67,19 @@ public struct ClaudeSettingsFile: Sendable {
         return object
     }
 
+    /// Claude Code's transcript retention, when the settings name one. How far
+    /// back the history heal can trust the transcripts to be complete.
+    ///
+    /// Only a whole number counts. `JSONSerialization` hands back an
+    /// `NSNumber`, which bridges `7.5` to nil but `true` to 1 — so a boolean is
+    /// refused explicitly rather than read as a one-day period.
+    public static func cleanupPeriodDays(in settings: [String: Any]?) -> Int? {
+        guard let number = settings?["cleanupPeriodDays"] as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID()
+        else { return nil }
+        return number as? Int
+    }
+
     /// Backs the current file up, then writes `settings` atomically.
     ///
     /// Key order is not preserved — `JSONSerialization` reorders. Accepted: the

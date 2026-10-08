@@ -244,6 +244,14 @@ final class UsageStore {
             let uncovered = await writer.currentCoverage()
                 .uncovered(from: horizon, through: Int(now.timeIntervalSince1970))
 
+            // Asked BEFORE the fill below commits anything: on a fresh install
+            // the archive is empty, so it is marked current here and the fill's
+            // own rows — counted by the current parser — are never re-read.
+            let cleanupPeriodDays = ClaudeSettingsFile.cleanupPeriodDays(
+                in: try? ClaudeSettingsFile().read())
+            let healRange = await writer.rangeToHeal(
+                since: HistoryWriter.healableSince(now: now, cleanupPeriodDays: cleanupPeriodDays))
+
             var failure: String?
 
             for range in uncovered {
@@ -282,6 +290,35 @@ final class UsageStore {
                     // Recorded rather than thrown, so one bad range does not cost
                     // the others — but it must still reach the UI, because a fill
                     // that quietly did less than it said is how a gap goes unseen.
+                    failure = error.localizedDescription
+                }
+            }
+
+            // The one-time heal of cells an older parser counted. After the
+            // gap fill, so the History window's progress reads as one more
+            // range rather than holding back the weeks that were missing; and
+            // inside the same `.filling` state, so the window reloads once, on
+            // the healed archive. A failure leaves the archive unmarked and the
+            // next launch heals again.
+            if let healRange, !Task.isCancelled {
+                let gate = ProgressGate()
+                do {
+                    // Through the END of the last bucket: `cells(from:to:)` is
+                    // inclusive of record timestamps and `healRange` holds bucket
+                    // starts. A record exactly on the next boundary is filtered
+                    // out by the writer, which replaces only buckets in range.
+                    let result = try fill.cells(
+                        from: Date(timeIntervalSince1970: Double(healRange.lowerBound)),
+                        to: Date(timeIntervalSince1970: Double(healRange.upperBound) + Bucket.seconds)
+                    ) { progress in
+                        guard gate.admits(progress) else { return }
+                        Task { @MainActor in self?.publishFillProgress(progress) }
+                    }
+                    guard !Task.isCancelled else { return }
+                    if await !writer.heal(rows: result.rows, range: healRange) {
+                        failure = "The archive could not be rewritten. It will be retried at next launch."
+                    }
+                } catch {
                     failure = error.localizedDescription
                 }
             }

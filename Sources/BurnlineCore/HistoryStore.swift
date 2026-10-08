@@ -3,7 +3,7 @@ import Foundation
 /// All file I/O for `~/Library/Application Support/Burnline/history/`.
 ///
 /// ```
-/// manifest.json      version + lastObservedReset
+/// manifest.json      version + lastObservedReset + parserVersion
 /// coverage.jsonl     which bucket ranges are archived
 /// tracking.json      capture observations
 /// windows.jsonl      one row per completed weekly window
@@ -113,6 +113,62 @@ public struct HistoryStore: Sendable {
         return (sorted, skipped)
     }
 
+    /// Rewrites every cell file touching `range`: rows whose bucket is in
+    /// `range` and accepted by `replaces` are dropped, and the given rows that
+    /// pass the same test take their place. Each file is rewritten whole,
+    /// atomically.
+    ///
+    /// ⚠️ The only non-append write to a cell file, and it exists for one job:
+    /// restating cells a superseded `TranscriptParser` counted. Append cannot
+    /// express it — dedupe-on-read keeps the last row per key, so an old key
+    /// the new count no longer produces would survive, inflated, forever.
+    ///
+    /// A line that will not decode is kept byte for byte. It is skipped on
+    /// read either way, and a rewrite is not the place to decide it is
+    /// garbage.
+    ///
+    /// A crash part-way leaves some files restated and some not. Both are
+    /// read correctly, and the caller has not yet recorded the heal, so the
+    /// next launch restates them all again — the operation is idempotent.
+    public func replaceRows(in range: ClosedRange<Int>, where replaces: (Int) -> Bool,
+                            with rows: [HistoryRow]) throws {
+        func inScope(_ bucket: Int) -> Bool { range.contains(bucket) && replaces(bucket) }
+
+        var incoming: [String: [HistoryRow]] = [:]
+        for row in rows where inScope(row.bucket) {
+            incoming[HistoryFileName.forBucket(row.bucket), default: []].append(row)
+        }
+        let names = Set(HistoryFileName.forRange(
+            from: Date(timeIntervalSince1970: Double(range.lowerBound)),
+            to: Date(timeIntervalSince1970: Double(range.upperBound))
+        )).union(incoming.keys)
+
+        createDirectory()
+        let decoder = JSON.decoder
+        let encoder = JSON.encoder
+        for name in names.sorted() {
+            let file = directory.appendingPathComponent(name)
+            let existing = (try? Data(contentsOf: file)) ?? Data()
+            var buffer = Data()
+            var dropped = false
+            for line in existing.split(separator: newline) {
+                if let row = try? decoder.decode(HistoryRow.self, from: Data(line)), inScope(row.bucket) {
+                    dropped = true
+                    continue
+                }
+                buffer.append(contentsOf: line)
+                buffer.append(newline)
+            }
+            let added = incoming[name] ?? []
+            guard dropped || !added.isEmpty else { continue }
+            for row in added {
+                buffer.append(try encoder.encode(row))
+                buffer.append(newline)
+            }
+            try buffer.write(to: file, options: .atomic)
+        }
+    }
+
     // MARK: - Coverage
 
     public func appendCoverage(_ record: CoverageRecord) throws {
@@ -145,9 +201,10 @@ public struct HistoryStore: Sendable {
 
     /// Rewrites `windows.jsonl` whole, atomically.
     ///
-    /// ⚠️ The only non-append write to a `.jsonl` in this directory, and it
-    /// exists for exactly one job: dropping rows whose GRID the app has stopped
-    /// believing in, which append cannot express. Safe because `HistoryWriter`
+    /// ⚠️ One of two non-append writes to a `.jsonl` in this directory (the
+    /// other is `replaceRows`), used for two jobs: dropping rows whose GRID the
+    /// app has stopped believing in, and restating the totals of rows a
+    /// superseded parser counted. Append can express neither. Safe because `HistoryWriter`
     /// is the sole writer and calls this from inside the actor — but a caller
     /// reaching for this to "clean up" or "dedupe" is a caller about to lose a
     /// row that cannot be recomputed. Windows carry `finalPercent`, Anthropic's
@@ -214,6 +271,15 @@ public struct HistoryStore: Sendable {
         var manifest = try loadManifest()
         if let current = manifest.lastObservedReset, current >= instant { return }
         manifest.lastObservedReset = instant
+        try saveManifest(manifest)
+    }
+
+    /// Records which parser the archived cells were counted by. Load, set,
+    /// save — so the anchor beside it is carried through untouched.
+    public func recordParserVersion(_ version: Int) throws {
+        var manifest = try loadManifest()
+        guard manifest.parserVersion != version else { return }
+        manifest.parserVersion = version
         try saveManifest(manifest)
     }
 

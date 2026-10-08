@@ -426,7 +426,9 @@ public struct WindowLedger: Sendable {
         return Int(aligned.timeIntervalSince1970)
     }
 
-    private static func total(of cells: [HistoryRow], from: Int, through: Int) -> TokenCounts {
+    /// Also `HistoryWriter.heal`'s, so a restated row is summed by exactly the
+    /// rule that wrote it.
+    static func total(of cells: [HistoryRow], from: Int, through: Int) -> TokenCounts {
         var counts = TokenCounts.zero
         for cell in cells where cell.bucket >= from && cell.bucket <= through {
             counts += cell.counts

@@ -5,6 +5,17 @@ import Foundation
 /// Holds its own date formatters, so create one per scan rather than sharing a
 /// global — Foundation formatters are not `Sendable`.
 public struct TranscriptParser {
+    /// Which counting rule produced a figure. Bump it whenever a change alters
+    /// what the same transcript totals to: the history archive records the
+    /// version its cells were counted by, and `HistoryWriter.rangeToHeal`
+    /// re-reads whatever an older version archived that the transcripts still
+    /// hold.
+    ///
+    /// 1 — one record per transcript line (to 1.5): a multi-block message
+    /// counted once per block. 2 — one record per message, per-field maximum
+    /// across its lines (1.5.1).
+    public static let version = 2
+
     private let fractional: ISO8601DateFormatter
     private let plain: ISO8601DateFormatter
     private static let usageNeedle = Data(#""usage""#.utf8)

@@ -83,6 +83,105 @@ public actor HistoryWriter {
         advanceAnchor(to: entry.resetsAt)
     }
 
+    // MARK: - Heal
+
+    /// The earliest instant whose buckets the transcripts still fully hold:
+    /// one day inside Claude Code's `cleanupPeriodDays` (30 when unset).
+    ///
+    /// A record at `t` lives in a file modified no earlier than `t`, and
+    /// cleanup deletes by modification time — so a bucket younger than the
+    /// period is intact. The day of margin covers a cleanup run and a bucket
+    /// straddling it. A period of a day or less leaves nothing healable.
+    ///
+    /// ⚠️ Deliberately tighter than `fillHorizon`. A fill that reaches past
+    /// what survives records a known gap; a heal that does so REPLACES cells
+    /// with less than they held, which is the one direction it must not err.
+    public static func healableSince(now: Date, cleanupPeriodDays: Int?) -> Date {
+        let days = max((cleanupPeriodDays ?? 30) - 1, 0)
+        return now.addingTimeInterval(-Double(days) * 86_400)
+    }
+
+    /// The covered buckets an older `TranscriptParser` counted that the
+    /// transcripts can still restate, or nil when there is nothing to heal.
+    ///
+    /// ⚠️ **Marks the archive current when the answer is "nothing".** A fresh
+    /// install, or one whose coverage is all older than `since`, has nothing a
+    /// re-read could improve. Leaving it unmarked would make the first launch
+    /// fill — counted by the current parser — look like an old archive the
+    /// moment it lands, and re-read it in full straight after.
+    public func rangeToHeal(since: Date) -> ClosedRange<Int>? {
+        let manifest = (try? store.loadManifest()) ?? HistoryManifest()
+        guard manifest.parserVersion != TranscriptParser.version else { return nil }
+
+        if let first = coverage.ranges.first, let last = coverage.ranges.last {
+            let lower = max(WindowLedger.firstBucketStart(atOrAfter: since), first.lowerBound)
+            let upper = min(lastClosedBucketStart(Date()), last.upperBound)
+            if lower <= upper { return lower...upper }
+        }
+        try? store.recordParserVersion(TranscriptParser.version)
+        return nil
+    }
+
+    /// Replaces the archived cells in `range` with `rows`, freshly counted
+    /// from the transcripts, restates the totals of every window row wholly
+    /// inside it, and records the archive as current. Returns false when a
+    /// write failed, in which case nothing is recorded and the next launch
+    /// heals again.
+    ///
+    /// `rows` must be a complete re-read of `range`: every bucket in it closed
+    /// before the read began. Only COVERED buckets are replaced — an uncovered
+    /// one is the fill's to claim, with the coverage record that goes with it.
+    ///
+    /// A window row straddling `range.lowerBound` is left exactly as it was:
+    /// part of it cannot be re-read, and a total that is half one parser's
+    /// count and half another's is not better than either.
+    public func heal(rows: [HistoryRow], range: ClosedRange<Int>) async -> Bool {
+        let coverage = coverage
+        do {
+            try store.replaceRows(in: range, where: { coverage.contains($0) }, with: rows)
+        } catch {
+            return false
+        }
+
+        let windows = (try? store.loadWindows()) ?? []
+        let from = Date(timeIntervalSince1970: Double(range.lowerBound))
+        let through = Date(timeIntervalSince1970: Double(range.upperBound))
+        // Not `try?` into an empty array: that would restate every row below
+        // as zero, permanently.
+        let cells: [HistoryRow]
+        do {
+            cells = try store.rows(in: from...through).rows
+        } catch {
+            return false
+        }
+        let restated = windows.map { row -> WindowRow in
+            let first = WindowLedger.firstBucketStart(atOrAfter: row.start)
+            let last = WindowLedger.lastBucketStart(before: row.end)
+            guard first >= range.lowerBound, last <= range.upperBound else { return row }
+            var row = row
+            let counts = WindowLedger.total(of: cells, from: first, through: last)
+            row.input = counts.input
+            row.output = counts.output
+            row.cacheWrite = counts.cacheWrite
+            row.cacheRead = counts.cacheRead
+            return row
+        }
+        if restated != windows {
+            do {
+                try store.replaceWindows(restated)
+            } catch {
+                return false
+            }
+        }
+
+        do {
+            try store.recordParserVersion(TranscriptParser.version)
+        } catch {
+            return false
+        }
+        return true
+    }
+
     // MARK: - Rows and coverage
 
     private func appendRowsThenCoverage(payload: HistoryArchive.Payload,

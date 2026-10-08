@@ -232,10 +232,17 @@ public struct HistoryManifest: Equatable, Sendable, Codable {
     /// The anchor past window bounds roll back from. Never cleared by a nil
     /// observation.
     public var lastObservedReset: Date?
+    /// The `TranscriptParser.version` the archived cells were counted by. Nil
+    /// on every manifest written before 1.5.1, which is exactly the archive
+    /// that needs healing — so the absence is the signal, not a migration, and
+    /// the format `version` above does not move.
+    public var parserVersion: Int?
 
-    public init(version: Int = HistoryManifest.currentVersion, lastObservedReset: Date? = nil) {
+    public init(version: Int = HistoryManifest.currentVersion, lastObservedReset: Date? = nil,
+                parserVersion: Int? = nil) {
         self.version = version
         self.lastObservedReset = lastObservedReset
+        self.parserVersion = parserVersion
     }
 
     public var isCompatible: Bool { version == Self.currentVersion }
