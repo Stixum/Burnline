@@ -270,10 +270,10 @@ final class UsageStore {
                 // changed — and on the launch this matters for there is one.
                 let gate = ProgressGate()
                 do {
-                    let result = try fill.cells(
-                        from: Date(timeIntervalSince1970: Double(range.lowerBound)),
-                        to: Date(timeIntervalSince1970: Double(range.upperBound))
-                    ) { progress in
+                    // `inBuckets`, never `from:to:` with the range's bounds:
+                    // those are bucket STARTS, so the last bucket would be read
+                    // only at its first instant and then claimed whole.
+                    let result = try fill.cells(inBuckets: range) { progress in
                         // Synchronous, called from the fill's own thread: it
                         // cannot await the main actor without giving back the
                         // 20 seconds of responsiveness this whole path buys.
@@ -309,14 +309,7 @@ final class UsageStore {
             if let healRange, !Task.isCancelled {
                 let gate = ProgressGate()
                 do {
-                    // Through the END of the last bucket: `cells(from:to:)` is
-                    // inclusive of record timestamps and `healRange` holds bucket
-                    // starts. A record exactly on the next boundary is filtered
-                    // out by the writer, which replaces only buckets in range.
-                    let result = try fill.cells(
-                        from: Date(timeIntervalSince1970: Double(healRange.lowerBound)),
-                        to: Date(timeIntervalSince1970: Double(healRange.upperBound) + Bucket.seconds)
-                    ) { progress in
+                    let result = try fill.cells(inBuckets: healRange) { progress in
                         guard gate.admits(progress) else { return }
                         Task { @MainActor in self?.publishFillProgress(progress) }
                     }

@@ -416,8 +416,8 @@ let uncovered = fillAllowed
 var filesOpened = 0
 var truncatedRanges = 0
 for range in uncovered {
-    let result = try fill.cells(from: Date(timeIntervalSince1970: Double(range.lowerBound)),
-                                to: Date(timeIntervalSince1970: Double(range.upperBound)))
+    // `inBuckets`: the range's bounds are bucket starts. See `HistoryFill`.
+    let result = try fill.cells(inBuckets: range)
     // No clamping here: the span reaches into the still-filling bucket on
     // purpose, and `HistoryWriter.commit` is the one place that trims it.
     await writer.commit(payload: .init(rows: result.rows, span: range,

@@ -323,3 +323,30 @@ private final class ProgressLog: @unchecked Sendable {
     #expect(filled.rows.count == 1)
     #expect(filled.rows.first?.output == 5_527)
 }
+
+// MARK: - Reading a coverage range
+
+/// 🔴 Coverage ranges hold bucket STARTS, and `cells(from:to:)` is inclusive of
+/// record timestamps — so reading `to: range.upperBound` stopped at the first
+/// instant of the range's last bucket. Every launch fill did that, then claimed
+/// the whole bucket: up to fifteen minutes lost at the end of every interior
+/// gap, permanently, because a claimed bucket is never read again.
+@Test func aBucketRangeReadsEveryRecordInItsLastBucket() throws {
+    let tree = FillTree()
+    let step = Bucket.seconds
+    let last = Bucket.start(ofKey: Bucket.key(for: clock.addingTimeInterval(-3 * day)))
+    let first = last.addingTimeInterval(-step)
+    let lines = [
+        assistantLine(output: 10, at: first),                       // the range's first instant
+        assistantLine(output: 20, at: last.addingTimeInterval(60)),
+        assistantLine(output: 30, at: last.addingTimeInterval(step - 1)),
+        assistantLine(output: 40, at: last.addingTimeInterval(step)), // the NEXT bucket's first instant
+    ].joined()
+    tree.session(lines, at: "projects/-Users-me-Projects-Burnline/a.jsonl", modified: clock)
+
+    let range = Int(first.timeIntervalSince1970)...Int(last.timeIntervalSince1970)
+    let filled = try HistoryFill(rootURL: tree.root).cells(inBuckets: range)
+
+    #expect(filled.rows.map(\.bucket) == [range.lowerBound, range.upperBound])
+    #expect(filled.rows.map(\.output) == [10, 50])
+}

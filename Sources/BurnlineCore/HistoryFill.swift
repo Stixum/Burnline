@@ -146,6 +146,35 @@ public struct HistoryFill: Sendable {
                       filesOpened: filesOpened)
     }
 
+    /// Every record in the buckets a coverage range names, folded into rows.
+    ///
+    /// 🔴 **How a coverage range must be read.** Its bounds are bucket STARTS
+    /// (`Coverage.uncovered`, `HistoryWriter.rangeToHeal`), while
+    /// `cells(from:to:)` bounds record timestamps — so `to: range.upperBound`
+    /// stops at the first instant of the last bucket, and the commit that
+    /// follows claims the whole of it. That lost up to fifteen minutes at the
+    /// end of every interior gap, permanently: a claimed bucket is never read
+    /// again. This reads through the end of the last bucket and keeps only
+    /// rows inside the range, so a record exactly on the next boundary — which
+    /// belongs to the next bucket — never rides along.
+    ///
+    /// An overload pair rather than a defaulted `onProgress`; see
+    /// `cells(from:to:)`.
+    public func cells(inBuckets range: ClosedRange<Int>) throws -> Result {
+        try cells(inBuckets: range, onProgress: { _ in })
+    }
+
+    /// As above, reporting after each candidate file is consumed.
+    public func cells(inBuckets range: ClosedRange<Int>,
+                      onProgress: @Sendable (Progress) -> Void) throws -> Result {
+        let read = try cells(from: Date(timeIntervalSince1970: Double(range.lowerBound)),
+                             to: Date(timeIntervalSince1970: Double(range.upperBound) + Bucket.seconds),
+                             onProgress: onProgress)
+        return Result(rows: read.rows.filter { range.contains($0.bucket) },
+                      truncated: read.truncated,
+                      filesOpened: read.filesOpened)
+    }
+
     /// Every file this range could possibly draw from, in enumeration order.
     ///
     /// Split out from the read loop so `filesTotal` is settled before the first
