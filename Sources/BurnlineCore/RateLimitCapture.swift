@@ -200,6 +200,12 @@ public struct RateLimitStore: Sendable {
         return capture.correctedForRepublishing()
     }
 
+    /// When this file was last written — modification time, not the stamp
+    /// inside. See `StatuslineReport`.
+    public func lastWrote() -> Date? {
+        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    }
+
     /// Written by the `burnline-statusline` helper after every assistant
     /// response.
     ///

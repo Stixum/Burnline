@@ -228,6 +228,12 @@ struct SettingsView: View {
                 Button("Open setup") { OnboardingWindow.open(using: openWindow) }
                     .buttonStyle(.bordered)
             }
+            if let explanation = statuslineReport?.explanation(
+                pollEnabled: store.settings.refreshesUsageAutomatically) {
+                Text(explanation)
+                    .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -568,18 +574,25 @@ struct SettingsView: View {
 
     /// Word and icon, never colour alone.
     ///
-    /// The words are `StatuslineWiring.State.title`, shared with Onboarding —
+    /// The words are `StatuslineReport.title` while configured and
+    /// `StatuslineWiring.State.title` otherwise, both shared with Onboarding —
     /// two views of one state should not describe it two ways. Only the icon and
     /// the tint are decided here, because those are presentation.
     @ViewBuilder private var statuslineStateLabel: some View {
-        let state = store.wiringState
-        Label(state.title, systemImage: statuslineStateIcon)
-            .font(.system(size: 11.5))
+        Label(statuslineReport?.title ?? store.wiringState.title, systemImage: statuslineStateIcon)
+            .font(.system(size: 11.5).monospacedDigit())
             .foregroundStyle(statuslineStateTint)
     }
 
+    /// Only while configured: the report says whether the helper the
+    /// settings name is actually running, which no other state can ask.
+    private var statuslineReport: StatuslineReport? {
+        store.wiringState == .configured ? store.statuslineReport : nil
+    }
+
     private var statuslineStateIcon: String {
-        switch store.wiringState {
+        if statuslineReport?.isQuiet == true { return "pause.circle.fill" }
+        return switch store.wiringState {
         case .configured: "checkmark.circle.fill"
         case .noSettingsFile, .notConfigured: "circle.dashed"
         case .stalePath: "arrow.triangle.2.circlepath"
@@ -588,7 +601,8 @@ struct SettingsView: View {
     }
 
     private var statuslineStateTint: Color {
-        switch store.wiringState {
+        if statuslineReport?.isQuiet == true { return Theme.warning }
+        return switch store.wiringState {
         case .configured: Theme.success
         case .noSettingsFile, .notConfigured: Theme.textMuted
         case .stalePath, .conflict, .unreadable: Theme.warning

@@ -87,6 +87,12 @@ final class UsageStore {
     /// a conflict: a conflict is a decision, this is a failure.
     private(set) var wiringError: String?
 
+    /// Whether the configured helper is actually running — `wiringState` only
+    /// says the settings name it. Nil until the first capture load, so a view
+    /// opened at launch shows the wiring alone rather than a false "no report
+    /// yet". Refreshed on every rebuild, so the age advances on its own.
+    private(set) var statuslineReport: StatuslineReport?
+
     @ObservationIgnored private var cache: ScanCache
     @ObservationIgnored private let settingsStore = SettingsStore()
     @ObservationIgnored private let cacheStore = CacheStore()
@@ -713,6 +719,7 @@ final class UsageStore {
     /// rate_limits snapshot it started with — so the last writer is routinely
     /// not the freshest.
     private func apply(_ loaded: CaptureLoader.Loaded) {
+        statuslineReport = StatuslineReport(lastWrote: loaded.statuslineLastWrote, now: Date())
         let utilization = loaded.utilization
         let dated = loaded.candidates
         // Select, then reconcile, then report — one pure step, in

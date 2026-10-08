@@ -26,6 +26,10 @@ public actor CaptureLoader {
         /// utilization) because `CaptureSelection` breaks ties on position.
         public let candidates: [RateLimitCapture]
         public let utilization: UsageUtilization?
+        /// The newest write by the statusline helper to either of its files,
+        /// or nil when neither exists. The utilization block is not the
+        /// helper's and never counts.
+        public let statuslineLastWrote: Date?
     }
 
     private let directory: CaptureDirectory
@@ -44,6 +48,7 @@ public actor CaptureLoader {
                           + [shared.load()].compactMap { $0 }
                           + [block?.asCapture()].compactMap { $0 })
             .map { $0.dated(using: TranscriptDating.mintedAt) }
-        return Loaded(candidates: candidates, utilization: block)
+        let lastWrote = [directory.lastWrote(), shared.lastWrote()].compactMap { $0 }.max()
+        return Loaded(candidates: candidates, utilization: block, statuslineLastWrote: lastWrote)
     }
 }

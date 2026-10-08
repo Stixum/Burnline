@@ -77,6 +77,18 @@ public struct CaptureDirectory: Sendable {
             .sorted { ($0.sessionId ?? "") < ($1.sessionId ?? "") }
     }
 
+    /// When the helper last wrote any per-session file — modification time,
+    /// not the stamp inside. See `StatuslineReport`.
+    public func lastWrote() -> Date? {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        return files
+            .filter { $0.pathExtension == "json" }
+            .compactMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate }
+            .max()
+    }
+
     /// Drops captures observed before `cutoff` — callers pass the current
     /// window's start. A capture from a previous window describes a period that
     /// no longer exists and can never win selection again. Without this, files

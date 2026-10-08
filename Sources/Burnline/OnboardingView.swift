@@ -67,9 +67,17 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 12) {
             switch store.wiringState {
             case .configured:
-                statusRow(icon: "checkmark.circle.fill", tint: Theme.success,
-                          state: store.wiringState,
-                          detail: "Claude Code reports usage after each response in a terminal session.")
+                // The wiring is in place; the report says whether anything is
+                // coming through it. Quiet is a warning in words and icon as
+                // well as colour, and the detail says why and what to do.
+                let report = store.statuslineReport
+                let quiet = report?.isQuiet == true
+                statusRow(icon: quiet ? "pause.circle.fill" : "checkmark.circle.fill",
+                          tint: quiet ? Theme.warning : Theme.success,
+                          title: report?.title ?? store.wiringState.title,
+                          detail: report?.explanation(
+                              pollEnabled: store.settings.refreshesUsageAutomatically)
+                              ?? "Claude Code reports usage after each response in a terminal session.")
                 captureAgeRow
 
             case .noSettingsFile, .notConfigured:
@@ -142,8 +150,11 @@ struct OnboardingView: View {
         if case .live = store.snapshot.source {
             let stale = CaptureAge.isStale(store.snapshot.liveAge)
             let age = CaptureAge.description(store.snapshot.liveAge)
-            Text(block.map { "\($0.kind.title). Last report \(age)." }
-                 ?? "Last report \(age)")
+            // "Usage updated", not "Last report": this is the age of the
+            // figure on screen, from whichever source won — often the /usage
+            // refresh, not the status line the row above describes.
+            Text(block.map { "\($0.kind.title). Usage updated \(age)." }
+                 ?? "Usage updated \(age)")
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(stale || block != nil ? Theme.warning : Theme.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
