@@ -517,3 +517,39 @@ private func markAt51() -> RateLimitHighWater {
 
     #expect(result.sevenDay.usedPercent == 10)
 }
+
+// MARK: - A reading from an earlier window
+
+private let week: TimeInterval = 7 * 86_400
+/// Minted mid-week, as a real mark is: after the previous window ended.
+private let midWeek = reset - 3 * 86_400
+
+/// 🔴 A replay of the window BEFORE the mark's used to replace the mark
+/// wholesale — "different window" was read as "newer window" — dropping an
+/// open re-grant that nothing on disk can rebuild. A reading whose window ends
+/// earlier and which is no newer than the mark describes a week the mark has
+/// already moved past.
+@Test func aReplayOfAnEarlierWindowCannotReplaceTheMark() {
+    let mark = markInARegrant(4, capturedAt: midWeek, provenAt: midWeek)
+    let replay = capture(88, at: reset - week - 600, resetsAt: reset - week)
+
+    let (result, after) = RateLimitHighWater.reconcile(replay, against: mark)
+
+    #expect(after == mark)
+    #expect(result.sevenDay.usedPercent == 4)
+    #expect(result.sevenDay.resetsAt == reset)
+}
+
+/// Control: an earlier `resets_at` that is NEWER than the mark is a different
+/// account (or plan) whose week ends sooner, and it must take over at once —
+/// refusing it would show the previous account's figure for days.
+@Test func anEarlierWindowSeenAfterTheMarkStillReplacesIt() {
+    let mark = markInARegrant(4, capturedAt: midWeek, provenAt: midWeek)
+    let switched = capture(30, at: midWeek + 600, resetsAt: reset - 2 * 86_400)
+
+    let (result, after) = RateLimitHighWater.reconcile(switched, against: mark)
+
+    #expect(result.sevenDay.usedPercent == 30)
+    #expect(after.sevenDay?.resetsAt == reset - 2 * 86_400)
+    #expect(after.sevenDay?.regrant == nil)
+}

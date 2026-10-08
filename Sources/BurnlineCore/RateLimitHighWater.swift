@@ -391,6 +391,20 @@ public struct RateLimitHighWater: Equatable, Sendable, Codable {
                              provenAt: TimeInterval?,
                              against mark: Mark?,
                              opensEpochs: Bool) -> (RateLimitCapture.Reading, Mark) {
+        // 🔴 An EARLIER window is not a newer one. A reading whose window ends
+        // before the mark's, and which is no newer than the mark, is a replay
+        // of a week the mark has already moved past: same-account windows do
+        // not overlap, so the mark was minted after that reading's window
+        // closed. Replacing the mark with it drops an open re-grant that
+        // nothing on disk can rebuild. An earlier window seen AFTER the mark
+        // is a different account or plan whose week ends sooner, and takes
+        // over below — refusing it would show the previous account for days.
+        if let mark, reading.resetsAt < mark.resetsAt - sameWindowTolerance,
+           capturedAt <= mark.capturedAt {
+            return (RateLimitCapture.Reading(usedPercent: mark.usedPercent, resetsAt: mark.resetsAt),
+                    mark)
+        }
+
         guard let mark, isSameWindow(mark.resetsAt, reading.resetsAt) else {
             return (reading, Mark(resetsAt: reading.resetsAt,
                                   usedPercent: reading.usedPercent,
