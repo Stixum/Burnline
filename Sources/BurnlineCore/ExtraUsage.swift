@@ -55,6 +55,9 @@ extension UsageUtilization {
         static func amount(_ minor: Int, exponent requested: Int) -> String {
             // Never trap, like `DisplayValue`: 10^18 is the largest power a UInt
             // holds, and a negative exponent would make `0..<exponent` crash.
+            // Unreachable from on-disk data, because `resolve` rejects exponents
+            // outside 0...4; the clamp exists only so the function never traps
+            // for an internal caller.
             let exponent = (0...18).contains(requested) ? requested : 0
             var scale: UInt = 1
             for _ in 0..<exponent { scale *= 10 }

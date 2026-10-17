@@ -247,6 +247,15 @@ private func decodedExtraUsage(_ json: String) throws -> UsageUtilization {
     #expect(u.extraUsage?.state == .paused(reason: "out of credits"))
 }
 
+/// Pins the other half of the rule above: a spend code we do not recognise is
+/// not a missing one, so the `extra_usage` code must not stand in for it.
+@Test func anUnknownSpendReasonBlocksTheExtraUsageExtraUsageFallback() throws {
+    let u = try decodedExtraUsage(extraUsageConfig(
+        spend: spendBlock(enabled: "false", reason: "\"policy_hold_v2\""),
+        extra: extraBlock(reason: "\"out_of_credits\"")))
+    #expect(u.extraUsage?.state == .paused(reason: nil))
+}
+
 @Test func extraUsageCurrencyComesFromUsedBeforeLimit() throws {
     let spend = #"""
     {"used":{"amount_minor":1240,"currency":"EUR","exponent":2},"limit":{"amount_minor":3500,"currency":"GBP","exponent":2},"enabled":true}
