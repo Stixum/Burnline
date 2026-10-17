@@ -57,6 +57,12 @@ public struct UsageUtilization: Sendable, Decodable {
     public let sevenDay: Reading?
     public let fiveHour: Reading?
     public let scopedWeekly: ScopedLimit?
+    /// Extra usage, when it is on or paused by Anthropic. See `ExtraUsage`.
+    public let extraUsage: ExtraUsage?
+    /// `oauthAccount.organizationRateLimitTier`, set by `UtilizationStore` —
+    /// not by this decoder, because it lives outside this block. The one string
+    /// read from `oauthAccount`; see `UtilizationStore`.
+    public internal(set) var rateLimitTier: String?
 
     // MARK: - Decoding
 
@@ -77,21 +83,29 @@ public struct UsageUtilization: Sendable, Decodable {
         sevenDay = block?.sevenDay
         fiveHour = block?.fiveHour
         scopedWeekly = block?.scopedWeekly
+        extraUsage = ExtraUsage.resolve(spend: block?.spend, extra: block?.extraUsage,
+                                        fetchedAt: fetchedAt)
+        rateLimitTier = nil
     }
 
     /// Every property decoded independently. Most sibling keys are `null` today
     /// (`seven_day_opus`, `tangelo`, `cinder_cove`, …) and are presumably
     /// populated on other plans — one unknown shape must never cost the readings
-    /// that did decode.
+    /// that did decode. `spend` and `extra_usage` carry extra usage — see
+    /// `ExtraUsage`.
     private struct Block: Decodable {
         var sevenDay: Reading?
         var fiveHour: Reading?
         var scopedWeekly: ScopedLimit?
+        var spend: ExtraUsage.RawSpend?
+        var extraUsage: ExtraUsage.RawExtraUsage?
 
         enum CodingKeys: String, CodingKey {
             case sevenDay = "seven_day"
             case fiveHour = "five_hour"
             case limits
+            case spend
+            case extraUsage = "extra_usage"
         }
 
         init(from decoder: any Decoder) throws {
@@ -100,6 +114,8 @@ public struct UsageUtilization: Sendable, Decodable {
             fiveHour = ((try? c.decodeIfPresent(RawReading.self, forKey: .fiveHour)) ?? nil)?.resolved
             let limits = ((try? c.decodeIfPresent([RawLimit].self, forKey: .limits)) ?? nil) ?? []
             scopedWeekly = limits.first { $0.kind == "weekly_scoped" }?.resolvedScoped
+            spend = (try? c.decodeIfPresent(ExtraUsage.RawSpend.self, forKey: .spend)) ?? nil
+            extraUsage = (try? c.decodeIfPresent(ExtraUsage.RawExtraUsage.self, forKey: .extraUsage)) ?? nil
         }
     }
 

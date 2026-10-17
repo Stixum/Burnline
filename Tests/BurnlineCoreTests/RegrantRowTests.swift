@@ -2,25 +2,12 @@ import Testing
 import AppKit
 @testable import BurnlineCore
 
-// The popover's re-grant row, measured rather than eyeballed.
-//
-// `Sources/Burnline` has no test target, so the row's geometry is mirrored
-// here from `PopoverView.regrantRow` and `Theme.popoverWidth`: a 300pt panel
-// with 14pt padding each side, a 9pt symbol, three 5pt stack gaps, and a
-// `Spacer` whose minimum length is the 8pt system default. What is left is the
-// room the label and the value share.
-private let rowBudget: Double = 300 - 2 * 14 - 9 - 3 * 5 - 8
+// The popover's re-grant row, measured rather than eyeballed. Geometry lives
+// in `RowWidth`, shared with the extra-usage row.
+private let rowBudget = RowWidth.symbolRowBudget
 
-// Built per call: `NSFont` is not `Sendable`, so a file-scope constant is
-// refused under Swift 6.
-private enum Font { case label, digits }
-
-private func width(_ text: String, _ font: Font) -> Double {
-    let resolved: NSFont = switch font {
-    case .label: .systemFont(ofSize: 11.5)
-    case .digits: .monospacedDigitSystemFont(ofSize: 11.5, weight: .regular)
-    }
-    return (text as NSString).size(withAttributes: [.font: resolved]).width
+private func width(_ text: String, _ font: RowWidth.Font) -> Double {
+    RowWidth.width(text, font)
 }
 
 /// Wednesday 12:59 PM in Chicago: 2026-09-02T17:59:00Z, the widest weekday and

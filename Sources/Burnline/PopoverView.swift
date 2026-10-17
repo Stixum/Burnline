@@ -190,6 +190,11 @@ struct PopoverView: View {
             if let scoped = snapshot.scopedWeekly {
                 row(scoped.rowLabel, scoped.rowValue)
             }
+            // Extra usage, on or paused by Anthropic. Every string and the
+            // shape come from `Snapshot.ExtraUsageRow`; this only draws it.
+            if let extra = snapshot.extraUsage {
+                extraUsageRow(extra)
+            }
             // Exceptions-only, and above the rejection row on purpose: a
             // re-grant is the CAUSE of the disagreement the rejection row
             // reports, so it reads cause then consequence.
@@ -231,6 +236,41 @@ struct PopoverView: View {
         .font(.system(size: 11.5))
         .foregroundStyle(Theme.warning)
         .help(rejected.explanation)
+    }
+
+    /// Plain, muted-with-symbol (paused) or amber-with-symbol (at limit or a
+    /// raised severity). Paused is not amber: it can stand for weeks, and amber
+    /// rows here are exceptions. Symbol + word + colour, never colour alone.
+    ///
+    /// Geometry is mirrored in `RowWidth` (tests); keep the two in step.
+    @ViewBuilder
+    private func extraUsageRow(_ extra: Snapshot.ExtraUsageRow) -> some View {
+        Group {
+            switch extra.style {
+            case .plain:
+                row(Snapshot.ExtraUsageRow.label, extra.value)
+            case .paused:
+                symbolRow("pause.circle.fill", Snapshot.ExtraUsageRow.label, extra.value,
+                          tint: Theme.textMuted)
+            case .warning:
+                symbolRow("exclamationmark.triangle.fill", Snapshot.ExtraUsageRow.label,
+                          extra.value, tint: Theme.warning)
+            }
+        }
+        .help(extra.tooltip)
+    }
+
+    /// The `rejectionRow` shape — 9pt symbol, 5pt gaps — in any tint.
+    private func symbolRow(_ symbol: String, _ label: String, _ value: String,
+                           tint: Color) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol).font(.system(size: 9))
+            Text(label)
+            Spacer()
+            Text(value).monospacedDigit()
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(tint)
     }
 
     /// The one thing that can make the figure fall without the window

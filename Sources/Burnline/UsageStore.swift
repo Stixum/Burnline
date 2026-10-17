@@ -752,7 +752,9 @@ final class UsageStore {
                                          rejected: resolution.rejected,
                                          scopedWeekly: utilization?.scopedWeekly,
                                          regrant: resolution.regrant,
-                                         authBlock: authBlock)
+                                         authBlock: authBlock,
+                                         extraUsage: utilization?.extraUsage,
+                                         planCredit: PlanCredit(rateLimitTier: utilization?.rateLimitTier))
 
         // Before the observation feed's guards: the evaluation must run on
         // every rebuild, and the block below returns early.
