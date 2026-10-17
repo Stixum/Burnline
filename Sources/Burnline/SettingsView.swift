@@ -310,6 +310,19 @@ struct SettingsView: View {
                     .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            // Static eligibility, not a balance: the credits sit in a Console
+            // organization Burnline cannot read. Absent for any tier
+            // `PlanCredit` doesn't recognise, so the window is unchanged then.
+            if let credit = store.snapshot.planCredit {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(credit.settingsLine)
+                        .font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Link("Open Console billing ↗", destination: PlanCredit.consoleBillingURL)
+                        .font(.system(size: 11))
+                }
+            }
         }
     }
 
