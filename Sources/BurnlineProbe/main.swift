@@ -158,7 +158,9 @@ let snapshot = SnapshotBuilder.build(cache: cache, settings: settings,
                                      rateLimit: capture, now: now, isScanning: false,
                                      rejected: resolution.rejected,
                                      scopedWeekly: utilization?.scopedWeekly,
-                                     regrant: resolution.regrant)
+                                     regrant: resolution.regrant,
+                                     extraUsage: utilization?.extraUsage,
+                                     planCredit: PlanCredit(rateLimitTier: utilization?.rateLimitTier))
 
 // The per-model weekly limit, read off the SNAPSHOT rather than off the
 // `cachedUsageUtilization` block it came from. It is the row the popover
@@ -168,6 +170,11 @@ let snapshot = SnapshotBuilder.build(cache: cache, settings: settings,
 let scopedNote = snapshot.scopedWeekly.map {
     "\n  per-model        \($0.modelName) \($0.percent)% · \($0.severity)"
 } ?? ""
+
+// Off the SNAPSHOT, for the reason `scopedNote` gives: the probe prints what the
+// app is handed, never what the source holds. Figures only, never JSON.
+let extraUsageNote = snapshot.extraUsage.map { "\($0.value)   (\($0.style))" } ?? "none"
+let planCreditNote = snapshot.planCredit?.settingsLine ?? "none"
 
 func percent(_ value: Double?) -> String {
     value.map { String(format: "%.1f%%", $0) } ?? "—"
@@ -239,6 +246,8 @@ Burnline probe
   data dir         \(dataDirectoryNote)
   capture          \(captureNote)
   read from        \(sourcesNote)\(scopedNote)
+  extra usage      \(extraUsageNote)
+  plan credit      \(planCreditNote)
   dated by         \(datingNote)
   high water       \(highWaterNote)
   allowance epoch  \(epochNote)
