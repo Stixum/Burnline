@@ -22,7 +22,9 @@ public enum SnapshotBuilder {
                              rejected: RateLimitHighWater.RejectedReading? = nil,
                              scopedWeekly: UsageUtilization.ScopedLimit? = nil,
                              regrant: RateLimitHighWater.Regrant? = nil,
-                             authBlock: AuthBlock? = nil) -> Snapshot {
+                             authBlock: AuthBlock? = nil,
+                             extraUsage: UsageUtilization.ExtraUsage? = nil,
+                             planCredit: PlanCredit? = nil) -> Snapshot {
 
         // A capture pins the window exactly: its resets_at IS the boundary, so
         // no user-configured schedule is involved.
@@ -124,7 +126,10 @@ public enum SnapshotBuilder {
             rejectedReading: rejected,
             scopedWeekly: scopedWeekly,
             regrant: epoch,
-            authBlock: authBlock
+            authBlock: authBlock,
+            // The user's own clock, like the re-grant row: an instant they lived through.
+            extraUsage: extraUsage.flatMap { Snapshot.ExtraUsageRow($0, now: now, timeZone: .current) },
+            planCredit: planCredit
         )
     }
 

@@ -455,3 +455,21 @@ private let utc = TimeZone(identifier: "UTC")!
     #expect(snapshot.source == .paceOnly)
     #expect(snapshot.capturedPercent == nil)
 }
+
+@Test func theBuilderCarriesExtraUsageAndPlanCreditOntoTheSnapshot() {
+    let now = Date()
+    let usage = UsageUtilization.ExtraUsage(
+        state: .active, usedMinor: 1_240, limitMinor: 3_500, exponent: 2, currency: "USD",
+        isLimitReached: false, isSeverityRaised: false, fetchedAt: now.addingTimeInterval(-60))
+    let snapshot = SnapshotBuilder.build(cache: cache(units: 0, at: now), settings: settings(),
+                                         now: now, isScanning: false,
+                                         extraUsage: usage,
+                                         planCredit: PlanCredit(rateLimitTier: "default_claude_max_20x"))
+    #expect(snapshot.extraUsage?.value == "$12.40 of $35")
+    #expect(snapshot.planCredit?.monthlyDollars == 200)
+
+    let bare = SnapshotBuilder.build(cache: cache(units: 0, at: now), settings: settings(),
+                                     now: now, isScanning: false)
+    #expect(bare.extraUsage == nil)
+    #expect(bare.planCredit == nil)
+}

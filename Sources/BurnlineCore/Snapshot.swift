@@ -174,6 +174,12 @@ public struct Snapshot: Equatable, Sendable {
     /// identically on purpose — see `AuthBlock`.
     public let authBlock: AuthBlock?
 
+    /// The extra-usage row, when extra usage is on or paused by Anthropic and
+    /// its figure is under a month old. Resolved by `SnapshotBuilder`.
+    public let extraUsage: ExtraUsageRow?
+    /// The plan's monthly API-credit eligibility, for the Settings line.
+    public let planCredit: PlanCredit?
+
     public init(window: Window, targetPercent: Double, estimatedPercent: Double?,
                 capturedPercent: Double? = nil,
                 projectedPercent: Double?, unitsInWindow: Double,
@@ -185,7 +191,9 @@ public struct Snapshot: Equatable, Sendable {
                 rejectedReading: RateLimitHighWater.RejectedReading? = nil,
                 scopedWeekly: UsageUtilization.ScopedLimit? = nil,
                 regrant: Regrant? = nil,
-                authBlock: AuthBlock? = nil) {
+                authBlock: AuthBlock? = nil,
+                extraUsage: ExtraUsageRow? = nil,
+                planCredit: PlanCredit? = nil) {
         self.window = window
         self.targetPercent = targetPercent
         self.estimatedPercent = estimatedPercent
@@ -203,6 +211,8 @@ public struct Snapshot: Equatable, Sendable {
         self.scopedWeekly = scopedWeekly
         self.regrant = regrant
         self.authBlock = authBlock
+        self.extraUsage = extraUsage
+        self.planCredit = planCredit
     }
 
     /// Age of the live capture, when there is one.
