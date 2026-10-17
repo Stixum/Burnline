@@ -99,3 +99,14 @@ private let configWithBlock = """
     #expect(UtilizationStore.defaultPath(
         environment: [UtilizationStore.overrideKey: ""]).lastPathComponent == ".claude.json")
 }
+
+/// `JSONSerialization.data(withJSONObject:)` raises an Objective-C exception on a
+/// top-level scalar or `NSNull` — which `try?` cannot catch, so a config whose
+/// block is `null` or a string would terminate the menu bar app. Every
+/// non-object shape must degrade to nothing.
+@Test func aCacheBlockThatIsNotAnObjectYieldsNoUtilizationRatherThanACrash() {
+    for block in ["null", "\"x\"", "42", "true", "[1]"] {
+        let config = "{\"cachedUsageUtilization\":\(block)}"
+        #expect(UtilizationStore(path: configScratch(config)).load() == nil, "\(block)")
+    }
+}
