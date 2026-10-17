@@ -9,8 +9,13 @@ extension UsageUtilization {
     /// states its own units (`amount_minor` + `exponent` + `currency`) and
     /// carries `enabled`, `severity` and `disabled_reason`; `extra_usage` is
     /// the only place that says whether the USER switched it off
-    /// (`user_disabled`) and whether it was ever set up (`credits_ever_enabled`).
+    /// (`user_disabled`), whether it was ever set up (`credits_ever_enabled`)
+    /// and whether Anthropic says the limit was reached (`spend_limit_reached`),
+    /// with its own `disabled_reason` as a fallback.
     /// `extra_usage.used_credits` has no stated unit and is never read.
+    ///
+    /// **Paused needs an explicit `spend.enabled == false`.** "Anthropic turned
+    /// it off" is a claim, so a missing or non-boolean `enabled` means no row.
     ///
     /// Dated by the block's own `fetchedAt`, which moves only when `/usage`
     /// runs — so the figure can be days old, and the row says so.
@@ -47,7 +52,10 @@ extension UsageUtilization {
         /// Integer arithmetic, not `NumberFormatter`: an `en_US_POSIX` decimal
         /// formatter does not group, and the currency style prints `$ 9999.99`.
         /// Decimals are dropped only when every one of them is zero.
-        static func amount(_ minor: Int, exponent: Int) -> String {
+        static func amount(_ minor: Int, exponent requested: Int) -> String {
+            // Never trap, like `DisplayValue`: 10^18 is the largest power a UInt
+            // holds, and a negative exponent would make `0..<exponent` crash.
+            let exponent = (0...18).contains(requested) ? requested : 0
             var scale: UInt = 1
             for _ in 0..<exponent { scale *= 10 }
             let magnitude = minor.magnitude
@@ -95,13 +103,16 @@ extension UsageUtilization.ExtraUsage {
         // Anthropic switched it off. `credits_ever_enabled` keeps the paused
         // state away from users who never set extra usage up.
         let enabled = spend.enabled == true
-        let leftOnByUser = extra?.userDisabled == false && extra?.creditsEverEnabled == true
+        let leftOnByUser = spend.enabled == false
+            && extra?.userDisabled == false && extra?.creditsEverEnabled == true
         guard enabled || leftOnByUser else { return nil }
 
         guard let usedRaw = spend.used?.amountMinor,
               let limitRaw = spend.limit?.amountMinor,
               let exponent = spend.limit?.exponent, (0...4).contains(exponent)
         else { return nil }
+        // Two stated units that disagree describe no single unit.
+        if let usedExponent = spend.used?.exponent, usedExponent != exponent { return nil }
         // Through `DisplayValue`, which saturates — every figure here is JSON on disk.
         let used = DisplayValue.whole(usedRaw, ceiling: amountCeilingMinor)
         let limit = DisplayValue.whole(limitRaw, ceiling: amountCeilingMinor)
@@ -109,6 +120,8 @@ extension UsageUtilization.ExtraUsage {
 
         let state: State = enabled
             ? .active
+            // `??` picks the spend code first; an unknown spend code therefore
+            // blocks the fallback on purpose — an unknown code is never echoed.
             : .paused(reason: (spend.disabledReason ?? extra?.disabledReason).flatMap(reasonText))
 
         return Self(state: state,

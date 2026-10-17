@@ -183,3 +183,81 @@ private func decodedExtraUsage(_ json: String) throws -> UsageUtilization {
     #expect(try decodedExtraUsage(extraUsageConfig(spend: spendBlock(currency: "null")))
         .extraUsage?.currency == "USD")
 }
+
+// MARK: - Review follow-ups
+
+/// `Block` decodes `spend` and `extra_usage` with `try?`; if it lost that, one
+/// malformed sibling would cost `seven_day` and the whole capture.
+@Test func aGarbageSpendBlockCostsOnlyTheExtraUsageNeverSevenDay() throws {
+    let u = try decodedExtraUsage(extraUsageConfig(spend: "\"garbage\""))
+    #expect(u.extraUsage == nil)
+    #expect(u.sevenDay?.percent == 9)
+}
+
+@Test func aGarbageExtraUsageBlockCostsOnlyTheExtraUsageNeverSevenDay() throws {
+    let u = try decodedExtraUsage(extraUsageConfig(spend: spendBlock(), extra: "[1]"))
+    #expect(u.sevenDay?.percent == 9)
+    // The valid `spend` still resolves: only the bad sibling is lost.
+    #expect(u.extraUsage?.state == .active)
+}
+
+@Test func extraUsageWithANegativeExponentIsAbsent() throws {
+    #expect(try decodedExtraUsage(extraUsageConfig(spend: spendBlock(exponent: "-1"))).extraUsage == nil)
+}
+
+/// `amount` must never trap, whatever the caller passes (like `DisplayValue`).
+@Test func extraUsageAmountNeverTrapsOnAnOutOfRangeExponent() {
+    typealias E = UsageUtilization.ExtraUsage
+    #expect(E.amount(1_240, exponent: -1) == "1,240")
+    #expect(E.amount(1_240, exponent: 19) == "1,240")
+}
+
+/// Paused is a claim ("Anthropic turned it off") that needs the explicit `false`.
+@Test func extraUsageWithoutAnEnabledFlagIsAbsentEvenIfTheUserLeftItOn() throws {
+    let spend = #"""
+    {"used":{"amount_minor":0,"currency":"USD","exponent":2},"limit":{"amount_minor":3500,"currency":"USD","exponent":2}}
+    """#
+    #expect(try decodedExtraUsage(extraUsageConfig(spend: spend, extra: extraBlock())).extraUsage == nil)
+}
+
+@Test func extraUsageWithANonBooleanEnabledFlagIsAbsent() throws {
+    let u = try decodedExtraUsage(extraUsageConfig(
+        spend: spendBlock(enabled: "\"true\""), extra: extraBlock()))
+    #expect(u.extraUsage == nil)
+}
+
+/// Two exponents that disagree describe no single unit.
+@Test func extraUsageWhoseUsedAndLimitExponentsDisagreeIsAbsent() throws {
+    let spend = #"""
+    {"used":{"amount_minor":1240,"currency":"USD","exponent":3},"limit":{"amount_minor":3500,"currency":"USD","exponent":2},"enabled":true}
+    """#
+    #expect(try decodedExtraUsage(extraUsageConfig(spend: spend)).extraUsage == nil)
+    // A used block that states no exponent is not a disagreement.
+    let bare = #"""
+    {"used":{"amount_minor":1240,"currency":"USD"},"limit":{"amount_minor":3500,"currency":"USD","exponent":2},"enabled":true}
+    """#
+    #expect(try decodedExtraUsage(extraUsageConfig(spend: bare)).extraUsage?.exponent == 2)
+}
+
+/// An unknown `spend` reason intentionally blocks the fallback: never echo it.
+@Test func extraUsageSpendsReasonWinsOverTheExtraUsageBlocksReason() throws {
+    let u = try decodedExtraUsage(extraUsageConfig(
+        spend: spendBlock(enabled: "false", reason: "\"out_of_credits\""),
+        extra: extraBlock(reason: "\"x\"")))
+    #expect(u.extraUsage?.state == .paused(reason: "out of credits"))
+}
+
+@Test func extraUsageCurrencyComesFromUsedBeforeLimit() throws {
+    let spend = #"""
+    {"used":{"amount_minor":1240,"currency":"EUR","exponent":2},"limit":{"amount_minor":3500,"currency":"GBP","exponent":2},"enabled":true}
+    """#
+    #expect(try decodedExtraUsage(extraUsageConfig(spend: spend)).extraUsage?.currency == "EUR")
+}
+
+/// `enabled: true` is the whole truth for "can be spent"; `user_disabled` only
+/// matters once Anthropic has switched it off.
+@Test func extraUsageEnabledWinsOverUserDisabled() throws {
+    let u = try decodedExtraUsage(extraUsageConfig(
+        spend: spendBlock(enabled: "true"), extra: extraBlock(userDisabled: "true")))
+    #expect(u.extraUsage?.state == .active)
+}
