@@ -85,9 +85,14 @@ public final class UtilizationStore {
         // Claude Code rewrites this file from another process; a read can land
         // mid-write. A decode failure is expected occasionally and must cost
         // nothing more than one skipped refresh.
+        //
+        // ⚠️ The block must be cast to a dictionary BEFORE it is serialized.
+        // `JSONSerialization.data(withJSONObject:)` raises an Objective-C
+        // exception on a top-level scalar or `NSNull`, and `try?` cannot catch
+        // that — a `null` block would terminate the app, not skip a refresh.
         guard let data = try? Data(contentsOf: path),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let block = root["cachedUsageUtilization"],
+              let block = root["cachedUsageUtilization"] as? [String: Any],
               let blockData = try? JSONSerialization.data(withJSONObject: block)
         else { return nil }
         return try? JSONDecoder().decode(UsageUtilization.self, from: blockData)
