@@ -99,3 +99,36 @@ private let configWithBlock = """
     #expect(UtilizationStore.defaultPath(
         environment: [UtilizationStore.overrideKey: ""]).lastPathComponent == ".claude.json")
 }
+
+/// `oauthAccount` sits beside the block and holds the user's email and org
+/// name. Only the tier string may leave it.
+private let configWithAccount = """
+{"projects":{"/Users/x/SomeClient":{"lastCost":1.0}},
+ "oauthAccount":{"emailAddress":"person@example.test","organizationName":"Secret Client LLC",
+                 "organizationRateLimitTier":"default_claude_max_20x","organizationType":"claude_max"},
+ "cachedUsageUtilization":{"fetchedAtMs":1786542556418,
+   "utilization":{"seven_day":{"utilization":75,"resets_at":"2026-08-14T07:00:00.818653+00:00"}}}}
+"""
+
+@Test func theStoreLiftsThePlanCreditTierOutOfTheAccount() {
+    let u = UtilizationStore(path: configScratch(configWithAccount)).load()
+    #expect(u?.rateLimitTier == "default_claude_max_20x")
+}
+
+@Test func nothingElseInTheAccountReachesThePlanCreditPath() throws {
+    let u = try #require(UtilizationStore(path: configScratch(configWithAccount)).load())
+    let described = String(describing: u)
+    #expect(!described.contains("person@example.test"))
+    #expect(!described.contains("Secret Client"))
+    #expect(!described.contains("SomeClient"))
+}
+
+/// The tier rides on the block: no block, no plan line. Accepted in the spec.
+@Test func aConfigWithAnAccountButNoBlockYieldsNoPlanCreditTier() {
+    let config = #"{"oauthAccount":{"organizationRateLimitTier":"default_claude_max_20x"}}"#
+    #expect(UtilizationStore(path: configScratch(config)).load() == nil)
+}
+
+@Test func aConfigWithoutAnAccountHasNoPlanCreditTier() {
+    #expect(UtilizationStore(path: configScratch(configWithBlock)).load()?.rateLimitTier == nil)
+}

@@ -1,11 +1,13 @@
 import Foundation
 
-/// Reads the `cachedUsageUtilization` block out of `~/.claude.json`.
+/// Reads the `cachedUsageUtilization` block out of `~/.claude.json`, plus one
+/// string beside it: `oauthAccount.organizationRateLimitTier`, for `PlanCredit`.
 ///
 /// ⚠️ **That file also holds hundreds of project paths** — for consultancy work,
-/// client names. Only the utilization block is ever extracted, and the raw file
-/// is never copied, logged, or surfaced in diagnostics. `BurnlineProbe` prints
-/// figures, never JSON.
+/// client names — and `oauthAccount` holds the user's email and organization
+/// name. Only the utilization block and that one tier string are ever
+/// extracted, and the raw file is never copied, logged, or surfaced in
+/// diagnostics. `BurnlineProbe` prints figures, never JSON.
 ///
 /// A **class**, not a struct like the other stores, because it caches: the
 /// rebuild runs every 10 seconds against a 160 KB file, and re-parsing an
@@ -90,6 +92,12 @@ public final class UtilizationStore {
               let block = root["cachedUsageUtilization"],
               let blockData = try? JSONSerialization.data(withJSONObject: block)
         else { return nil }
-        return try? JSONDecoder().decode(UsageUtilization.self, from: blockData)
+        guard var utilization = try? JSONDecoder().decode(UsageUtilization.self, from: blockData)
+        else { return nil }
+        // The one string read outside the block. `oauthAccount` also holds the
+        // user's email and organization name; neither is touched.
+        utilization.rateLimitTier =
+            (root["oauthAccount"] as? [String: Any])?["organizationRateLimitTier"] as? String
+        return utilization
     }
 }
