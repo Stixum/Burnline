@@ -121,6 +121,14 @@ private let configWithAccount = """
     #expect(!described.contains("person@example.test"))
     #expect(!described.contains("Secret Client"))
     #expect(!described.contains("SomeClient"))
+    #expect(!described.contains("Secret"))
+    #expect(!described.contains("example.test"))
+    // The closing quote matters: the tier's own `claude_max_20x"` does not
+    // contain this, so only organizationType's value would.
+    #expect(!described.contains("claude_max\""))
+    // Positive control: `String(describing:)` prints stored fields, so the
+    // absences above are not vacuous.
+    #expect(described.contains("default_claude_max_20x"))
 }
 
 /// The tier rides on the block: no block, no plan line. Accepted in the spec.
