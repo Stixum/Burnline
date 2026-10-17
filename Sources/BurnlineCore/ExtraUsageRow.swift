@@ -56,7 +56,9 @@ extension Snapshot {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.timeZone = timeZone
-            formatter.dateFormat = "EEE h:mm a"
+            // The date is in the format because the row can be up to 31 days
+            // old, and a bare weekday wouldn't say which week.
+            formatter.dateFormat = "EEE MMM d, h:mm a"
             var tip = "As of \(formatter.string(from: usage.fetchedAt)). "
                 + "Extra usage pays after you hit a plan limit; it doesn't change the weekly figure."
             if case .paused = usage.state { tip += " Turned off by Anthropic; you left it on." }

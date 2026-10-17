@@ -44,6 +44,11 @@ private func row(_ state: UsageUtilization.ExtraUsage.State = .active,
 @Test func anExtraUsageRowAtLimitNamesTheCap() {
     #expect(row(used: 3_500, limitReached: true)?.value == "$35 · limit reached")
     #expect(row(used: 3_500, limitReached: true)?.style == .warning)
+    // No age suffix on a stale at-limit row: it is a symbol row.
+    #expect(row(used: 3_500, limitReached: true, age: 7_200)?.value == "$35 · limit reached")
+    // The value names the limit, not what was used.
+    #expect(row(used: 3_000, limitReached: true)?.value == "$35 · limit reached")
+    #expect(row(used: 4_000, limitReached: true)?.value == "$35 · limit reached")
 }
 
 /// A raised severity colours the row and claims nothing.
@@ -60,7 +65,10 @@ private func row(_ state: UsageUtilization.ExtraUsage.State = .active,
     #expect(row(.paused(reason: "out of credits"), age: 7_200)?.value == "paused · out of credits")
 }
 
-/// Precedence: paused, then at limit, then raised severity, then plain.
+/// Precedence is structural: the builder switches on the state first, so case
+/// order is not what decides it. This guards against a restructure into an
+/// if-chain, where a paused row that is also at limit could fall into the
+/// at-limit branch.
 @Test func aPausedExtraUsageRowWinsOverAtLimit() {
     let both = row(.paused(reason: "out of credits"), used: 3_500, limitReached: true,
                    severityRaised: true)
@@ -76,7 +84,7 @@ private func row(_ state: UsageUtilization.ExtraUsage.State = .active,
         fetchedAt: Date(timeIntervalSince1970: 1_788_371_940))
     let tip = Snapshot.ExtraUsageRow(usage, now: usage.fetchedAt.addingTimeInterval(60),
                                      timeZone: chicago)?.tooltip
-    #expect(tip == "As of Wed 12:59 PM. Extra usage pays after you hit a plan limit; "
+    #expect(tip == "As of Wed Sep 2, 12:59 PM. Extra usage pays after you hit a plan limit; "
                  + "it doesn't change the weekly figure.")
 
     let paused = row(.paused(reason: "out of credits"))?.tooltip ?? ""
