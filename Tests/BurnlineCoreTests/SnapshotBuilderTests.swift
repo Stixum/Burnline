@@ -473,3 +473,16 @@ private let utc = TimeZone(identifier: "UTC")!
     #expect(bare.extraUsage == nil)
     #expect(bare.planCredit == nil)
 }
+
+@Test func theBuilderDatesExtraUsageAgainstItsOwnNow() {
+    let now = Date()
+    func snapshot(age: TimeInterval) -> Snapshot {
+        let usage = UsageUtilization.ExtraUsage(
+            state: .active, usedMinor: 1_240, limitMinor: 3_500, exponent: 2, currency: "USD",
+            isLimitReached: false, isSeverityRaised: false, fetchedAt: now.addingTimeInterval(-age))
+        return SnapshotBuilder.build(cache: cache(units: 0, at: now), settings: settings(),
+                                     now: now, isScanning: false, extraUsage: usage)
+    }
+    #expect(snapshot(age: 31 * 86_400 + 1).extraUsage == nil)
+    #expect(snapshot(age: 60).extraUsage != nil)
+}

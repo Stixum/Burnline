@@ -119,7 +119,14 @@ extension UsageUtilization.ExtraUsage {
         // Through `DisplayValue`, which saturates — every figure here is JSON on disk.
         let used = DisplayValue.whole(usedRaw, ceiling: amountCeilingMinor)
         let limit = DisplayValue.whole(limitRaw, ceiling: amountCeilingMinor)
-        guard limit >= 0 else { return nil }
+        guard limit >= 0, used >= 0 else { return nil }
+
+        // A row must never print an unvalidated code, and the width tests
+        // assume three letters. Any stated code that isn't exactly A–Z x3 means
+        // unknown units, like the exponent; a missing one defaults to USD.
+        for stated in [spend.used?.currency, spend.limit?.currency].compactMap({ $0 }) {
+            guard isCurrencyCode(stated) else { return nil }
+        }
 
         let state: State = enabled
             ? .active
@@ -135,6 +142,10 @@ extension UsageUtilization.ExtraUsage {
                     isLimitReached: (limit > 0 && used >= limit) || extra?.spendLimitReached == true,
                     isSeverityRaised: (spend.severity ?? "normal") != "normal",
                     fetchedAt: Date(timeIntervalSince1970: fetchedAt))
+    }
+
+    private static func isCurrencyCode(_ code: String) -> Bool {
+        code.utf8.count == 3 && code.utf8.allSatisfy { (65...90).contains($0) }
     }
 
     /// Known codes only. An unknown one is never shown raw.

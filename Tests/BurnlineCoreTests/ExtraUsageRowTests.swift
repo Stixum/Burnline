@@ -125,3 +125,9 @@ private func row(_ state: UsageUtilization.ExtraUsage.State = .active,
     #expect(RowWidth.pair(label, "paused · out of credits · 23h ago") > RowWidth.symbolRowBudget)
     #expect(RowWidth.pair(label, "EUR 9,999.99 of 9,999 · 999d ago") > RowWidth.plainRowBudget)
 }
+
+/// More than an hour ahead is a clock problem, not a figure; small skew is fine.
+@Test func anExtraUsageRowReadFromTheFutureIsNotBuilt() {
+    #expect(row(age: -3_601) == nil)
+    #expect(row(age: -60) != nil)
+}

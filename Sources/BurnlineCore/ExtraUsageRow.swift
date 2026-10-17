@@ -25,12 +25,15 @@ extension Snapshot {
         public let tooltip: String
         public let style: Style
 
-        /// Nil past `ExtraUsage.maximumAge`: the figure describes a cycle that
-        /// has ended. Precedence when several states hold: paused, at limit,
+        /// Nil past `ExtraUsage.maximumAge` (the figure describes a cycle that
+        /// has ended) or more than `CaptureAge.stalenessThreshold` in the future. Precedence when several states hold: paused, at limit,
         /// raised severity, plain.
         init?(_ usage: UsageUtilization.ExtraUsage, now: Date, timeZone: TimeZone) {
             let age = now.timeIntervalSince(usage.fetchedAt)
             guard age <= UsageUtilization.ExtraUsage.maximumAge else { return nil }
+            // More than an hour ahead is a clock problem, not a figure; a
+            // little skew is tolerated.
+            guard age >= -CaptureAge.stalenessThreshold else { return nil }
 
             switch usage.state {
             case .paused(let reason):

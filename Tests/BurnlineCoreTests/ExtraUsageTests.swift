@@ -270,3 +270,18 @@ private func decodedExtraUsage(_ json: String) throws -> UsageUtilization {
         spend: spendBlock(enabled: "true"), extra: extraBlock(userDisabled: "true")))
     #expect(u.extraUsage?.state == .active)
 }
+
+// MARK: - Validation follow-ups
+
+@Test func extraUsageWithANegativeAmountUsedIsAbsent() throws {
+    #expect(try decodedExtraUsage(extraUsageConfig(spend: spendBlock(used: "-1240"))).extraUsage == nil)
+}
+
+@Test func extraUsageWithACurrencyThatIsNotThreeUppercaseLettersIsAbsent() throws {
+    for bad in ["\"\"", "\"euro\"", "\"EURO\"", "\"eur\"", "\"E1R\"", "\"EU\"", "\"123\""] {
+        #expect(try decodedExtraUsage(extraUsageConfig(spend: spendBlock(currency: bad))).extraUsage == nil,
+                "currency \(bad)")
+    }
+    #expect(try decodedExtraUsage(extraUsageConfig(spend: spendBlock(currency: "\"EUR\"")))
+        .extraUsage?.currency == "EUR")
+}
