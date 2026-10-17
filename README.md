@@ -94,6 +94,12 @@ Every real reading is account-wide and corrects for all of it. Only the forward 
 
 If the figure stops because **Claude Code is signed out**, the menu bar figure gains a `!` instead of a `~` — an extrapolation that can never correct itself is a stronger statement than one that will — and the popover says so, with a button that opens a Terminal window running `claude auth login`. Burnline never starts a sign-in on its own; you click, or nothing happens.
 
+## Extra usage and API credits
+
+**If you use extra usage, the popover shows what you've spent this month against your cap**, as `Extra usage  $12.40 of $35`. Past an hour old it says so (`· 3h ago`), because the figure only moves when `/usage` runs. It turns amber with a ⚠ at the limit, and goes grey with a ⏸ while Anthropic has paused it and you've left it on (`paused · out of credits`). Turned off, or never set up, there is no row.
+
+**Settings states the API credits your plan includes**: $200 a month on Max 20x, $100 on Max 5x, with a link to the Console. That is eligibility, not a balance. The credits live in a Console organization Burnline can't read, and they pay for the API and the Agent SDK, not Claude Code, so they never move the weekly figure.
+
 ## Re-grants
 
 **Anthropic sometimes re-grants the weekly limit mid-window, without moving the reset.** Seen 2026-09-01: 51% to 0%, same reset. Burnline used to read a falling figure as a stale session and freeze for days.
