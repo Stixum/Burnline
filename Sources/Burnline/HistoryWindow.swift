@@ -59,6 +59,10 @@ struct HistoryView: View {
     /// so flipping this redraws and never touches disk.
     @State private var chartMode: HistoryChartMode = .units
 
+    /// Whether every completed week is listed. Not persisted, for the same
+    /// reason as `chartMode`, and not a load input: the rows are already read.
+    @State private var showsAllWeeks = false
+
     /// The fill phase the model on screen was read under, so a reload knows
     /// whether the archive can have changed under it.
     @State private var loadedPhase: HistoryFillState.ReloadPhase?
@@ -134,7 +138,17 @@ struct HistoryView: View {
 
     // MARK: - Sections
 
+    /// Chart first, then the weeks, then the breakdown the weeks drive.
+    ///
+    /// ⚠️ The scoreboard grows a row every week. Above the chart, twelve weeks
+    /// pushed the chart to the fold and the breakdown off the window entirely,
+    /// so it sits below and folds to the newest few. Below the chart it also
+    /// sits directly above the bars its selection aims, which it did not before.
     @ViewBuilder private func sections(_ model: HistoryViewModel) -> some View {
+        burnCurves(model)
+
+        Divider().overlay(Theme.hairline).padding(.vertical, 2)
+
         Text("Completed weeks").eyebrow()
         if model.scoreboard.isEmpty {
             // Reachable: the live week has cells to draw a curve from long
@@ -144,15 +158,8 @@ struct HistoryView: View {
                 .font(.system(size: 11.5))
                 .foregroundStyle(Theme.textMuted)
         } else {
-            HistoryScoreboard(rows: model.scoreboard,
-                              selected: selection(model),
-                              explainsMissingPercentages: model.noPercentagesRecorded,
-                              select: { range = $0 })
+            scoreboard(model)
         }
-
-        Divider().overlay(Theme.hairline).padding(.vertical, 2)
-
-        burnCurves(model)
 
         Divider().overlay(Theme.hairline).padding(.vertical, 2)
 
@@ -201,6 +208,38 @@ struct HistoryView: View {
         }
     }
 
+    /// The weeks, folded to the newest few. Which rows show, and what the
+    /// toggle says, is `HistoryScoreboardDisclosure`'s.
+    @ViewBuilder private func scoreboard(_ model: HistoryViewModel) -> some View {
+        let selected = selection(model)
+        let selectedIndex = model.scoreboard.firstIndex {
+            selected == .window(start: $0.window.start)
+        }
+        let layout = HistoryScoreboardDisclosure.layout(rowCount: model.scoreboard.count,
+                                                        selectedIndex: selectedIndex,
+                                                        isExpanded: showsAllWeeks)
+        HistoryScoreboard(rows: layout.visibleIndices.map { model.scoreboard[$0] },
+                          selected: selected,
+                          explainsMissingPercentages: model.noPercentagesRecorded,
+                          select: { range = $0 })
+        if let title = layout.toggleTitle {
+            Button {
+                showsAllWeeks.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Text(title)
+                    Image(systemName: showsAllWeeks ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(Theme.accent)
+                .padding(.horizontal, 10)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private var modePicker: some View {
         // ⚠️ A real label, then `.labelsHidden()`. Visually identical to an
         // empty string and the difference is the whole accessible name: an
@@ -242,8 +281,9 @@ struct HistoryView: View {
     // MARK: - Header
 
     private var header: some View {
+        // No "Usage history" eyebrow: the title bar already says it, and every
+        // line up here pushes the chart down.
         VStack(alignment: .leading, spacing: 5) {
-            Text("Usage history").eyebrow()
             if let coverageDescription {
                 Text(coverageDescription)
                     .font(.system(size: 11.5))
@@ -254,13 +294,16 @@ struct HistoryView: View {
             // ⚠️ Named plainly, because "units" is Burnline's own scale and
             // means nothing on its own. The absolute value is arbitrary by
             // construction — calibration divides it out — so the only claim
-            // being made is that one week compares to another.
-            Text("Units are Burnline's own weighted measure, not tokens or percent. The "
-                 + "scale is arbitrary; only week-to-week comparison means anything. "
-                 + "This Mac's Claude Code only.")
+            // being made is that one week compares to another. One line, with
+            // the rest in the tooltip; "This Mac's Claude Code only" is the
+            // chart caveat's to say, directly under it.
+            Text("Units are Burnline's own weighted measure, not tokens or percent: "
+                 + "compare weeks, not absolute values.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
+                .help("The scale is arbitrary; only week-to-week comparison means "
+                      + "anything. This Mac's Claude Code only.")
 
             if let model, model.hasGaps {
                 warning("The history has gaps. Usage during them is unknown, not zero. "
