@@ -8,10 +8,10 @@ import Foundation
 /// neighbours. Percent mode pins the axis at 0…100, so two prior weeks that
 /// both finish near their allowance end in the same top-right corner: on
 /// 2026-10-18 "Oct 2 – Oct 9" at 100% and "Oct 9 – Oct 16" at 92% rendered
-/// on top of each other as `Oct12–Oct16`. The units chart got away with it
-/// only because its auto-fitted axis rounds up past the tallest line and leaves
-/// headroom; a fixed domain has none, and at 100% a label cannot move up at
-/// all.
+/// on top of each other as `Oct12–Oct16`. The units chart's auto-fitted axis
+/// leaves headroom above the tallest line, which hid the defect there until two
+/// weeks ended at the same total; a fixed domain has none, and at 100% a label
+/// cannot move up at all. Both charts now place their labels through here.
 ///
 /// So the labels are laid out together: each starts just above its own point,
 /// and any two that share a column are stacked apart — downward from the top

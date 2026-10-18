@@ -101,27 +101,15 @@ struct HistoryBurnCurves: View {
         .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
     }
 
-    /// Direct labels, so a series is identifiable without tracing a colour back
-    /// to the legend.
-    @ChartContentBuilder private var endLabels: some ChartContent {
+    /// The dot each direct label hangs from. The labels themselves are drawn
+    /// over the plot by `HistoryEndLabelOverlay`, never as annotations: see
+    /// there for the collision that rule exists for.
+    @ChartContentBuilder private var endDots: some ChartContent {
         ForEach(endpoints) { endpoint in
             PointMark(x: .value("Elapsed", endpoint.fraction),
                       y: .value("Units", endpoint.units))
                 .symbolSize(18)
                 .foregroundStyle(endpoint.color)
-                // The newest series ends at fraction 1.0, hard against the plot's
-                // right edge, so its label needs pulling back inside or it is
-                // clipped to nothing.
-                .annotation(position: .top, alignment: .trailing, spacing: 3,
-                            overflowResolution: AnnotationOverflowResolution(
-                                x: .fit(to: .chart), y: .fit(to: .chart))) {
-                    // ⚠️ A text token, NOT the series colour. Two of the three
-                    // ramp colours are below the contrast floor for text at this
-                    // size — they are legible as lines and not as labels.
-                    Text(endpoint.id)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.textSecondary)
-                }
         }
     }
 
@@ -142,7 +130,7 @@ struct HistoryBurnCurves: View {
     private var chart: some View {
         Chart {
             lines
-            endLabels
+            endDots
             nowLine
         }
         // 🔴 ONE scale. A second y-axis would let two series be scaled
@@ -156,6 +144,9 @@ struct HistoryBurnCurves: View {
         // there is no meaningful fixed ceiling to name. The percent face names
         // one, and the two answers live side by side on the mode.
         .chartXScale(domain: 0...1)
+        .historyEndLabels(endpoints.map {
+            HistoryEndLabelOverlay.Label(text: $0.id, fraction: $0.fraction, value: $0.units)
+        })
         // ⚠️ Explicit range from each week's ramp position, never
         // `prefix(count)`: `prefix` assumes the drawn array IS the recency
         // order, which is exactly the assumption that fails when a week is
