@@ -112,7 +112,7 @@ A drop of two points or more opens a new allowance. The **At this rate** row, wh
 
 ## History
 
-Click the chart icon in the popover for past weeks: totals week over week, this week's burn curve laid over the last two, and where the usage actually went by project and by model.
+Click the chart icon in the popover for past weeks: this week's burn curve laid over the last two, totals week over week (the newest four, with the rest a click away), and where the usage actually went by project and by model.
 
 **The curves toggle between Units and Percent, and the two know different things.** Units are counted from this Mac's transcripts: every retained week, and they never fall, so a re-grant leaves no mark on them. Percent is Anthropic's figure: every machine, but flat wherever nothing reported. A re-grant shows only in Percent. The line breaks rather than plunging, a ring marks the first reading after it, and a band spans the stretch it is known to lie in.
 
