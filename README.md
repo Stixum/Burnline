@@ -116,7 +116,7 @@ Click the chart icon in the popover for past weeks: this week's burn curve laid 
 
 **The curves toggle between Units and Percent, and the two know different things.** Units are counted from this Mac's transcripts: every retained week, and they never fall, so a re-grant leaves no mark on them. Percent is Anthropic's figure: every machine, but flat wherever nothing reported. A re-grant shows only in Percent. The line breaks rather than plunging, a ring marks the first reading after it, and a band spans the stretch it is known to lie in.
 
-<img src="docs/images/history.png" alt="Burnline History window: five completed weeks with unit totals and Anthropic's recorded figures, the burn curve switched to Percent, and this week's line breaking at a mid-window re-grant and climbing again from zero" width="620">
+<img src="docs/images/history.png" alt="Burnline History window: the burn curve switched to Percent, with this week's line breaking at a mid-window re-grant and climbing again from zero; below it five completed weeks with unit totals and Anthropic's recorded figures, then usage by project" width="620">
 
 Burnline builds this from the transcripts Claude Code still has, once, on first launch — about twenty seconds. **It keeps them, which matters, because Claude Code deletes its own transcripts after 30 days.** From then on it records each week as it closes.
 
