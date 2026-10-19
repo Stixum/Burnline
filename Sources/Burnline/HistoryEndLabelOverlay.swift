@@ -54,6 +54,13 @@ struct HistoryEndLabelOverlay: View {
                 .font(.system(size: Self.fontSize, weight: .semibold))
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize()
+                // A knock-out plate in the window's own colour. Stacked
+                // labels near the ceiling sit on top of the lines they name,
+                // and a line through a label's text is legible to nobody.
+                // Horizontal padding only: the layout measured the bare text,
+                // and vertical padding would make stacked plates overlap.
+                .padding(.horizontal, 2)
+                .background(Theme.background, in: RoundedRectangle(cornerRadius: 2))
                 .position(x: pair.1.midX, y: pair.1.midY)
         }
         .allowsHitTesting(false)
