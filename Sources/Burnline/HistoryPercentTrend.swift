@@ -90,18 +90,6 @@ struct HistoryPercentTrend: View {
         let color: Color
         let fraction: Double
         let percent: Double
-        /// Which side of the point the label hangs on.
-        ///
-        /// ⚠️ **Layout geometry, not a figure** — nothing a reader is shown
-        /// comes from this, the same standing this has in
-        /// `HistoryBreakdown.xDomain`. A fixed `.trailing` always reaches back
-        /// LEFT over the stretch the line just came from, and for the live
-        /// week that stretch is where a re-grant's ring and dashed drop sit: a
-        /// week ending a few hours after a re-grant printed its name straight
-        /// across the event. Hanging the label on the side the line has not
-        /// reached yet clears it, and only a right-half endpoint keeps
-        /// `.trailing`, where extending right would run off the plot.
-        let alignment: Alignment
     }
 
     /// Two vertices of the pace diagonal. A `RuleMark` draws verticals and
@@ -163,8 +151,7 @@ struct HistoryPercentTrend: View {
         curves.compactMap { curve in
             guard let last = curve.series.points.last else { return nil }
             return Endpoint(id: curve.label, color: Theme.curve(at: curve.rampIndex),
-                            fraction: last.elapsedFraction, percent: last.percent,
-                            alignment: last.elapsedFraction < 0.5 ? .leading : .trailing)
+                            fraction: last.elapsedFraction, percent: last.percent)
         }
     }
 
@@ -314,23 +301,15 @@ struct HistoryPercentTrend: View {
         }
     }
 
-    /// Direct labels, so a series is identifiable without tracing a colour back
-    /// to the legend.
-    @ChartContentBuilder private var endLabels: some ChartContent {
+    /// The dot each direct label hangs from. The labels themselves are drawn
+    /// over the plot by `HistoryEndLabelOverlay`, never as annotations: see
+    /// there for the collision that rule exists for.
+    @ChartContentBuilder private var endDots: some ChartContent {
         ForEach(endpoints) { endpoint in
             PointMark(x: .value("Elapsed", endpoint.fraction),
                       y: .value("Percent", endpoint.percent))
                 .symbolSize(18)
                 .foregroundStyle(endpoint.color)
-                .annotation(position: .top, alignment: endpoint.alignment, spacing: 3,
-                            overflowResolution: AnnotationOverflowResolution(
-                                x: .fit(to: .chart), y: .fit(to: .chart))) {
-                    // ⚠️ A text token, NOT the series colour. Same rule, same
-                    // reason as the marker label above.
-                    Text(endpoint.id)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.textSecondary)
-                }
         }
     }
 
@@ -371,10 +350,13 @@ struct HistoryPercentTrend: View {
             regrantSpans
             lines
             ringMarks
-            endLabels
+            endDots
             nowLine
         }
         .chartXScale(domain: 0...1)
+        .historyEndLabels(endpoints.map {
+            HistoryEndLabelOverlay.Label(text: $0.id, fraction: $0.fraction, value: $0.percent)
+        })
         // Explicit range rather than `prefix(count)`: the ramp position is the
         // week's recency, and this chart's array is filtered independently of
         // the unit chart's.
