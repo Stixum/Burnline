@@ -459,8 +459,7 @@ struct SettingsView: View {
     /// Names the actual clock time each option resolves to, since the two only
     /// differ by however far the reset sits from midnight.
     private var dayBoundaryExplanation: String {
-        let resetClock = store.settings.resetSchedule
-            .description(of: store.snapshot.window.end, .clock)
+        let resetClock = store.snapshot.resetDescription(.clock)
         let base = store.settings.dayBoundary.explanation
         let today = DisplayValue.whole(store.snapshot.endOfDayPercent)
         switch store.settings.dayBoundary {
@@ -470,7 +469,7 @@ struct SettingsView: View {
             // The contrast only when there is one to draw. A reset at midnight
             // makes the two options identical, and "not at the 12:00 AM reset"
             // then invents a difference the user does not have.
-            let contrast = resetClock == "12:00 AM" ? "" : ", not at the \(resetClock) reset"
+            let contrast = store.snapshot.resetFallsAtMidnight ? "" : ", not at the \(resetClock) reset"
             return "\(base)\(contrast). Currently \(today)%."
         }
     }
@@ -494,7 +493,7 @@ struct SettingsView: View {
     }
 
     private var automaticResetDescription: String {
-        store.settings.resetSchedule.description(of: store.snapshot.window.end)
+        store.snapshot.resetDescription(.full)
     }
 
     private func weightRow(_ label: String, _ value: Binding<Double>) -> some View {

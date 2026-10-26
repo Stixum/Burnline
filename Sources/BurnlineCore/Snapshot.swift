@@ -141,8 +141,10 @@ public struct Snapshot: Equatable, Sendable {
     public let isScheduleAutomatic: Bool
     public let isScanning: Bool
     public let dayBoundary: DayBoundary
-    /// Timezone the calendar-day boundary is evaluated in.
-    public let dayTimeZoneIdentifier: String
+    /// The user's clock: the zone the calendar-day boundary is evaluated in
+    /// and the reset is read on. The machine's zone when the snapshot was
+    /// built, never the reset schedule's, which was saved at first launch.
+    public let clockTimeZoneIdentifier: String
     /// The 5-hour limit, when a live capture carries one that is still inside
     /// its own window. `nil` on plans that don't report it.
     public let fiveHour: FiveHourStatus?
@@ -186,7 +188,7 @@ public struct Snapshot: Equatable, Sendable {
                 calibrationAge: TimeInterval?, source: UsageSource = .paceOnly,
                 isScheduleAutomatic: Bool = false, isScanning: Bool,
                 dayBoundary: DayBoundary = .windowDay,
-                dayTimeZoneIdentifier: String = TimeZone.current.identifier,
+                clockTimeZoneIdentifier: String = TimeZone.current.identifier,
                 fiveHour: FiveHourStatus? = nil,
                 rejectedReading: RateLimitHighWater.RejectedReading? = nil,
                 scopedWeekly: UsageUtilization.ScopedLimit? = nil,
@@ -205,7 +207,7 @@ public struct Snapshot: Equatable, Sendable {
         self.isScheduleAutomatic = isScheduleAutomatic
         self.isScanning = isScanning
         self.dayBoundary = dayBoundary
-        self.dayTimeZoneIdentifier = dayTimeZoneIdentifier
+        self.clockTimeZoneIdentifier = clockTimeZoneIdentifier
         self.fiveHour = fiveHour
         self.rejectedReading = rejectedReading
         self.scopedWeekly = scopedWeekly
@@ -224,8 +226,29 @@ public struct Snapshot: Equatable, Sendable {
     /// Where you may be by the end of the current day.
     public var endOfDayPercent: Double {
         window.endOfDayPercent(boundary: dayBoundary,
-                               timeZone: TimeZone(identifier: dayTimeZoneIdentifier) ?? .current)
+                               timeZone: clock)
     }
+
+    /// The reset, on the user's clock, to the minute.
+    public func resetDescription(_ format: ResetSchedule.Format) -> String {
+        ResetSchedule.description(of: window.end, format, on: clock)
+    }
+
+    /// True when the reset falls at midnight on the user's clock — the one case
+    /// where the window day and the calendar day are the same thing.
+    ///
+    /// A date check, not a string one: comparing the formatted clock to
+    /// `"12:00 AM"` read a midnight reset reported half a second early as
+    /// `11:59 PM`.
+    public var resetFallsAtMidnight: Bool {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = clock
+        let parts = calendar.dateComponents([.hour, .minute],
+                                            from: ResetSchedule.toTheMinute(window.end))
+        return parts.hour == 0 && parts.minute == 0
+    }
+
+    private var clock: TimeZone { TimeZone(identifier: clockTimeZoneIdentifier) ?? .current }
 
     /// The target the headline numbers compare against, per the user's mode.
     public func activeTarget(_ mode: TargetMode) -> Double {

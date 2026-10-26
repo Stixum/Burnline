@@ -152,6 +152,7 @@ final class UsageStore {
 
     @ObservationIgnored private var scanTask: Task<Void, Never>?
     @ObservationIgnored private var captureTask: Task<Void, Never>?
+    @ObservationIgnored private var timeZoneObserver: NSObjectProtocol?
     @ObservationIgnored private var lastRefresh = Date.distantPast
     @ObservationIgnored private var isRefreshing = false
 
@@ -212,6 +213,16 @@ final class UsageStore {
                 await self?.rebuild()
             }
         }
+
+        // `TimeZone.current` is cached for the life of the process until it is
+        // reset, and a menu bar app outlives a flight. Without this the reset
+        // and midnight stay on the zone the app launched in.
+        timeZoneObserver = NotificationCenter.default.addObserver(
+            forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            NSTimeZone.resetSystemTimeZone()
+            MainActor.assumeIsolated { self?.scheduleRebuild() }
+        }
     }
 
     func stop() {
@@ -221,6 +232,8 @@ final class UsageStore {
         captureTask = nil
         fillTask?.cancel()
         fillTask = nil
+        timeZoneObserver.map(NotificationCenter.default.removeObserver)
+        timeZoneObserver = nil
     }
 
     // MARK: - History archive

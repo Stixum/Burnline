@@ -449,7 +449,7 @@ struct PopoverView: View {
     }
 
     private var resetDescription: String {
-        store.settings.resetSchedule.description(of: snapshot.window.end, .abbreviated)
+        snapshot.resetDescription(.abbreviated)
     }
 
     private var remainingDescription: String {
