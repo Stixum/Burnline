@@ -8,6 +8,11 @@ public enum Projection {
     /// reading is why the noise floor now recurs mid-week: see below.
     public static let minimumElapsedFraction: Double = 0.02
 
+    /// How long a rate must have been measured before a projection over the
+    /// limit is an alarm rather than an early reading: a day, so the rate has
+    /// seen a night. `Snapshot.projectionIsWarning` applies it.
+    public static let minimumWarningBasis: TimeInterval = 86_400
+
     /// The rate is measured over the **allowance epoch**, so `elapsedFraction`
     /// is the epoch's — its own start to the reset — and `epochStartPercent` is
     /// where it opened. The burn is what the epoch has spent, and the landing

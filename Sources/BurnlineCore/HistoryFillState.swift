@@ -83,6 +83,25 @@ extension HistoryFillState {
     }
 }
 
+extension HistoryFillState {
+    /// The History header's line about how far back the archive goes, or nil
+    /// when there is no date to name (the empty state owns that case).
+    ///
+    /// 🔴 **While a fill runs, the oldest date is only the oldest read so far.**
+    /// The header said "Archived from Aug 22" for about 55 seconds and then
+    /// "Aug 5", announcing a horizon twice. Only a finished fill has reached
+    /// the 30-day horizon, so only then does the line explain it.
+    public func coverageLine(begins: Date?) -> String? {
+        guard let begins else { return nil }
+        let day = HistoryLabels.day(begins)
+        if case .filling = self {
+            return "Archived from \(day) so far. Still reading older transcripts."
+        }
+        return "Archived from \(day). Earlier weeks are gone: "
+            + "Claude Code deletes transcripts after 30 days."
+    }
+}
+
 /// The one region under the History window's header, resolved from the fill
 /// state and whether the archive has been read.
 public enum HistoryDisplay: Equatable, Sendable {
