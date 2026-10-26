@@ -121,7 +121,10 @@ public enum SnapshotBuilder {
             isScheduleAutomatic: scheduleIsAutomatic,
             isScanning: isScanning,
             dayBoundary: settings.dayBoundary,
-            dayTimeZoneIdentifier: settings.resetSchedule.timeZoneIdentifier,
+            // The machine's zone now, never the schedule's: that was stamped at
+            // first launch, and a user who travels reads the reset and their
+            // midnight on the clock they are on.
+            clockTimeZoneIdentifier: TimeZone.current.identifier,
             fiveHour: fiveHour,
             rejectedReading: rejected,
             scopedWeekly: scopedWeekly,

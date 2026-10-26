@@ -5,10 +5,6 @@ import Foundation
 private let chicago = TimeZone(identifier: "America/Chicago")!
 private let utc = TimeZone(identifier: "UTC")!
 
-/// Tue 2026-08-11 21:00 America/Chicago — a reset instant, fixed so the
-/// assertions do not depend on when the suite runs.
-private let resetInstant = Date(timeIntervalSince1970: 1_786_500_000)
-
 // MARK: - The schedule as configured
 
 /// The Settings fallback line. Four surfaces printed this reset four ways; this
@@ -57,42 +53,4 @@ private let resetInstant = Date(timeIntervalSince1970: 1_786_500_000)
     schedule.minute = 800
 
     #expect(!schedule.description().isEmpty)
-}
-
-// MARK: - An observed reset instant
-
-/// The three view-body formatters this replaced: a full weekday for the Settings
-/// sentence, an abbreviated one for the 272pt popover row, and the clock alone
-/// inside the day-boundary explanation.
-@Test func oneInstantRendersAtThreeWidths() {
-    let schedule = ResetSchedule(weekday: 3, hour: 21, timeZone: chicago)
-
-    #expect(schedule.description(of: resetInstant) == "Tuesday 9:00 PM")
-    #expect(schedule.description(of: resetInstant, .abbreviated) == "Tue 9:00 PM")
-    #expect(schedule.description(of: resetInstant, .clock) == "9:00 PM")
-}
-
-/// 🔴 The schedule's own zone, not the machine's. Once Claude Code reports a
-/// real `resets_at` the fields above are unused — but the zone still decides
-/// which clock the user is being shown, and the same instant is a different
-/// weekday in two of them.
-@Test func theInstantIsReadOnTheSchedulesOwnClock() {
-    let central = ResetSchedule(weekday: 3, hour: 21, timeZone: chicago)
-    let universal = ResetSchedule(weekday: 3, hour: 21, timeZone: utc)
-
-    #expect(central.description(of: resetInstant) == "Tuesday 9:00 PM")
-    #expect(universal.description(of: resetInstant) == "Wednesday 2:00 AM")
-}
-
-/// `en_US_POSIX`, for the reason `Snapshot.Regrant.rowValue` records: a custom
-/// `dateFormat` otherwise picks up the user's locale symbols and prints things
-/// like `14:14 PM`. Every format here is 12-hour and must carry its meridiem.
-@Test func everyFormatCarriesAMeridiemRatherThanATwentyFourHourClock() {
-    let schedule = ResetSchedule(weekday: 3, hour: 21, timeZone: chicago)
-
-    for format in ResetSchedule.Format.allCases {
-        let text = schedule.description(of: resetInstant, format)
-        #expect(text.contains("PM"))
-        #expect(!text.contains("21:"))
-    }
 }

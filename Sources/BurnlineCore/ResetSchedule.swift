@@ -56,16 +56,24 @@ extension ResetSchedule {
         return "\(day) \(Self.clock(hour: hour, minute: minute)) (\(zone))"
     }
 
-    /// A reset instant, rendered on this schedule's own clock.
+    /// A reset instant, rendered on the clock it is given, to the nearest minute.
     ///
     /// Used wherever the *observed* reset is what matters — Claude Code's
     /// `resets_at` pins the window exactly, and once it does, the fields above
-    /// are unused.
+    /// are unused. Static, and the zone required, because the schedule's own
+    /// zone is the wrong one here: it was stamped at first launch, and an
+    /// instant is read on whatever clock the user has now. `Snapshot` passes
+    /// its own; nothing else should call this.
+    ///
+    /// ⚠️ **Rounded, not truncated.** Anthropic reports `resets_at` a fraction
+    /// of a second short of the hour (06:59:59.522 UTC), and `h:mm` truncates,
+    /// so the reset printed as `1:59 AM` while the archive said 02:00. The
+    /// whole instant is rounded, so a midnight reset moves the weekday too.
     ///
     /// `en_US_POSIX`, for the reason `Snapshot.Regrant.rowValue` records: a
     /// custom `dateFormat` otherwise picks up the user's locale symbols and
     /// prints things like `14:14 PM`. The whole UI is hardcoded English.
-    public func description(of instant: Date, _ format: Format = .full) -> String {
+    static func description(of instant: Date, _ format: Format, on timeZone: TimeZone) -> String {
         let formatter = DateFormatter()
         formatter.locale = Self.locale
         formatter.timeZone = timeZone
@@ -74,7 +82,12 @@ extension ResetSchedule {
         case .abbreviated: formatter.dateFormat = "EEE h:mm a"
         case .clock:       formatter.dateFormat = "h:mm a"
         }
-        return formatter.string(from: instant)
+        return formatter.string(from: toTheMinute(instant))
+    }
+
+    /// The instant on the nearest whole minute.
+    static func toTheMinute(_ instant: Date) -> Date {
+        Date(timeIntervalSince1970: (instant.timeIntervalSince1970 / 60).rounded() * 60)
     }
 
     private static let locale = Locale(identifier: "en_US_POSIX")
