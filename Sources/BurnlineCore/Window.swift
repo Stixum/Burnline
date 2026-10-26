@@ -56,4 +56,19 @@ public struct Window: Equatable, Sendable {
     }
 
     public var timeRemaining: TimeInterval { max(0, end.timeIntervalSince(now)) }
+
+    /// The popover's "Time left" row: `3d 6h`, then `5h 20m`, then `40m`.
+    ///
+    /// 🔴 Under an hour it said `0h`, so a reset 40 minutes away read as one
+    /// already happening. The last minute is `<1m`, never `0m`, for the same
+    /// reason.
+    public var timeLeftDescription: String {
+        let total = DisplayValue.seconds(timeRemaining)
+        let days = total / 86_400
+        let hours = (total % 86_400) / 3_600
+        let minutes = (total % 3_600) / 60
+        if days > 0 { return "\(days)d \(hours)h" }
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        return minutes > 0 ? "\(minutes)m" : "<1m"
+    }
 }

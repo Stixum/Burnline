@@ -81,6 +81,9 @@ struct HistoryView: View {
         let dimension: HistoryQuery.Dimension
         let range: HistoryRange
         let fill: HistoryFillState.ReloadPhase
+        /// A weight edit restates every unit figure. The loader caches raw
+        /// tokens and weights them per call, so no invalidation is needed.
+        let weights: Weights
     }
 
     var body: some View {
@@ -107,7 +110,8 @@ struct HistoryView: View {
         .background(Theme.background)
         .preferredColorScheme(.dark)
         .task(id: LoadKey(dimension: dimension, range: range,
-                          fill: store.historyFillState.reloadPhase)) {
+                          fill: store.historyFillState.reloadPhase,
+                          weights: store.settings.weights)) {
             await load()
         }
     }
@@ -327,19 +331,10 @@ struct HistoryView: View {
     /// could not fix is that the *finished* case renders three lines above
     /// `emptyArchive`'s own headline, so one state got announced twice in two
     /// wordings. Absence is that state's to report, and it reports it better.
+    /// The wording, including "so far" while the fill is still reading back,
+    /// is `HistoryFillState.coverageLine`.
     private var coverageDescription: String? {
-        if let begins = model?.coverageBegins {
-            // Claude Code deletes transcripts after 30 days, so this is a real
-            // horizon rather than a starting point that will keep receding.
-            return "Archived from \(HistoryLabels.day(begins)). Earlier weeks are gone: "
-                + "Claude Code deletes transcripts after 30 days."
-        }
-        // 🔴 Nil, not "Nothing archived yet." That headline could render three
-        // lines above `emptyArchive`'s own — two announcements of one state, in
-        // two wordings, one of them a subtitle to a heading it contradicts. The
-        // empty state below is the one that owns this, and it says what happens
-        // next rather than only what is absent.
-        return nil
+        store.historyFillState.coverageLine(begins: model?.coverageBegins)
     }
 
     // MARK: - States

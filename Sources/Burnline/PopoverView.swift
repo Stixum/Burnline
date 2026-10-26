@@ -6,6 +6,8 @@ struct PopoverView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var calibrationInput = ""
     @State private var isCalibrating = false
+    /// Why the last figure was refused, shown under the field until the next try.
+    @State private var calibrationProblem: CalibrationInput.Problem?
 
     private var snapshot: Snapshot { store.snapshot }
     private var mode: TargetMode { store.settings.targetMode }
@@ -168,7 +170,7 @@ struct PopoverView: View {
         VStack(spacing: 3) {
             row("Day", String(format: "%.1f of 7", snapshot.window.dayIndex))
             row("Resets", resetDescription)
-            row("Time left", remainingDescription)
+            row("Time left", snapshot.window.timeLeftDescription)
             // The one row that should change what you do next, so it is allowed
             // to shout when the week is heading past the limit.
             // ⚠️ The label is `snapshot.projectionLabel`, not a literal: this
@@ -176,9 +178,9 @@ struct PopoverView: View {
             // above it is the window's, and once a re-grant opens those are
             // different spans. The rule lives on `Snapshot` because a view
             // branch is a rule no test can see.
-            row(snapshot.projectionLabel, Projection.description(snapshot.projectedPercent),
-                tint: Projection.isOverLimit(snapshot.projectedPercent)
-                    ? Theme.danger : Theme.textSecondary)
+            // The alarm waits for a day of rate: `Snapshot.projectionIsWarning`.
+            row(snapshot.projectionLabel, snapshot.projectionDescription,
+                tint: snapshot.projectionIsWarning ? Theme.danger : Theme.textSecondary)
             // Only when a live capture carries one — it's absent on plans that
             // don't report a 5-hour limit, and dies with its own window.
             if let fiveHour = snapshot.fiveHour {
@@ -315,17 +317,24 @@ struct PopoverView: View {
 
     @ViewBuilder private var footer: some View {
         if isCalibrating {
-            HStack(spacing: 6) {
-                Text("/usage says").font(.system(size: 11)).foregroundStyle(Theme.textMuted)
-                TextField("40", text: $calibrationInput)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 54)
-                    .onSubmit(commitCalibration)
-                Text("%").font(.system(size: 11)).foregroundStyle(Theme.textMuted)
-                Spacer()
-                Button("Save", action: commitCalibration).font(.system(size: 11))
-                Button("Cancel") { isCalibrating = false; calibrationInput = "" }
-                    .font(.system(size: 11))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("/usage says").font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                    TextField("40", text: $calibrationInput)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 54)
+                        .onSubmit(commitCalibration)
+                    Text("%").font(.system(size: 11)).foregroundStyle(Theme.textMuted)
+                    Spacer()
+                    Button("Save", action: commitCalibration).font(.system(size: 11))
+                    Button("Cancel", action: cancelCalibration)
+                        .font(.system(size: 11))
+                }
+                if let calibrationProblem {
+                    Text(calibrationProblem.message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.danger)
+                }
             }
         } else {
             HStack(spacing: 12) {
@@ -452,19 +461,21 @@ struct PopoverView: View {
         snapshot.resetDescription(.abbreviated)
     }
 
-    private var remainingDescription: String {
-        let total = DisplayValue.seconds(snapshot.window.timeRemaining)
-        let days = total / 86_400
-        let hours = (total % 86_400) / 3600
-        return days > 0 ? "\(days)d \(hours)h" : "\(hours)h"
+    /// A refused figure keeps the field open and says why; it used to close
+    /// the field with nothing saved. The rule is `CalibrationInput`.
+    private func commitCalibration() {
+        switch CalibrationInput.parse(calibrationInput) {
+        case .success(let value):
+            store.calibrate(observedPercent: value)
+            cancelCalibration()
+        case .failure(let problem):
+            calibrationProblem = problem
+        }
     }
 
-    private func commitCalibration() {
-        if let value = Double(calibrationInput.trimmingCharacters(in: .whitespaces)),
-           value > 0, value <= 200 {
-            store.calibrate(observedPercent: value)
-        }
+    private func cancelCalibration() {
         calibrationInput = ""
+        calibrationProblem = nil
         isCalibrating = false
     }
 }

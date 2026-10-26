@@ -292,6 +292,38 @@ public struct Snapshot: Equatable, Sendable {
         regrant == nil ? "At this rate" : "Rate since re-grant"
     }
 
+    /// How long the rate behind `projectedPercent` has been measured: since the
+    /// open re-grant, or since the window began when none is.
+    public var projectionBasis: TimeInterval {
+        window.now.timeIntervalSince(regrant?.startedAt ?? window.start)
+    }
+
+    /// The popover's projection row turns red and says "over limit" only on
+    /// this: over the limit, on at least a day of rate.
+    ///
+    /// 🔴 A rate measured over less than a day has not seen a night, so it
+    /// overstates the week. The real case was a re-grant at 3:06 PM on a
+    /// Friday and "over limit · 116% by reset" in red 21 hours later, on a
+    /// six-day epoch. `Projection.minimumElapsedFraction` could not catch it:
+    /// 21 hours is 15% of that epoch. The number is still shown; only the
+    /// alarm waits. `PollDecision` still polls on the raw figure, which is the
+    /// right reaction to an early reading: get a better one.
+    public var projectionIsWarning: Bool {
+        Projection.isOverLimit(projectedPercent)
+            && projectionBasis >= Projection.minimumWarningBasis
+    }
+
+    /// The projection row's value: `over limit · 116% by reset` once it is an
+    /// alarm, `early · 116% by reset` while it is over on less than a day.
+    /// Leads with the word either way, so the state never rests on colour.
+    public var projectionDescription: String {
+        guard Projection.isOverLimit(projectedPercent), !projectionIsWarning,
+              let projectedPercent else {
+            return Projection.description(projectedPercent)
+        }
+        return "early · \(DisplayValue.whole(projectedPercent))% by reset"
+    }
+
     /// No calibration yet — show the pace target alone.
     public var isPaceOnly: Bool { estimatedPercent == nil }
 

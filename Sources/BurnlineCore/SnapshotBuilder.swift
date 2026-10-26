@@ -31,7 +31,7 @@ public enum SnapshotBuilder {
         let window: Window
         let scheduleIsAutomatic: Bool
         if let capture = rateLimit {
-            window = windowFromReset(capture.sevenDay.resetsDate, now: now)
+            window = windowFromReset(capture.sevenDay.resetsDate, now: now, timeZone: .current)
             scheduleIsAutomatic = true
         } else {
             window = WindowMath.window(for: settings.resetSchedule, now: now)
@@ -197,9 +197,9 @@ public enum SnapshotBuilder {
 
     /// The window ending at `reset`, rolled forward in 7-day steps if that
     /// instant has already passed — a capture can outlive its own window.
-    private static func windowFromReset(_ reset: Date, now: Date) -> Window {
+    static func windowFromReset(_ reset: Date, now: Date, timeZone: TimeZone) -> Window {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = .current
+        calendar.timeZone = timeZone
 
         var end = reset
         // Calendar arithmetic, not seconds: a DST week is 167 or 169 hours.
