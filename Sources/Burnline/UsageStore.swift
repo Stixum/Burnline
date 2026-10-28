@@ -327,7 +327,9 @@ final class UsageStore {
                         Task { @MainActor in self?.publishFillProgress(progress) }
                     }
                     guard !Task.isCancelled else { return }
-                    if await !writer.heal(rows: result.rows, range: healRange) {
+                    // A refusal is not reported: nothing was lost, and the next
+                    // launch tries again once the transcripts can be read.
+                    if await writer.heal(result, range: healRange) == .failed {
                         failure = "The archive could not be rewritten. It will be retried at next launch."
                     }
                 } catch {

@@ -234,3 +234,58 @@ private func allRows(_ store: HistoryStore) throws -> [HistoryRow] {
     #expect(try parse(#"{"cleanupPeriodDays": true}"#) == nil)
     #expect(ClaudeSettingsFile.cleanupPeriodDays(in: nil) == nil)
 }
+
+// MARK: - Refusing a read that cannot stand in for the archive
+
+// The fill does not throw when the transcript folder is missing or unreadable:
+// it finds no files and returns no rows. Healed from that, every covered bucket
+// in range was replaced with nothing — up to 29 days of archive — and a parser
+// version bump re-runs the heal on every install that upgrades.
+
+private func healFixture() async throws -> (HistoryStore, HistoryWriter, ClosedRange<Int>, Int) {
+    let b1 = healBucket(daysAgo(10))
+    let store = try oldArchive(healDirectory(), from: daysAgo(12), through: daysAgo(8),
+                               rows: [healCell(b1, output: 10)])
+    let writer = HistoryWriter(store: store, schedule: healSchedule)
+    let range = try #require(await writer.rangeToHeal(since: daysAgo(20)))
+    return (store, writer, range, b1)
+}
+
+@Test func aHealRefusesAReadThatOpenedNoTranscripts() async throws {
+    let (store, writer, range, b1) = try await healFixture()
+
+    let outcome = await writer.heal(HistoryFill.Result(rows: [], truncated: false, filesOpened: 0),
+                                    range: range)
+
+    #expect(outcome == .refused)
+    #expect(try allRows(store) == [healCell(b1, output: 10)])
+    #expect(try store.loadManifest().parserVersion != TranscriptParser.version)
+}
+
+/// A read that found nothing at or before the range start cannot restate the
+/// start of the range: those transcripts are gone, and the cells are all that
+/// is left of them.
+@Test func aHealRefusesATruncatedRead() async throws {
+    let (store, writer, range, b1) = try await healFixture()
+
+    let outcome = await writer.heal(HistoryFill.Result(rows: [healCell(b1, output: 5)],
+                                                       truncated: true, filesOpened: 3),
+                                    range: range)
+
+    #expect(outcome == .refused)
+    #expect(try allRows(store) == [healCell(b1, output: 10)])
+    #expect(try store.loadManifest().parserVersion != TranscriptParser.version)
+}
+
+/// The control: a complete read still heals, and marks the archive current.
+@Test func aCompleteReadStillHeals() async throws {
+    let (store, writer, range, b1) = try await healFixture()
+
+    let outcome = await writer.heal(HistoryFill.Result(rows: [healCell(b1, output: 5)],
+                                                       truncated: false, filesOpened: 1),
+                                    range: range)
+
+    #expect(outcome == .healed)
+    #expect(try allRows(store) == [healCell(b1, output: 5)])
+    #expect(try store.loadManifest().parserVersion == TranscriptParser.version)
+}
