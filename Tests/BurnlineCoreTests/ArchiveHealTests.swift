@@ -289,3 +289,23 @@ private func healFixture() async throws -> (HistoryStore, HistoryWriter, ClosedR
     #expect(try allRows(store) == [healCell(b1, output: 5)])
     #expect(try store.loadManifest().parserVersion == TranscriptParser.version)
 }
+
+/// The rehearsal on a copy of the real archive: the heal renamed
+/// `ConcertTracker/iOS` to `iOS` for the 29 days it re-read, splitting one
+/// project across two names. Named through the registry, seeded from the
+/// archive, it keeps the name the archive already uses.
+@Test func aHealKeepsTheNameTheArchiveAlreadyFilesAProjectUnder() async throws {
+    let b1 = healBucket(daysAgo(10))
+    let folder = "-Users-me-projects-ConcertTracker-iOS"
+    let store = try oldArchive(healDirectory(), from: daysAgo(12), through: daysAgo(8),
+                               rows: [healCell(b1, "ConcertTracker/iOS", output: 10)])
+    let writer = HistoryWriter(store: store, schedule: healSchedule)
+    let range = try #require(await writer.rangeToHeal(since: daysAgo(20)))
+
+    let outcome = await writer.heal(HistoryFill.Result(
+        rows: [healCell(b1, folder, output: 7)], truncated: false, filesOpened: 1,
+        workingDirectories: [folder: ["/Users/me/projects/ConcertTracker/iOS"]]), range: range)
+
+    #expect(outcome == .healed)
+    #expect(try allRows(store) == [healCell(b1, "ConcertTracker/iOS", output: 7)])
+}

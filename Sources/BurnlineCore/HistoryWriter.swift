@@ -25,6 +25,10 @@ public actor HistoryWriter {
     private var coverage: Coverage
     private var anchor: Date?
     private var hasEverObservedAReset: Bool
+    /// Folder → name, write-once. See `named(_:workingDirectories:)`.
+    private var projects: ProjectRegistry
+    /// Every name the cell files hold, read the first time a folder needs one.
+    private var archivedNames: Set<String>?
 
     /// Loads everything the archive knows about itself. `loadManifest`,
     /// `loadWindows` and `loadCoverage` all return empty defaults rather than
@@ -33,6 +37,7 @@ public actor HistoryWriter {
         self.store = store
         self.schedule = schedule
         self.coverage = (try? store.loadCoverage()) ?? Coverage(records: [])
+        self.projects = store.loadProjects()
 
         // 🔴 Manifest loss must not reinstate placeholder bounds. The newest
         // row that observed a real reset carries the anchor too, so the archive
@@ -64,6 +69,10 @@ public actor HistoryWriter {
         // no `now` parameter because a caller's clock is exactly the input that
         // must not be able to claim an unclosed bucket.
         let now = Date()
+        let payload = HistoryArchive.Payload(
+            rows: named(payload.rows, workingDirectories: payload.workingDirectories),
+            span: payload.span, truncated: payload.truncated,
+            workingDirectories: payload.workingDirectories)
         appendRowsThenCoverage(payload: payload, filledBy: filledBy, now: now)
         if let observation { advanceAnchor(to: observation.resetsAt) }
         writeCompletedWindows(now: now)
@@ -147,7 +156,44 @@ public actor HistoryWriter {
     /// background re-read is.
     public func heal(_ fill: HistoryFill.Result, range: ClosedRange<Int>) async -> HealOutcome {
         guard fill.filesOpened > 0, !fill.truncated else { return .refused }
-        return await heal(rows: fill.rows, range: range) ? .healed : .failed
+        let rows = named(fill.rows, workingDirectories: fill.workingDirectories)
+        return await heal(rows: rows, range: range) ? .healed : .failed
+    }
+
+    // MARK: - Project names
+
+    /// Rows whose `project` is an encoded folder, renamed through the
+    /// registry, then re-summed: two folders can resolve to one name, and two
+    /// rows on one key would otherwise lose one to dedupe-on-read.
+    ///
+    /// 🔴 The ONE place a folder becomes a name, for the flush, the fill and
+    /// the heal alike. Names used to be resolved in each path against whatever
+    /// set of folders that path held, so a project's name flipped when the set
+    /// changed (`iOS` ↔ `ConcertTracker/iOS`), and a bucket written twice
+    /// across a flip was counted twice.
+    func named(_ rows: [HistoryRow], workingDirectories: [String: Set<String>]) -> [HistoryRow] {
+        guard !rows.isEmpty else { return rows }
+        var evidence = workingDirectories
+        for row in rows where evidence[row.project] == nil { evidence[row.project] = [] }
+        let before = projects
+        let names = projects.names(for: evidence) {
+            if let archivedNames { return archivedNames }
+            let loaded = store.projectNames()
+            archivedNames = loaded
+            return loaded
+        }
+        if projects != before { try? store.saveProjects(projects) }
+
+        var totals: [HistoryRow.Key: TokenCounts] = [:]
+        for row in rows {
+            let key = HistoryRow.Key(bucket: row.bucket, project: names[row.project] ?? row.project,
+                                     model: row.model)
+            totals[key, default: .zero] += row.counts
+        }
+        return totals
+            .map { HistoryRow(bucket: $0.key.bucket, project: $0.key.project,
+                              model: $0.key.model, counts: $0.value) }
+            .sorted { ($0.bucket, $0.project, $0.model) < ($1.bucket, $1.project, $1.model) }
     }
 
     /// Replaces the archived cells in `range` with `rows`, freshly counted

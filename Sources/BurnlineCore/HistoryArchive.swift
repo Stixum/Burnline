@@ -5,19 +5,39 @@ public enum HistoryArchive {
 
     /// Rows to append, plus **the range they establish**.
     public struct Payload: Equatable, Sendable {
+        /// ⚠️ From the flush and the fill, `project` holds the ENCODED FOLDER,
+        /// not a name: `HistoryWriter` names rows at commit, through its
+        /// write-once registry. A `project` with no leading `-` is already a
+        /// name and passes through.
         public let rows: [HistoryRow]
         /// nil when nothing was uncovered — there is no new coverage to claim.
         public let span: ClosedRange<Int>?
         /// A fill could not reach `span.lowerBound`; the record still claims
         /// the full requested range so the shortfall is a *known* gap.
         public let truncated: Bool
+        /// Encoded folder → the `cwd` values its transcripts named: the
+        /// evidence the writer names a folder from.
+        public let workingDirectories: [String: Set<String>]
 
         /// Explicit and public — the memberwise init is internal, and callers
         /// in other modules must construct this for the fill path.
         public init(rows: [HistoryRow], span: ClosedRange<Int>?, truncated: Bool = false) {
+            self.init(rows: rows, span: span, truncated: truncated, workingDirectories: [:])
+        }
+
+        public init(rows: [HistoryRow], span: ClosedRange<Int>?, truncated: Bool,
+                    workingDirectories: [String: Set<String>]) {
             self.rows = rows
             self.span = span
             self.truncated = truncated
+            self.workingDirectories = workingDirectories
+        }
+
+        /// The fill path's payload. Use this rather than `rows:` alone, which
+        /// would drop the evidence the folders are named from.
+        public init(fill: HistoryFill.Result, span: ClosedRange<Int>?) {
+            self.init(rows: fill.rows, span: span, truncated: fill.truncated,
+                      workingDirectories: fill.workingDirectories)
         }
     }
 
@@ -37,7 +57,8 @@ public enum HistoryArchive {
             return Payload(rows: [], span: nil)
         }
         return Payload(rows: rows(from: cache, coverage: coverage, through: closedBefore),
-                       span: lo...hi)
+                       span: lo...hi, truncated: false,
+                       workingDirectories: workingDirectories(in: cache))
     }
 
     /// Rows for every CLOSED bucket that coverage does not already hold.
@@ -51,12 +72,9 @@ public enum HistoryArchive {
                             through closedBefore: Int) -> [HistoryRow] {
         let step = Int(Bucket.seconds)
         var totals: [HistoryRow.Key: TokenCounts] = [:]
-        let projects = ProjectName.resolve(workingDirectories: cache.files.reduce(into: [:]) {
-            $0[projectDirectory(of: $1.key), default: []].formUnion($1.value.workingDirectories ?? [])
-        })
 
         for (path, state) in cache.files {
-            let project = projects[projectDirectory(of: path)] ?? "unknown"
+            let project = projectDirectory(of: path)
             for (rawKey, byModel) in state.cells {
                 guard let index = Int(rawKey) else { continue }
                 let start = index * step
@@ -74,6 +92,13 @@ public enum HistoryArchive {
             .map { HistoryRow(bucket: $0.key.bucket, project: $0.key.project,
                               model: $0.key.model, counts: $0.value) }
             .sorted { ($0.bucket, $0.project, $0.model) < ($1.bucket, $1.project, $1.model) }
+    }
+
+    /// Encoded folder → every `cwd` its cached files have named.
+    static func workingDirectories(in cache: ScanCache) -> [String: Set<String>] {
+        cache.files.reduce(into: [:]) {
+            $0[projectDirectory(of: $1.key), default: []].formUnion($1.value.workingDirectories ?? [])
+        }
     }
 
     /// The encoded project directory a transcript path sits under. Session and

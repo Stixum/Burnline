@@ -631,3 +631,51 @@ private let day: TimeInterval = 86_400
 
     #expect(start == Date(timeIntervalSince1970: Double(bucketStart(now.addingTimeInterval(-10 * day)))))
 }
+
+// MARK: - Project names, once
+
+private func folderCell(_ bucket: Int, _ folder: String, output: Int = 1) -> HistoryRow {
+    HistoryRow(bucket: bucket, project: folder, model: "claude-opus-5", counts: TokenCounts(output: output))
+}
+
+/// The flush and the fill used to name folders themselves, each against its own
+/// set; here a second folder ending in `iOS` arrives and the first must not be
+/// renamed — on disk, and after a relaunch.
+@Test func aFolderKeepsItsNameAcrossCommitsWhenANewFolderSharesItsBasename() async throws {
+    let directory = writerDirectory()
+    let store = HistoryStore(directory: directory)
+    let writer = HistoryWriter(store: store, schedule: writerSchedule)
+    let b1 = epoch(observedReset) / writerStep * writerStep, b2 = b1 + writerStep
+
+    await writer.commit(payload: .init(rows: [folderCell(b1, "-p-foo-iOS")], span: b1...b1, truncated: false,
+                                       workingDirectories: ["-p-foo-iOS": ["/p/foo/iOS"]]),
+                        filledBy: "scan", observation: nil)
+    await writer.commit(payload: .init(rows: [folderCell(b2, "-p-foo-iOS"), folderCell(b2, "-p-bar-iOS")],
+                                       span: b2...b2, truncated: false,
+                                       workingDirectories: ["-p-foo-iOS": ["/p/foo/iOS"],
+                                                            "-p-bar-iOS": ["/p/bar/iOS"]]),
+                        filledBy: "scan", observation: nil)
+
+    let rows = try store.rows(in: Date(timeIntervalSince1970: Double(b1))...Date(timeIntervalSince1970: Double(b2))).rows
+    #expect(Set(rows.map(\.project)) == ["iOS", "bar/iOS"])
+    #expect(rows.filter { $0.project == "iOS" }.map(\.bucket).sorted() == [b1, b2])
+    #expect(store.loadProjects().names == ["-p-foo-iOS": "iOS", "-p-bar-iOS": "bar/iOS"])
+}
+
+/// Two folders can resolve to one name (a guessed fallback, a plain name).
+/// Rows on one key must be summed, or dedupe-on-read keeps only one.
+@Test func rowsThatResolveToOneNameAreSummedNotDeduplicated() async throws {
+    let directory = writerDirectory()
+    let store = HistoryStore(directory: directory)
+    let writer = HistoryWriter(store: store, schedule: writerSchedule)
+    let b1 = epoch(observedReset) / writerStep * writerStep
+
+    await writer.commit(payload: .init(rows: [folderCell(b1, "-x-Burnline", output: 10),
+                                              folderCell(b1, "Burnline", output: 5)],
+                                       span: b1...b1, truncated: false, workingDirectories: [:]),
+                        filledBy: "scan", observation: nil)
+
+    let rows = try store.rows(in: Date(timeIntervalSince1970: Double(b1))...Date(timeIntervalSince1970: Double(b1))).rows
+    #expect(rows.map(\.project) == ["Burnline"])
+    #expect(rows.map(\.output) == [15])
+}

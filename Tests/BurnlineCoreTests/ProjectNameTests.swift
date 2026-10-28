@@ -2,23 +2,30 @@ import Foundation
 import Testing
 @testable import BurnlineCore
 
+/// A first naming of `workingDirectories` against an empty archive: what every
+/// folder below is called the first time it is seen.
+private func firstNames(_ workingDirectories: [String: Set<String>]) -> [String: String] {
+    var projects = ProjectRegistry()
+    return projects.names(for: workingDirectories, existing: { [] })
+}
+
 struct ProjectNameTests {
     @Test func projectNameIsTheBasename() {
-        let names = ProjectName.resolve(["-Users-seanmccauley-Projects-Burnline"])
-        #expect(names["-Users-seanmccauley-Projects-Burnline"] == "Burnline")
+        let names = firstNames(["-Users-me-Projects-Burnline": ["/Users/me/Projects/Burnline"]])
+        #expect(names["-Users-me-Projects-Burnline"] == "Burnline")
     }
 
     @Test func collidingBasenamesGainOneParentComponent() {
-        let names = ProjectName.resolve([
-            "-Users-me-work-Analyzer",
-            "-Users-me-personal-Analyzer",
+        let names = firstNames([
+            "-Users-me-work-Analyzer": ["/Users/me/work/Analyzer"],
+            "-Users-me-personal-Analyzer": ["/Users/me/personal/Analyzer"],
         ])
         #expect(names["-Users-me-work-Analyzer"] == "work/Analyzer")
         #expect(names["-Users-me-personal-Analyzer"] == "personal/Analyzer")
     }
 
     @Test func degenerateDirectoryNameDoesNotCrash() {
-        let names = ProjectName.resolve(["", "-"])
+        let names = firstNames(["": [], "-": ["/"]])
         #expect(names[""] != nil)
         #expect(names["-"] != nil)
     }
@@ -33,14 +40,12 @@ struct ProjectNameTests {
 // reproduces the folder name is the project root.
 
 @Test func aHyphenatedProjectIsNamedFromItsOwnWorkingDirectory() {
-    let names = ProjectName.resolve(workingDirectories: [
-        "-Users-me-Projects-train-times": ["/Users/me/Projects/train-times"],
-    ])
+    let names = firstNames(["-Users-me-Projects-train-times": ["/Users/me/Projects/train-times"]])
     #expect(names["-Users-me-Projects-train-times"] == "train-times")
 }
 
 @Test func hyphenatedProjectsSharingABasenameStayApart() {
-    let names = ProjectName.resolve(workingDirectories: [
+    let names = firstNames([
         "-p-foo-x-api": ["/p/foo/x-api"],
         "-p-bar-x-api": ["/p/bar/x-api"],
     ])
@@ -51,7 +56,7 @@ struct ProjectNameTests {
 /// A session that `cd`s into a subfolder names that subfolder too. Only the
 /// path that encodes to the folder is the root; the rest are ignored.
 @Test func aWorkingDirectoryThatIsNotTheRootIsIgnored() {
-    let names = ProjectName.resolve(workingDirectories: [
+    let names = firstNames([
         "-Users-me-Projects-train-times": ["/Users/me/Projects/train-times/Sources",
                                            "/Users/me/Projects/train-times"],
         "-Users-me-Projects-other-app": ["/Users/me/Projects/other-app/Sources"],
@@ -62,8 +67,24 @@ struct ProjectNameTests {
 }
 
 @Test func spacesAndDotsInAProjectNameSurvive() {
-    let names = ProjectName.resolve(workingDirectories: [
-        "-Users-me-My-Project-v2": ["/Users/me/My Project.v2"],
-    ])
+    let names = firstNames(["-Users-me-My-Project-v2": ["/Users/me/My Project.v2"]])
     #expect(names["-Users-me-My-Project-v2"] == "My Project.v2")
+}
+
+/// Claude Code encodes the path as it was typed, and the transcripts record it
+/// as it is: `-Users-me-projects-…` against `/Users/me/Projects/…` on this Mac.
+/// macOS volumes are case-insensitive by default, so case is no evidence of a
+/// different folder — and without the match the name fell back to a guess.
+@Test func aRootDifferingOnlyInCaseIsStillTheRoot() {
+    let names = firstNames([
+        "-Users-me-projects-ConcertTracker-iOS": ["/Users/me/Projects/ConcertTracker-iOS",
+                                                  "/Users/me/Projects/ConcertTracker-iOS/.superpowers/b2b"],
+    ])
+    #expect(names["-Users-me-projects-ConcertTracker-iOS"] == "ConcertTracker-iOS")
+}
+
+/// The control: an exact match wins over one that differs only in case.
+@Test func anExactRootIsPreferredOverOneDifferingInCase() {
+    let names = firstNames(["-p-Api": ["/p/API", "/p/Api"]])
+    #expect(names["-p-Api"] == "Api")
 }

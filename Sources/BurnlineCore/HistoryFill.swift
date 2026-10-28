@@ -26,11 +26,20 @@ public struct HistoryFill: Sendable {
         public let truncated: Bool
         /// Files actually opened — pins the mtime lower bound in a test.
         public let filesOpened: Int
+        /// Encoded folder → the `cwd` values its transcripts named. `rows`
+        /// carry the folder as `project`; `HistoryWriter` names them.
+        public let workingDirectories: [String: Set<String>]
 
         public init(rows: [HistoryRow], truncated: Bool, filesOpened: Int) {
+            self.init(rows: rows, truncated: truncated, filesOpened: filesOpened, workingDirectories: [:])
+        }
+
+        public init(rows: [HistoryRow], truncated: Bool, filesOpened: Int,
+                    workingDirectories: [String: Set<String>]) {
             self.rows = rows
             self.truncated = truncated
             self.filesOpened = filesOpened
+            self.workingDirectories = workingDirectories
         }
     }
 
@@ -131,10 +140,9 @@ public struct HistoryFill: Sendable {
             }
         }
 
-        let projects = ProjectName.resolve(workingDirectories: directories)
         let rows = totals
             .map { HistoryRow(bucket: $0.key.bucket,
-                              project: projects[$0.key.directory] ?? "unknown",
+                              project: $0.key.directory,
                               model: $0.key.model,
                               counts: $0.value) }
             .sorted { ($0.bucket, $0.project, $0.model) < ($1.bucket, $1.project, $1.model) }
@@ -144,7 +152,8 @@ public struct HistoryFill: Sendable {
         // answer this archive cannot recover from.
         return Result(rows: rows,
                       truncated: (oldest ?? .distantFuture) > from,
-                      filesOpened: filesOpened)
+                      filesOpened: filesOpened,
+                      workingDirectories: directories)
     }
 
     /// Every record in the buckets a coverage range names, folded into rows.
@@ -173,7 +182,8 @@ public struct HistoryFill: Sendable {
                              onProgress: onProgress)
         return Result(rows: read.rows.filter { range.contains($0.bucket) },
                       truncated: read.truncated,
-                      filesOpened: read.filesOpened)
+                      filesOpened: read.filesOpened,
+                      workingDirectories: read.workingDirectories)
     }
 
     /// Every file this range could possibly draw from, in enumeration order.
