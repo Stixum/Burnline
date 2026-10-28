@@ -31,6 +31,13 @@ private let kinds: [AuthBlock.Kind] = [.signedOut, .keychainLocked, .signInExpir
     #expect(command == "/custom/bin/claude auth login")
 }
 
+/// The command lands in a `/bin/sh` script and on the clipboard. A home
+/// directory with a space split it at the space and the button did nothing.
+@Test func theSignInCommandQuotesAnExecutablePathWithASpace() {
+    let command = AuthBlock.Kind.signedOut.command(claudeExecutable: "/Users/Mary Ann/.local/bin/claude")
+    #expect(command == "'/Users/Mary Ann/.local/bin/claude' auth login")
+}
+
 /// A locked keychain is not a sign-in problem and must not offer a sign-in.
 @Test func aLockedKeychainUnlocksRatherThanSigningIn() {
     let command = AuthBlock.Kind.keychainLocked.command(claudeExecutable: "/bin/claude")

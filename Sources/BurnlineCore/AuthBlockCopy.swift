@@ -46,7 +46,7 @@ public extension AuthBlock.Kind {
     /// from a button press, killing every other session on the Mac.
     func command(claudeExecutable: String) -> String {
         switch self {
-        case .signedOut, .signInExpired: "\(claudeExecutable) auth login"
+        case .signedOut, .signInExpired: "\(ShellQuote.word(claudeExecutable)) auth login"
         case .keychainLocked:            "security unlock-keychain"
         }
     }
