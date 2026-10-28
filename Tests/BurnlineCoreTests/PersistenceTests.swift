@@ -148,3 +148,40 @@ private func settingsJSON(multipliers: String) -> String {
     #expect(loaded.weights.modelMultipliers == [ModelMultiplier(match: "opus", multiplier: 3),
                                                 ModelMultiplier(match: "sonnet", multiplier: 1)])
 }
+
+// A missing key already fell back, but a key with a value this version does not
+// know threw — `decodeIfPresent` throws on an unknown raw value — and
+// `SettingsStore.load` then returned `.default`: every setting gone, and the
+// next save wrote the defaults over the file. A refresh interval of 10, a menu
+// bar mode a later version added, or a downgrade all did it.
+@Test func anUnknownValueFallsBackForItsFieldAloneAndKeepsTheRest() throws {
+    let dir = tempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let json = """
+    {"resetSchedule":{"weekday":6,"hour":2,"minute":0,"timeZoneIdentifier":"America/Chicago"},
+     "weights":{"input":1,"cacheWrite":1.25,"cacheRead":0.1,"output":7,"defaultMultiplier":1,
+                "modelMultipliers":[{"match":"opus","multiplier":3}]},
+     "calibrationAnchors":[{"id":"6F1C2C1E-0000-4000-8000-000000000001","timestamp":0,
+                            "observedPercent":40,"unitsInWindow":4000}],
+     "launchAtLogin":true,
+     "usageRefreshInterval":10, "menuBarMode":"sparkline", "targetMode":"tomorrow",
+     "dayBoundary":"lunar", "notifications":"loud",
+     "refreshesUsageAutomatically":"yes", "hasSeenOnboarding":true}
+    """
+    try json.write(to: dir.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
+
+    let loaded = SettingsStore(directory: dir).load()
+    // Kept: everything the file says that this version understands.
+    #expect(loaded.weights.output == 7)
+    #expect(loaded.calibrationAnchors.map(\.observedPercent) == [40])
+    #expect(loaded.resetSchedule.weekday == 6)
+    #expect(loaded.launchAtLogin == true)
+    #expect(loaded.hasSeenOnboarding == true)
+    // Fallen back, one field at a time.
+    #expect(loaded.usageRefreshInterval == .fortyFive)
+    #expect(loaded.menuBarMode == .usedOverTarget)
+    #expect(loaded.targetMode == .realTime)
+    #expect(loaded.dayBoundary == .windowDay)
+    #expect(loaded.notifications == .default)
+    #expect(loaded.refreshesUsageAutomatically == false)
+}
