@@ -91,3 +91,14 @@ private func cache(files: [String: [String: TokenCounts]]) -> ScanCache {
                                    through: bucketStart + 900)
     #expect(rows.first?.project == "Burnline")
 }
+
+@Test func theFlushNamesAProjectFromItsWorkingDirectory() {
+    var scan = cache(files: ["/p/projects/-Users-me-Projects-train-times/a.jsonl":
+                                ["claude-opus-5": TokenCounts(output: 10)]])
+    scan.files["/p/projects/-Users-me-Projects-train-times/a.jsonl"]?.workingDirectories =
+        ["/Users/me/Projects/train-times"]
+    let rows = HistoryArchive.rows(from: scan, coverage: Coverage(records: []),
+                                   through: bucketStart + 900)
+    #expect(rows.map(\.project) == ["train-times"])
+}
+

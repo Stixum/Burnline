@@ -13,8 +13,9 @@ public struct TranscriptParser {
     ///
     /// 1 — one record per transcript line (to 1.5): a multi-block message
     /// counted once per block. 2 — one record per message, per-field maximum
-    /// across its lines (1.5.1).
-    public static let version = 2
+    /// across its lines (1.5.1). 3 — project names from the transcripts' own
+    /// `cwd` (see `ProjectName`), so a heal renames what it re-reads.
+    public static let version = 3
 
     private let fractional: ISO8601DateFormatter
     private let plain: ISO8601DateFormatter
@@ -42,6 +43,9 @@ public struct TranscriptParser {
     public struct Parsed: Equatable, Sendable {
         public let records: [UsageRecord]
         public let lastMessage: Continuation?
+        /// Every `cwd` the usage lines named. One of them is the project root
+        /// the transcript's directory encodes; see `ProjectName`.
+        public let workingDirectories: Set<String>
     }
 
     /// Parses whole lines only. `data` must end at a line boundary.
@@ -76,6 +80,7 @@ public struct TranscriptParser {
         var currentMax = continuation?.counts ?? .zero
         var credited = continuation?.counts ?? .zero
         var currentIndex: Int?
+        var workingDirectories = Set<String>()
 
         for line in data.split(separator: Self.newline, omittingEmptySubsequences: true) {
             let lineData = Data(line)
@@ -86,6 +91,7 @@ public struct TranscriptParser {
                   let usage = raw.message?.usage,
                   let stamp = raw.timestamp,
                   let timestamp = date(from: stamp) else { continue }
+            if let cwd = raw.cwd { workingDirectories.insert(cwd) }
 
             let counts = TokenCounts(input: usage.inputTokens ?? 0,
                                      output: usage.outputTokens ?? 0,
@@ -115,7 +121,8 @@ public struct TranscriptParser {
             currentIndex = currentId == nil ? nil : records.count - 1
         }
         return Parsed(records: records,
-                      lastMessage: currentId.map { Continuation(id: $0, counts: currentMax) })
+                      lastMessage: currentId.map { Continuation(id: $0, counts: currentMax) },
+                      workingDirectories: workingDirectories)
     }
 
     private static func max(_ a: TokenCounts, _ b: TokenCounts) -> TokenCounts {
@@ -156,6 +163,7 @@ public struct TranscriptParser {
 private struct TranscriptLine: Decodable {
     let type: String?
     let timestamp: String?
+    let cwd: String?
     let message: Message?
 
     struct Message: Decodable {

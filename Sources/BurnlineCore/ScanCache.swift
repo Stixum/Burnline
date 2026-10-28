@@ -17,15 +17,22 @@ public struct FileState: Equatable, Sendable, Codable {
     /// cache predating it decodes with `nil`, which at worst miscounts one
     /// straddling message, once.
     public var lastMessage: TranscriptParser.Continuation?
+    /// Every `cwd` this file's usage lines have named, which is where the
+    /// project's display name comes from. Optional with no version bump, like
+    /// `lastMessage`: a file cached before it falls back to the folder name
+    /// until it is next appended to.
+    public var workingDirectories: Set<String>?
 
     public init(modifiedAt: Date = .distantPast, size: Int = 0, offset: Int = 0,
                 cells: [String: [String: TokenCounts]] = [:],
-                lastMessage: TranscriptParser.Continuation? = nil) {
+                lastMessage: TranscriptParser.Continuation? = nil,
+                workingDirectories: Set<String>? = nil) {
         self.modifiedAt = modifiedAt
         self.size = size
         self.offset = offset
         self.cells = cells
         self.lastMessage = lastMessage
+        self.workingDirectories = workingDirectories
     }
 }
 
