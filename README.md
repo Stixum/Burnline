@@ -52,7 +52,7 @@ Local files. No credentials, no telemetry, and no usage data ever leaves your Ma
 | `~/.claude.json` | read | The `cachedUsageUtilization` block, plus your plan tier |
 | `~/.claude/settings.json` | read, and write on your click | The status line, backed up first |
 
-From the transcripts it keeps each response's timestamp, model, token counts and project directory, never the message text. `~/.claude.json` also lists every project path on your machine and your account's email; Burnline keeps nothing from it except the usage block and the plan tier string.
+From the transcripts it keeps each response's timestamp, model, token counts, project directory and the working directory Claude Code recorded (that is where project names come from), never the message text. `~/.claude.json` also lists every project path on your machine and your account's email; Burnline keeps nothing from it except the usage block and the plan tier string.
 
 **Unsandboxed, on purpose.** `~/.claude` is a home dotfolder, not a TCC-protected location like Documents. An unsandboxed app reads it with no prompt and no Full Disk Access. Sandboxing would cut off the only data source.
 
