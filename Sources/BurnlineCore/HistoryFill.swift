@@ -85,7 +85,7 @@ public struct HistoryFill: Sendable {
         let parser = TranscriptParser()
         let step = Int(Bucket.seconds)
         var totals: [Cell: TokenCounts] = [:]
-        var directories = Set<String>()
+        var directories: [String: Set<String>] = [:]
         var filesOpened = 0
         var oldest: Date?
 
@@ -110,9 +110,10 @@ public struct HistoryFill: Sendable {
             // name a directory resolves to depends on which other directories
             // are in the set, so the set has to be the corpus, not the survivors.
             let directory = HistoryArchive.projectDirectory(of: url.path)
-            directories.insert(directory)
+            let parsed = parser.parse(data, after: nil)
+            directories[directory, default: []].formUnion(parsed.workingDirectories)
 
-            for record in parser.parse(data) {
+            for record in parsed.records {
                 // Dating considers every record, in range or not: one that
                 // PREDATES `from` proves the transcripts covering the start of
                 // the range still exist, which is precisely what `truncated`
@@ -130,7 +131,7 @@ public struct HistoryFill: Sendable {
             }
         }
 
-        let projects = ProjectName.resolve(directories)
+        let projects = ProjectName.resolve(workingDirectories: directories)
         let rows = totals
             .map { HistoryRow(bucket: $0.key.bucket,
                               project: projects[$0.key.directory] ?? "unknown",

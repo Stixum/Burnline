@@ -76,6 +76,9 @@ public struct TranscriptScanner: Sendable {
             }
             state.offset = newOffset
             state.lastMessage = parsed.lastMessage
+            if !parsed.workingDirectories.isEmpty {
+                state.workingDirectories = (state.workingDirectories ?? []).union(parsed.workingDirectories)
+            }
             state.size = size
             state.modifiedAt = modifiedAt
             cache.files[path] = state
@@ -91,7 +94,8 @@ public struct TranscriptScanner: Sendable {
     /// partial trailing write — sessions are appended to live.
     private func readAppended(at url: URL, from offset: Int, after continuation: TranscriptParser.Continuation?,
                               parser: TranscriptParser) -> (TranscriptParser.Parsed, Int) {
-        let nothing = TranscriptParser.Parsed(records: [], lastMessage: continuation)
+        let nothing = TranscriptParser.Parsed(records: [], lastMessage: continuation,
+                                              workingDirectories: [])
         guard let handle = try? FileHandle(forReadingFrom: url) else { return (nothing, offset) }
         defer { try? handle.close() }
 

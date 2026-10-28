@@ -117,3 +117,49 @@ private func settingsScratch() throws -> URL {
     #expect(!resolved.path.contains("~"))
     #expect(resolved.lastPathComponent == "burnline-claude-test")
 }
+
+// MARK: - A symlinked settings file
+
+// Dotfiles managers (stow, chezmoi, a bare repo) leave `settings.json` as a
+// link into a repository. An atomic write renames a new file over the PATH,
+// which replaced the link with a plain file: the repository stopped receiving
+// changes and nothing said so.
+
+private func linkedSettings() throws -> (dir: URL, file: ClaudeSettingsFile, target: URL) {
+    let dir = try settingsScratch()
+    let dotfiles = dir.appendingPathComponent("dotfiles", isDirectory: true)
+    let claude = dir.appendingPathComponent("claude", isDirectory: true)
+    try FileManager.default.createDirectory(at: dotfiles, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
+    let target = dotfiles.appendingPathComponent("settings.json")
+    try #"{"theme":"dark"}"#.write(to: target, atomically: true, encoding: .utf8)
+    let file = ClaudeSettingsFile(directory: claude)
+    try FileManager.default.createSymbolicLink(at: file.url, withDestinationURL: target)
+    return (dir, file, target)
+}
+
+@Test func writingThroughASymlinkedSettingsFileKeepsTheLink() throws {
+    let (dir, file, target) = try linkedSettings()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    try file.write(["theme": "light"], backupSuffix: "test")
+
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: file.url.path) == target.path)
+    let written = try JSONSerialization.jsonObject(with: Data(contentsOf: target)) as? [String: Any]
+    #expect(written?["theme"] as? String == "light")
+}
+
+/// A backup that is itself a link to the file being changed backs up nothing.
+@Test func theBackupOfASymlinkedSettingsFileIsAPlainCopy() throws {
+    let (dir, file, _) = try linkedSettings()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    try file.write(["theme": "light"], backupSuffix: "test")
+
+    let backup = file.url.deletingLastPathComponent()
+        .appendingPathComponent("settings.json.burnline-backup-test")
+    let type = try FileManager.default.attributesOfItem(atPath: backup.path)[.type] as? FileAttributeType
+    #expect(type == .typeRegular)
+    let restored = try JSONSerialization.jsonObject(with: Data(contentsOf: backup)) as? [String: Any]
+    #expect(restored?["theme"] as? String == "dark")
+}

@@ -327,7 +327,9 @@ final class UsageStore {
                         Task { @MainActor in self?.publishFillProgress(progress) }
                     }
                     guard !Task.isCancelled else { return }
-                    if await !writer.heal(rows: result.rows, range: healRange) {
+                    // A refusal is not reported: nothing was lost, and the next
+                    // launch tries again once the transcripts can be read.
+                    if await writer.heal(result, range: healRange) == .failed {
                         failure = "The archive could not be rewritten. It will be retried at next launch."
                     }
                 } catch {
@@ -675,10 +677,13 @@ final class UsageStore {
         // Anchor against the window actually on screen, which may have come
         // from a live capture rather than the configured schedule.
         let window = snapshot.window
-        let units = cache.units(from: window.start, to: window.end, weights: storedSettings.weights)
+        // Raw tokens, not weighted units: the anchor is re-weighted at read
+        // time, so a later weight edit cannot rescale the calibration.
+        let tokens = cache.tokens(from: window.start, to: window.end)
         var updated = storedSettings
         updated.calibrationAnchors.append(
-            CalibrationAnchor(timestamp: now, observedPercent: observedPercent, unitsInWindow: units)
+            CalibrationAnchor(timestamp: now, observedPercent: observedPercent,
+                              tokensInWindow: tokens, weights: storedSettings.weights)
         )
         // Prune on write. `validAnchors` only filters what the fit may use, so
         // without this the stored list — and the Settings display — grows forever.

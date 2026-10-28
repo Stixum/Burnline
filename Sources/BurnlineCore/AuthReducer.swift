@@ -112,6 +112,12 @@ public enum AuthReducer {
                 // never fire. The block would be unclearable by the one signal
                 // that works for a user who never opens a terminal.
                 if let block, block.kind == resolved { return block }
+
+                // An expiry is a sign-out the poll happened to find. Every block
+                // gates polling, so the probes that follow one are never
+                // poll-discovered and report a plain `.signedOut` — the same
+                // lapse seen again, which must keep its kind and its date.
+                if let block, block.kind == .signInExpired, resolved == .signedOut { return block }
                 return AuthBlock(kind: resolved, detectedAt: now)
             }
         }

@@ -122,6 +122,34 @@ public actor HistoryWriter {
         return nil
     }
 
+    public enum HealOutcome: Equatable, Sendable {
+        case healed
+        /// The read could not stand in for what the archive holds. Nothing was
+        /// written and the archive stays unmarked, so the next launch tries again.
+        case refused
+        /// A write failed. Also unmarked.
+        case failed
+    }
+
+    /// Heals `range` from a fill of it, or refuses.
+    ///
+    /// 🔴 A fill does not throw when the transcript folder is missing or
+    /// unreadable: it finds no files and returns no rows, and healed from that,
+    /// every covered bucket in range became nothing. So does a TRUNCATED fill —
+    /// nothing found at or before the range start — for the start of the range,
+    /// whose transcripts are gone and whose cells are all that is left. Either
+    /// way the archive keeps what it has, unmarked, and the next launch tries
+    /// again.
+    ///
+    /// The cost of being this strict: someone whose Claude Code history is
+    /// younger than the heal range re-reads it each launch until the history
+    /// reaches back far enough. Losing archived weeks is not recoverable; a
+    /// background re-read is.
+    public func heal(_ fill: HistoryFill.Result, range: ClosedRange<Int>) async -> HealOutcome {
+        guard fill.filesOpened > 0, !fill.truncated else { return .refused }
+        return await heal(rows: fill.rows, range: range) ? .healed : .failed
+    }
+
     /// Replaces the archived cells in `range` with `rows`, freshly counted
     /// from the transcripts, restates the totals of every window row wholly
     /// inside it, and records the archive as current. Returns false when a
@@ -135,7 +163,11 @@ public actor HistoryWriter {
     /// A window row straddling `range.lowerBound` is left exactly as it was:
     /// part of it cannot be re-read, and a total that is half one parser's
     /// count and half another's is not better than either.
-    public func heal(rows: [HistoryRow], range: ClosedRange<Int>) async -> Bool {
+    ///
+    /// ⚠️ `internal`, and the narrowing is the point: the app must come in
+    /// through `heal(_:range:)`, which refuses a read that cannot stand in for
+    /// the archive.
+    func heal(rows: [HistoryRow], range: ClosedRange<Int>) async -> Bool {
         let coverage = coverage
         do {
             try store.replaceRows(in: range, where: { coverage.contains($0) }, with: rows)

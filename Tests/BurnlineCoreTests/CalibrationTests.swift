@@ -79,3 +79,20 @@ private func anchor(percent: Double, units: Double, daysAgo: Double = 0) -> Cali
     let age = Calibration.age(of: anchors, now: now)!
     #expect(abs(age - 2 * 86_400) < 1e-6)
 }
+
+/// An anchor written before tokens were kept must still decode. A failure here
+/// is not one lost anchor: `SettingsStore.load` falls back to every default.
+@Test func anAnchorWrittenWithoutTokensStillDecodes() throws {
+    let json = #"{"id":"6F1C2C1E-0000-4000-8000-000000000001","timestamp":0,"observedPercent":40,"unitsInWindow":4000}"#
+    let anchor = try JSONDecoder().decode(CalibrationAnchor.self, from: Data(json.utf8))
+    #expect(anchor.tokensInWindow == nil)
+    #expect(anchor.units(under: .default) == 4_000)
+}
+
+@Test func anAnchorsTokensSurviveARoundTrip() throws {
+    let anchor = CalibrationAnchor(timestamp: now, observedPercent: 40,
+                                   tokensInWindow: ["claude-sonnet-5": TokenCounts(input: 4_000)],
+                                   weights: .default)
+    let decoded = try JSONDecoder().decode(CalibrationAnchor.self, from: JSONEncoder().encode(anchor))
+    #expect(decoded == anchor)
+}

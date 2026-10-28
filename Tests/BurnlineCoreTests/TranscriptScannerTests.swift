@@ -259,3 +259,24 @@ private func blockLine(id: String, output: Int) -> String {
     cache = try scanner.scan(cache: cache, now: scanTime)
     #expect(abs(cache.units(from: never, to: .distantFuture, weights: .default) - 5_527 * 5) < 1e-9)
 }
+
+/// Kept across incremental reads: an append that names no new directory must
+/// not forget the ones already seen.
+@Test func theScannerKeepsEveryWorkingDirectoryAFileHasNamed() throws {
+    let dir = TempDir()
+    func cwdLine(_ cwd: String, id: String) -> String {
+        """
+        {"type":"assistant","cwd":"\(cwd)","timestamp":"\(recentISO)","message":{"id":"\(id)","model":"claude-sonnet-5","usage":{"output_tokens":5}}}\n
+        """
+    }
+    _ = dir.write(cwdLine("/Users/me/Projects/train-times", id: "a"),
+                  to: "projects/-Users-me-Projects-train-times/s.jsonl")
+    let scanner = TranscriptScanner(rootURL: dir.url)
+    var cache = try scanner.scan(cache: ScanCache(), now: Date())
+    dir.append(line(output: 3), to: "projects/-Users-me-Projects-train-times/s.jsonl")
+    cache = try scanner.scan(cache: cache, now: Date().addingTimeInterval(1))
+
+    let state = try #require(cache.files.values.first)
+    #expect(state.workingDirectories == ["/Users/me/Projects/train-times"])
+}
+

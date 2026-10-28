@@ -51,7 +51,9 @@ public enum HistoryArchive {
                             through closedBefore: Int) -> [HistoryRow] {
         let step = Int(Bucket.seconds)
         var totals: [HistoryRow.Key: TokenCounts] = [:]
-        let projects = ProjectName.resolve(Set(cache.files.keys.map(projectDirectory(of:))))
+        let projects = ProjectName.resolve(workingDirectories: cache.files.reduce(into: [:]) {
+            $0[projectDirectory(of: $1.key), default: []].formUnion($1.value.workingDirectories ?? [])
+        })
 
         for (path, state) in cache.files {
             let project = projects[projectDirectory(of: path)] ?? "unknown"

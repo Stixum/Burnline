@@ -224,3 +224,23 @@ private func fiveHourAt(_ percent: Double, resetsIn: TimeInterval = 6_000) -> Fi
     #expect(emission.body.contains("day 3 of 7"))
     #expect(emission.identifier == "burnline.behind-pace")
 }
+
+@Test func theWeeklyNotificationNamesTheResetToTheMinute() {
+    // The 1.6.3 rounding reached the popover but not this body: a reset half a
+    // second short of midnight read "Resets Wednesday 11:59 PM".
+    func body(endingAt end: Date) -> String? {
+        let window = Window(start: end.addingTimeInterval(-7 * 86_400), end: end,
+                            now: end.addingTimeInterval(-86_400))
+        let snap = Snapshot(window: window, targetPercent: window.targetPercent,
+                            estimatedPercent: 95, projectedPercent: nil,
+                            unitsInWindow: 0, calibrationAge: nil,
+                            source: .live(capturedAt: window.now), isScanning: false)
+        return NotificationDecision.evaluate(snapshot: snap, settings: onSettings,
+                                             targetMode: .realTime, marks: NotificationMarks(),
+                                             timeZone: TimeZone(identifier: "UTC")!)
+            .emissions.first { $0.signal == .weekly }?.body
+    }
+    let midnight = Date(timeIntervalSince1970: 1_786_579_200)   // Thu 13 Aug 2026, 00:00 UTC
+    #expect(body(endingAt: midnight.addingTimeInterval(-0.5)) == "Resets Thursday 12:00 AM")
+    #expect(body(endingAt: midnight.addingTimeInterval(7 * 3_600 - 0.5)) == "Resets Thursday 7:00 AM")
+}

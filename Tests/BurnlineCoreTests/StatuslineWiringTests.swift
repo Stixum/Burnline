@@ -153,3 +153,61 @@ private let helper = "/Applications/Burnline.app/Contents/MacOS/burnline-statusl
     #expect(snippet.contains("\"refreshInterval\": 30"))
     #expect(snippet.contains("\"type\": \"command\""))
 }
+
+// MARK: - Quoting the helper path
+
+// Claude Code runs `command` through a shell. A bundle under a path with a
+// space split into two words and failed on every response, inline.
+
+private let spacedHelper = "/Users/Mary Ann/Applications/Burnline.app/Contents/MacOS/burnline-statusline"
+
+@Test func aHelperPathWithASpaceIsWrittenShellQuoted() throws {
+    let merged = StatuslineWiring.merged(into: [:], helperPath: spacedHelper)
+    let statusLine = try #require(merged["statusLine"] as? [String: Any])
+    #expect(statusLine["command"] as? String == "'\(spacedHelper)'")
+}
+
+@Test func aHelperPathWithASingleQuoteSurvivesQuoting() throws {
+    let path = "/Users/o'brien/Burnline.app/Contents/MacOS/burnline-statusline"
+    let merged = StatuslineWiring.merged(into: [:], helperPath: path)
+    let statusLine = try #require(merged["statusLine"] as? [String: Any])
+    #expect(statusLine["command"] as? String
+            == #"'/Users/o'\''brien/Burnline.app/Contents/MacOS/burnline-statusline'"#)
+}
+
+/// The control: an ordinary path is written bare, so every existing install
+/// still reads as `.configured` and nobody is told they run a different copy.
+@Test func anOrdinaryHelperPathIsWrittenBare() throws {
+    let merged = StatuslineWiring.merged(into: [:], helperPath: helper)
+    let statusLine = try #require(merged["statusLine"] as? [String: Any])
+    #expect(statusLine["command"] as? String == helper)
+    #expect(StatuslineWiring.state(settings: merged, helperPath: helper) == .configured)
+}
+
+@Test func aQuotedHelperAtTheCurrentPathIsConfigured() {
+    let merged = StatuslineWiring.merged(into: [:], helperPath: spacedHelper)
+    #expect(StatuslineWiring.state(settings: merged, helperPath: spacedHelper) == .configured)
+}
+
+/// What every earlier version wrote for such a path, and it never ran. Reading
+/// it as `.stalePath` is what offers the button that repairs it.
+@Test func anUnquotedHelperPathWithASpaceIsStaleNotConfigured() {
+    let settings: [String: Any] = ["statusLine": ["type": "command", "command": spacedHelper]]
+    #expect(StatuslineWiring.state(settings: settings, helperPath: spacedHelper)
+            == .stalePath(current: spacedHelper))
+}
+
+@Test func aQuotedHelperAtAnotherPathIsStaleNotAConflict() {
+    let elsewhere = "'/Volumes/Old Disk/Burnline.app/Contents/MacOS/burnline-statusline'"
+    let settings: [String: Any] = ["statusLine": ["type": "command", "command": elsewhere]]
+    #expect(StatuslineWiring.state(settings: settings, helperPath: helper)
+            == .stalePath(current: elsewhere))
+}
+
+@Test func theSnippetIsValidJSONWhateverThePathHolds() throws {
+    let path = #"/Users/a "b"\c/Burnline.app/Contents/MacOS/burnline-statusline"#
+    let snippet = StatuslineWiring.snippet(helperPath: path)
+    let parsed = try JSONSerialization.jsonObject(with: Data("{\(snippet)}".utf8)) as? [String: Any]
+    let statusLine = try #require(parsed?["statusLine"] as? [String: Any])
+    #expect(statusLine["command"] as? String == "'\(path)'")
+}

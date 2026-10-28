@@ -89,11 +89,17 @@ public struct ClaudeSettingsFile: Sendable {
     public func write(_ settings: [String: Any], backupSuffix: String? = nil) throws {
         let suffix = backupSuffix ?? String(Int(Date().timeIntervalSince1970))
 
-        if FileManager.default.fileExists(atPath: url.path) {
+        // ⚠️ Through the link, not over it. A dotfiles manager leaves this as a
+        // symlink into a repository; an atomic write renames a new file over
+        // the path it is given, which replaced the link with a plain file, and
+        // `copyItem` on the link made a backup that was only another link.
+        let target = url.resolvingSymlinksInPath()
+
+        if FileManager.default.fileExists(atPath: target.path) {
             let backup = url.deletingLastPathComponent()
                 .appendingPathComponent("settings.json.burnline-backup-\(suffix)")
             try? FileManager.default.removeItem(at: backup)
-            try FileManager.default.copyItem(at: url, to: backup)
+            try FileManager.default.copyItem(at: target, to: backup)
         }
 
         // Encode before creating anything: a dictionary that cannot be
@@ -103,8 +109,8 @@ public struct ClaudeSettingsFile: Sendable {
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         )
         try FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+            at: target.deletingLastPathComponent(), withIntermediateDirectories: true
         )
-        try data.write(to: url, options: .atomic)
+        try data.write(to: target, options: .atomic)
     }
 }

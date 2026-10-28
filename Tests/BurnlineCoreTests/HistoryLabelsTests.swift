@@ -152,3 +152,13 @@ private let labelWindowEnd = labelWindowStart.addingTimeInterval(7 * 86_400)
     #expect(reading.value == "61%")
     #expect(reading.note == "time unknown")
 }
+
+@Test func aWindowRangeReportedHalfASecondShortOfMidnightNamesItsOwnDays() {
+    // Anthropic's `resets_at` lands half a second short of the hour. Formatted
+    // raw, a midnight-reset week printed every bound one day early.
+    let midnight = Date(timeIntervalSince1970: 1_785_974_400)   // Thu 6 Aug 2026, 00:00 UTC
+    let start = midnight.addingTimeInterval(-0.5)
+    let text = HistoryLabels.windowRange(start: start, end: start.addingTimeInterval(7 * 86_400),
+                                         timeZone: fixedZone, locale: fixedLocale)
+    #expect(text == "Aug 6 – Aug 13")
+}

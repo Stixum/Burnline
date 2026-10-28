@@ -350,3 +350,17 @@ private final class ProgressLog: @unchecked Sendable {
     #expect(filled.rows.map(\.bucket) == [range.lowerBound, range.upperBound])
     #expect(filled.rows.map(\.output) == [10, 50])
 }
+
+/// The fill and the flush must agree, or one project is archived under two
+/// names: the flush's from the scan cache, the fill's from this read.
+@Test func theFillNamesAProjectFromItsWorkingDirectory() throws {
+    let tree = FillTree()
+    let stamp = clock.addingTimeInterval(-2 * day)
+    tree.session("""
+        {"type":"assistant","cwd":"/Users/me/Projects/train-times","timestamp":"\(iso(stamp))","message":{"model":"claude-sonnet-5","usage":{"output_tokens":100}}}\n
+        """, at: "projects/-Users-me-Projects-train-times/a.jsonl", modified: stamp)
+
+    let filled = try HistoryFill(rootURL: tree.root).cells(from: clock.addingTimeInterval(-5 * day), to: clock)
+    #expect(filled.rows.map(\.project) == ["train-times"])
+}
+

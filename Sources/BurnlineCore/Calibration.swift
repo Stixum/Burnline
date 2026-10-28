@@ -1,18 +1,39 @@
 import Foundation
 
 /// One reading of the real percentage from Claude Code's `/usage`, paired with
-/// the weighted units accumulated in the window at that moment.
+/// what the window had consumed at that moment.
 public struct CalibrationAnchor: Equatable, Sendable, Codable, Identifiable {
     public var id: UUID
     public var timestamp: Date
     public var observedPercent: Double
+    /// Weighted under the weights in force when the anchor was taken. The fit
+    /// reads `units(under:)`, never this, so a weight edit cannot rescale it.
     public var unitsInWindow: Double
+    /// The window's raw tokens by model, the facts `unitsInWindow` was weighted
+    /// from. Nil on anchors written by 1.6.3 and earlier, which keep their stored figure.
+    public var tokensInWindow: [String: TokenCounts]?
 
     public init(id: UUID = UUID(), timestamp: Date, observedPercent: Double, unitsInWindow: Double) {
         self.id = id
         self.timestamp = timestamp
         self.observedPercent = observedPercent
         self.unitsInWindow = unitsInWindow
+    }
+
+    public init(timestamp: Date, observedPercent: Double,
+                tokensInWindow: [String: TokenCounts], weights: Weights) {
+        self.init(timestamp: timestamp, observedPercent: observedPercent,
+                  unitsInWindow: Self.units(of: tokensInWindow, under: weights))
+        self.tokensInWindow = tokensInWindow
+    }
+
+    /// The anchor's units under `weights`.
+    public func units(under weights: Weights) -> Double {
+        tokensInWindow.map { Self.units(of: $0, under: weights) } ?? unitsInWindow
+    }
+
+    private static func units(of tokens: [String: TokenCounts], under weights: Weights) -> Double {
+        tokens.reduce(0) { $0 + ConsumptionModel.units(for: $1.value, model: $1.key, weights: weights) }
     }
 }
 
@@ -75,6 +96,21 @@ public enum Calibration {
                                         now: Date) -> Double? {
         guard let perPercent = unitsPerPercent(anchors, now: now), perPercent > 0 else { return nil }
         return unitsInWindow / perPercent
+    }
+
+    /// The estimate with every anchor re-weighted under `weights`, the same
+    /// weights `unitsInWindow` was computed under. Without this a weight edit
+    /// divided units under the new weights by anchors under the old ones.
+    public static func estimatedPercent(unitsInWindow: Double,
+                                        anchors: [CalibrationAnchor],
+                                        weights: Weights,
+                                        now: Date) -> Double? {
+        let reweighted = anchors.map { anchor in
+            var anchor = anchor
+            anchor.unitsInWindow = anchor.units(under: weights)
+            return anchor
+        }
+        return estimatedPercent(unitsInWindow: unitsInWindow, anchors: reweighted, now: now)
     }
 
     /// Age of the freshest valid anchor, for the popover's staleness display.

@@ -81,7 +81,8 @@ public enum SnapshotBuilder {
             capturedPercent = capture.sevenDay.usedPercent
             source = .live(capturedAt: capture.capturedDate)
         } else if let calibrated = Calibration.estimatedPercent(
-            unitsInWindow: units, anchors: settings.calibrationAnchors, now: now) {
+            unitsInWindow: units, anchors: settings.calibrationAnchors,
+            weights: settings.weights, now: now) {
             estimated = calibrated
             capturedPercent = nil
             epoch = nil

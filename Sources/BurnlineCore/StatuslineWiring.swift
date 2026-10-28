@@ -83,8 +83,12 @@ public enum StatuslineWiring {
     /// This is deliberately generous. Being wrong in this direction repoints a
     /// command that already named `burnline-statusline`; being wrong in the
     /// other direction means refusing to repair a user's own moved install.
+    ///
+    /// A quoted path (see `ShellQuote`) ends in a closing quote, so both forms
+    /// are recognised.
     static func isOurs(_ command: String) -> Bool {
         command.hasSuffix("/burnline-statusline")
+            || command.hasSuffix("/burnline-statusline'")
             || command.hasSuffix("/burnline-statusline.sh")
     }
 
@@ -100,7 +104,7 @@ public enum StatuslineWiring {
 
         let command = statusLine["command"] as? String ?? ""
         guard isOurs(command) else { return .conflict(command: command) }
-        return command == helperPath ? .configured : .stalePath(current: command)
+        return command == ShellQuote.word(helperPath) ? .configured : .stalePath(current: command)
     }
 
     /// The settings dictionary with our statusline installed.
@@ -112,7 +116,7 @@ public enum StatuslineWiring {
         var result = settings
         var statusLine = (settings["statusLine"] as? [String: Any]) ?? [:]
         statusLine["type"] = "command"
-        statusLine["command"] = helperPath
+        statusLine["command"] = ShellQuote.word(helperPath)
         if statusLine["refreshInterval"] == nil {
             statusLine["refreshInterval"] = refreshInterval
         }
@@ -122,11 +126,18 @@ public enum StatuslineWiring {
 
     /// The snippet shown for hand-merging: for the conflict case, and for anyone
     /// who would rather an app did not edit their configuration file.
+    ///
+    /// The command is JSON-encoded, not interpolated: a path holding `"` or `\`
+    /// otherwise produced a snippet that would not parse once pasted.
     public static func snippet(helperPath: String) -> String {
-        """
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .withoutEscapingSlashes
+        let command = (try? encoder.encode(ShellQuote.word(helperPath)))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
+        return """
         "statusLine": {
           "type": "command",
-          "command": "\(helperPath)",
+          "command": \(command),
           "refreshInterval": \(refreshInterval)
         }
         """

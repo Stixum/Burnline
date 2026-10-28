@@ -121,3 +121,17 @@ private func state(at date: Date, counts: TokenCounts) -> FileState {
     let decoded = try JSONDecoder().decode(ScanCache.self, from: json)
     #expect(decoded.isCompatible == false)
 }
+
+@Test func tokensInARangeAreSummedByModelAcrossFiles() {
+    var cache = ScanCache()
+    cache.files["a.jsonl"] = state(at: anchorDate.addingTimeInterval(3600), counts: TokenCounts(input: 10, output: 1))
+    cache.files["b.jsonl"] = state(at: anchorDate.addingTimeInterval(7200), counts: TokenCounts(input: 25, cacheRead: 4))
+    cache.files["c.jsonl"] = FileState(
+        modifiedAt: anchorDate, size: 100, offset: 100,
+        cells: [String(Bucket.key(for: anchorDate.addingTimeInterval(60))): ["claude-opus-5-5": TokenCounts(output: 7)]])
+    cache.files["old.jsonl"] = state(at: anchorDate.addingTimeInterval(-3600), units: 999)
+
+    let tokens = cache.tokens(from: anchorDate, to: anchorDate.addingTimeInterval(86_400))
+    #expect(tokens == ["claude-sonnet-5": TokenCounts(input: 35, output: 1, cacheRead: 4),
+                       "claude-opus-5-5": TokenCounts(output: 7)])
+}
