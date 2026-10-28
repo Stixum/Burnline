@@ -56,6 +56,27 @@ private func block(_ kind: AuthBlock.Kind, at date: Date = earlier) -> AuthBlock
     #expect(result == AuthBlock(kind: .keychainLocked, detectedAt: now))
 }
 
+/// Every kind of block gates polling, so the probe that follows an expiry is
+/// never poll-discovered: it is the 60s timer or a popover open, and it reports
+/// a plain `.signedOut`. That is the same lapse seen again, not a new finding.
+/// Treated as new, the copy changed to "signed out" within a minute and the
+/// date advanced past any capture that could have cleared it.
+@Test func anExpiredSignInSurvivesTheNextPlainProbe() {
+    let standing = block(.signInExpired, at: earlier)
+    let result = AuthReducer.reduce(standing, .probe(.blocked(.signedOut), discoveredByPoll: false),
+                                    now: now)
+    #expect(result == standing)
+}
+
+/// The converse: only a sign-out continues an expiry. A locked keychain is a
+/// different finding and replaces it.
+@Test func anExpiredSignInIsStillReplacedByALockedKeychain() {
+    let standing = block(.signInExpired, at: earlier)
+    let result = AuthReducer.reduce(standing, .probe(.blocked(.keychainLocked), discoveredByPoll: false),
+                                    now: now)
+    #expect(result == AuthBlock(kind: .keychainLocked, detectedAt: now))
+}
+
 // MARK: - Clearing a block
 
 /// A presence finding refutes an absence finding. This is the recovery path for
