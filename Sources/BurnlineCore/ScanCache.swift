@@ -73,6 +73,21 @@ public struct ScanCache: Equatable, Sendable, Codable {
         return total
     }
 
+    /// Raw tokens in `[start, end)` by model: what a calibration anchor keeps,
+    /// so it can be re-weighted later. Same bucket rule as `units`.
+    public func tokens(from start: Date, to end: Date) -> [String: TokenCounts] {
+        let lower = Bucket.key(for: start)
+        let upper = Bucket.key(for: end)
+        var totals: [String: TokenCounts] = [:]
+        for state in files.values {
+            for (rawKey, byModel) in state.cells {
+                guard let key = Int(rawKey), key >= lower, key < upper else { continue }
+                for (model, counts) in byModel { totals[model, default: .zero] += counts }
+            }
+        }
+        return totals
+    }
+
     /// Every model id in the cache, for one-shot multiplier resolution.
     var modelsPresent: Set<String> {
         var models = Set<String>()

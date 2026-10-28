@@ -486,3 +486,40 @@ private let utc = TimeZone(identifier: "UTC")!
     #expect(snapshot(age: 31 * 86_400 + 1).extraUsage == nil)
     #expect(snapshot(age: 60).extraUsage != nil)
 }
+
+// MARK: - Calibration across a weight edit
+
+/// An anchor keeps the window's raw tokens and is re-weighted with the
+/// current weights. Before, it kept only units weighted the old way, and a
+/// weight edit divided new-weight units by old-weight anchors: doubling the
+/// input weight doubled every calibrated estimate.
+@Test func aWeightEditDoesNotRescaleACalibratedEstimate() throws {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let window = WindowMath.window(for: settings().resetSchedule, now: now)
+    let anchor = CalibrationAnchor(timestamp: now.addingTimeInterval(-86_400), observedPercent: 50,
+                                   tokensInWindow: ["claude-sonnet-5": TokenCounts(input: 5_000)],
+                                   weights: .default)
+    var edited = settings(anchors: [anchor])
+    edited.weights.input = 2
+    let snapshot = SnapshotBuilder.build(
+        cache: cache(units: 4_000, at: window.start.addingTimeInterval(60)),
+        settings: edited, now: now, isScanning: false)
+
+    #expect(abs(try #require(snapshot.estimatedPercent) - 40) < 1e-6)
+}
+
+/// The control. An anchor from before the tokens were kept has nothing to
+/// re-weight and keeps its stored figure, as it always did.
+@Test func anAnchorWithoutTokensKeepsItsStoredUnits() throws {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let window = WindowMath.window(for: settings().resetSchedule, now: now)
+    let anchor = CalibrationAnchor(timestamp: now.addingTimeInterval(-86_400),
+                                   observedPercent: 50, unitsInWindow: 5_000)
+    var edited = settings(anchors: [anchor])
+    edited.weights.input = 2
+    let snapshot = SnapshotBuilder.build(
+        cache: cache(units: 4_000, at: window.start.addingTimeInterval(60)),
+        settings: edited, now: now, isScanning: false)
+
+    #expect(abs(try #require(snapshot.estimatedPercent) - 80) < 1e-6)
+}

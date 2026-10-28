@@ -675,10 +675,13 @@ final class UsageStore {
         // Anchor against the window actually on screen, which may have come
         // from a live capture rather than the configured schedule.
         let window = snapshot.window
-        let units = cache.units(from: window.start, to: window.end, weights: storedSettings.weights)
+        // Raw tokens, not weighted units: the anchor is re-weighted at read
+        // time, so a later weight edit cannot rescale the calibration.
+        let tokens = cache.tokens(from: window.start, to: window.end)
         var updated = storedSettings
         updated.calibrationAnchors.append(
-            CalibrationAnchor(timestamp: now, observedPercent: observedPercent, unitsInWindow: units)
+            CalibrationAnchor(timestamp: now, observedPercent: observedPercent,
+                              tokensInWindow: tokens, weights: storedSettings.weights)
         )
         // Prune on write. `validAnchors` only filters what the fit may use, so
         // without this the stored list — and the Settings display — grows forever.
