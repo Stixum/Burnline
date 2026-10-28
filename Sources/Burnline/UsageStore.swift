@@ -299,8 +299,7 @@ final class UsageStore {
                     // The span reaches `now`, which is inside the still-filling
                     // bucket. `HistoryWriter.commit` clamps it — clamping here as
                     // well would drop a bucket the flush is entitled to restate.
-                    await writer.commit(payload: .init(rows: result.rows, span: range,
-                                                       truncated: result.truncated),
+                    await writer.commit(payload: .init(fill: result, span: range),
                                         filledBy: "fill", observation: nil)
                 } catch {
                     // A range that could not be read claims no coverage: skipping

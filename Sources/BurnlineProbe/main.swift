@@ -429,8 +429,7 @@ for range in uncovered {
     let result = try fill.cells(inBuckets: range)
     // No clamping here: the span reaches into the still-filling bucket on
     // purpose, and `HistoryWriter.commit` is the one place that trims it.
-    await writer.commit(payload: .init(rows: result.rows, span: range,
-                                       truncated: result.truncated),
+    await writer.commit(payload: .init(fill: result, span: range),
                         filledBy: "fill", observation: nil)
     filesOpened += result.filesOpened
     if result.truncated { truncatedRanges += 1 }

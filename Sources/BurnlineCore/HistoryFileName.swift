@@ -26,6 +26,11 @@ public enum HistoryFileName {
         return String(format: "%04d-W%02d.jsonl", year, week)
     }
 
+    /// Whether a file in `history/` is a cell file (`2026-W33.jsonl`).
+    public static func isWeekFile(_ name: String) -> Bool {
+        name.wholeMatch(of: /\d{4}-W\d{2}\.jsonl/) != nil
+    }
+
     /// Every file touched by `[from, to]`, in order, deduplicated.
     public static func forRange(from: Date, to: Date) -> [String] {
         guard from <= to else { return [] }

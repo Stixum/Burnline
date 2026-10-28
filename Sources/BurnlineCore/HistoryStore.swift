@@ -7,6 +7,7 @@ import Foundation
 /// coverage.jsonl     which bucket ranges are archived
 /// tracking.json      capture observations
 /// windows.jsonl      one row per completed weekly window
+/// projects.json      encoded transcript folder → project name, write-once
 /// 2026-W33.jsonl     raw-token cells, one file per ISO week
 /// ```
 ///
@@ -242,6 +243,37 @@ public struct HistoryStore: Sendable {
     public func saveTracking(_ file: TrackingFile) throws {
         createDirectory()
         try JSON.encoder.encode(file).write(to: url("tracking.json"), options: .atomic)
+    }
+
+    // MARK: - Project names
+
+    /// Same doctrine as `loadTracking`: absent, unreadable or incompatible is
+    /// a fresh registry. Unlike tracking, nothing is lost by it — the writer
+    /// re-seeds from `projectNames()`, which still holds every name assigned.
+    public func loadProjects() -> ProjectRegistry {
+        guard let data = try? Data(contentsOf: url("projects.json")),
+              let registry = try? JSON.decoder.decode(ProjectRegistry.self, from: data),
+              registry.isCompatible
+        else { return ProjectRegistry() }
+        return registry
+    }
+
+    public func saveProjects(_ registry: ProjectRegistry) throws {
+        createDirectory()
+        try JSON.encoder.encode(registry).write(to: url("projects.json"), options: .atomic)
+    }
+
+    /// Every project name any cell file holds: the evidence a new folder is
+    /// seeded from. Reads every week file, so the writer asks once, lazily.
+    public func projectNames() -> Set<String> {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil)) ?? []
+        var names = Set<String>()
+        for file in files where HistoryFileName.isWeekFile(file.lastPathComponent) {
+            let read: (values: [HistoryRow], skipped: Int) = decodeLines(at: file)
+            for row in read.values { names.insert(row.project) }
+        }
+        return names
     }
 
     // MARK: - Manifest

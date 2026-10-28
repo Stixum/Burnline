@@ -143,3 +143,25 @@ private let hb0 = 1_786_924_800
     #expect(try store.loadWindows().isEmpty)
     #expect(try store.loadManifest().lastObservedReset == nil)
 }
+
+// MARK: - Project registry
+
+@Test func theProjectRegistryRoundTripsAndAnIncompatibleOneIsDiscarded() throws {
+    let (store, _) = temporaryStore()
+    try store.saveProjects(ProjectRegistry(names: ["-p-a": "a"]))
+    #expect(store.loadProjects().names == ["-p-a": "a"])      // the positive control
+
+    try store.saveProjects(ProjectRegistry(version: ProjectRegistry.currentVersion + 1, names: ["-p-a": "a"]))
+    #expect(store.loadProjects().names.isEmpty)
+}
+
+@Test func projectNamesReadsEveryWeekFileAndNothingElse() throws {
+    let (store, directory) = temporaryStore()
+    try store.append(rows: [HistoryRow(bucket: hb0, project: "api", model: "m", counts: TokenCounts(output: 1)),
+                            HistoryRow(bucket: hb0 + 30 * 86_400, project: "web-app", model: "m",
+                                       counts: TokenCounts(output: 1))])
+    try #"{"bucket":1,"project":"not-a-cell-file","model":"m","input":0,"output":0,"cacheWrite":0,"cacheRead":0}"#
+        .write(to: directory.appendingPathComponent("windows-copy.jsonl"), atomically: true, encoding: .utf8)
+    #expect(store.projectNames() == ["api", "web-app"])
+}
+

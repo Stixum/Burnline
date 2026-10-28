@@ -89,16 +89,20 @@ private func cache(files: [String: [String: TokenCounts]]) -> ScanCache {
     ])
     let rows = HistoryArchive.rows(from: scan, coverage: Coverage(records: []),
                                    through: bucketStart + 900)
-    #expect(rows.first?.project == "Burnline")
+    // The folder, not a name: `HistoryWriter` names it at commit.
+    #expect(rows.first?.project == "-Users-me-Burnline")
 }
 
-@Test func theFlushNamesAProjectFromItsWorkingDirectory() {
+/// The flush hands the writer the folder and the evidence to name it from;
+/// naming itself is `HistoryWriter`'s, once, for every path.
+@Test func theFlushCarriesEachFoldersWorkingDirectories() {
     var scan = cache(files: ["/p/projects/-Users-me-Projects-train-times/a.jsonl":
                                 ["claude-opus-5": TokenCounts(output: 10)]])
     scan.files["/p/projects/-Users-me-Projects-train-times/a.jsonl"]?.workingDirectories =
         ["/Users/me/Projects/train-times"]
-    let rows = HistoryArchive.rows(from: scan, coverage: Coverage(records: []),
-                                   through: bucketStart + 900)
-    #expect(rows.map(\.project) == ["train-times"])
+    let payload = HistoryArchive.payload(from: scan, coverage: Coverage(records: []),
+                                         through: bucketStart + 900)
+    #expect(payload.rows.map(\.project) == ["-Users-me-Projects-train-times"])
+    #expect(payload.workingDirectories == ["-Users-me-Projects-train-times": ["/Users/me/Projects/train-times"]])
 }
 

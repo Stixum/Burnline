@@ -65,7 +65,7 @@ private struct FillTree: ~Copyable {
     #expect(filled.filesOpened == 1)
     #expect(filled.rows.count == 1)
     #expect(filled.rows.first?.output == 100)
-    #expect(filled.rows.first?.project == "Burnline")
+    #expect(filled.rows.first?.project == "-Users-me-Projects-Burnline")
 
     // The contrast that makes the point: the scanner sees nothing at all here.
     let cache = try TranscriptScanner(rootURL: tree.root).scan(cache: ScanCache(), now: clock)
@@ -163,7 +163,7 @@ private struct FillTree: ~Copyable {
         cells: [String(Bucket.key(for: stamp)): ["claude-sonnet-5": TokenCounts(output: 12)]])
     let flushed = HistoryArchive.rows(from: cache, coverage: Coverage(records: []), through: Int(clock.timeIntervalSince1970))
 
-    #expect(filled.rows.first?.project == "Burnline")
+    #expect(filled.rows.first?.project == "-Users-me-Projects-Burnline")
     #expect(filled.rows.first?.project == flushed.first?.project)
     // Same units, too: bucket START in epoch seconds, not the quarter-hour index.
     #expect(filled.rows.first?.bucket == flushed.first?.bucket)
@@ -351,9 +351,9 @@ private final class ProgressLog: @unchecked Sendable {
     #expect(filled.rows.map(\.output) == [10, 50])
 }
 
-/// The fill and the flush must agree, or one project is archived under two
-/// names: the flush's from the scan cache, the fill's from this read.
-@Test func theFillNamesAProjectFromItsWorkingDirectory() throws {
+/// The fill hands the writer the folder and the `cwd` evidence, exactly as the
+/// flush does, so both are named by the same registry.
+@Test func theFillCarriesEachFoldersWorkingDirectories() throws {
     let tree = FillTree()
     let stamp = clock.addingTimeInterval(-2 * day)
     tree.session("""
@@ -361,6 +361,7 @@ private final class ProgressLog: @unchecked Sendable {
         """, at: "projects/-Users-me-Projects-train-times/a.jsonl", modified: stamp)
 
     let filled = try HistoryFill(rootURL: tree.root).cells(from: clock.addingTimeInterval(-5 * day), to: clock)
-    #expect(filled.rows.map(\.project) == ["train-times"])
+    #expect(filled.rows.map(\.project) == ["-Users-me-Projects-train-times"])
+    #expect(filled.workingDirectories == ["-Users-me-Projects-train-times": ["/Users/me/Projects/train-times"]])
 }
 
