@@ -679,3 +679,59 @@ private func folderCell(_ bucket: Int, _ folder: String, output: Int = 1) -> His
     #expect(rows.map(\.project) == ["Burnline"])
     #expect(rows.map(\.output) == [15])
 }
+
+// MARK: - tracking.json is never overwritten unread
+
+// `tracking.json` is the only record of a mid-window re-grant: it is not derived
+// from anything and cannot be rebuilt. An unreadable or other-version file
+// loaded as empty, and the next observation saved one entry over it.
+
+private let trackedEntry = TrackingEntry(percent: 40, at: Date(timeIntervalSince1970: 1_787_000_000),
+                                         resetsAt: Date(timeIntervalSince1970: 1_787_400_000))
+
+private func setAside(in directory: URL) -> [URL] {
+    ((try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
+        .filter { $0.lastPathComponent.hasPrefix("tracking.json.unreadable-") }
+}
+
+@Test func anUnreadableTrackingFileIsSetAsideNotOverwritten() async throws {
+    let directory = writerDirectory()
+    let store = HistoryStore(directory: directory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let original = Data(#"{"version":1,"entries":[{"percent":51,"at":"#.utf8)   // torn
+    try original.write(to: directory.appendingPathComponent("tracking.json"))
+
+    await HistoryWriter(store: store, schedule: writerSchedule).observe(trackedEntry)
+
+    #expect(try store.loadTracking().entries == [trackedEntry])
+    let kept = setAside(in: directory)
+    #expect(kept.count == 1)
+    #expect(try kept.first.map { try Data(contentsOf: $0) } == original)
+}
+
+@Test func aTrackingFileFromAnotherVersionIsSetAsideToo() async throws {
+    let directory = writerDirectory()
+    let store = HistoryStore(directory: directory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let original = Data(#"{"version":99,"entries":[]}"#.utf8)
+    try original.write(to: directory.appendingPathComponent("tracking.json"))
+
+    await HistoryWriter(store: store, schedule: writerSchedule).observe(trackedEntry)
+
+    #expect(try store.loadTracking().entries == [trackedEntry])
+    #expect(try setAside(in: directory).first.map { try Data(contentsOf: $0) } == original)
+}
+
+/// The control: a readable file is appended to and nothing is set aside.
+@Test func aReadableTrackingFileIsAppendedToInPlace() async throws {
+    let directory = writerDirectory()
+    let store = HistoryStore(directory: directory)
+    let earlier = TrackingEntry(percent: 30, at: Date(timeIntervalSince1970: 1_786_900_000),
+                                resetsAt: Date(timeIntervalSince1970: 1_787_400_000))
+    try store.saveTracking(TrackingFile(entries: [earlier]))
+
+    await HistoryWriter(store: store, schedule: writerSchedule).observe(trackedEntry)
+
+    #expect(try store.loadTracking().entries == [earlier, trackedEntry])
+    #expect(setAside(in: directory).isEmpty)
+}

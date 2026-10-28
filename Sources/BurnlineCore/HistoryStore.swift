@@ -240,9 +240,22 @@ public struct HistoryStore: Sendable {
         return file
     }
 
+    /// ⚠️ Never over an unread file. `tracking.json` is the only record of a
+    /// mid-window re-grant and nothing can rebuild it, yet an unreadable or
+    /// other-version file loads as empty — and saving one new entry over that
+    /// destroyed the rest. Such a file is moved aside first
+    /// (`tracking.json.unreadable-<epoch>-<id>`) and kept, never deleted. Here, not in
+    /// `loadTracking`: the History window reads tracking too, and only
+    /// `HistoryWriter` may change anything in `history/`.
     public func saveTracking(_ file: TrackingFile) throws {
         createDirectory()
-        try JSON.encoder.encode(file).write(to: url("tracking.json"), options: .atomic)
+        let target = url("tracking.json")
+        if let existing = try? Data(contentsOf: target),
+           (try? JSON.decoder.decode(TrackingFile.self, from: existing))?.isCompatible != true {
+            let stamp = "\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(8))"
+            try FileManager.default.moveItem(at: target, to: url("tracking.json.unreadable-\(stamp)"))
+        }
+        try JSON.encoder.encode(file).write(to: target, options: .atomic)
     }
 
     // MARK: - Project names
