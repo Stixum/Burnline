@@ -57,26 +57,28 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
     )
 
     // Hand-written so that settings files predating a field still decode.
-    // A missing key must fall back rather than throw and reset everything.
+    // A missing key must fall back rather than throw and reset everything —
+    // and so must a value this version does not know (`decodeIfPresent` throws
+    // on an unknown raw value): `SettingsStore.load` turns a throw into
+    // `.default`, and the next save writes the defaults over the file.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        func lenient<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            (try? container.decodeIfPresent(T.self, forKey: key)) ?? fallback
+        }
         resetSchedule = try container.decode(ResetSchedule.self, forKey: .resetSchedule)
         weights = try container.decode(Weights.self, forKey: .weights).migrated()
         calibrationAnchors = try container.decode([CalibrationAnchor].self, forKey: .calibrationAnchors)
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
-        targetMode = try container.decodeIfPresent(TargetMode.self, forKey: .targetMode) ?? .realTime
-        dayBoundary = try container.decodeIfPresent(DayBoundary.self, forKey: .dayBoundary) ?? .windowDay
-        menuBarMode = try container.decodeIfPresent(MenuBarMode.self, forKey: .menuBarMode) ?? .usedOverTarget
-        refreshesUsageAutomatically = try container.decodeIfPresent(
-            Bool.self, forKey: .refreshesUsageAutomatically) ?? false
-        usageRefreshInterval = try container.decodeIfPresent(
-            RefreshInterval.self, forKey: .usageRefreshInterval) ?? .fortyFive
+        targetMode = lenient(.targetMode, TargetMode.realTime)
+        dayBoundary = lenient(.dayBoundary, DayBoundary.windowDay)
+        menuBarMode = lenient(.menuBarMode, MenuBarMode.usedOverTarget)
+        refreshesUsageAutomatically = lenient(.refreshesUsageAutomatically, false)
+        usageRefreshInterval = lenient(.usageRefreshInterval, RefreshInterval.fortyFive)
         // Absent in every settings file written before onboarding existed, so
         // existing installs are treated as not having seen it. They get the
         // window once, and only if there is actually something to fix.
-        hasSeenOnboarding = try container.decodeIfPresent(
-            Bool.self, forKey: .hasSeenOnboarding) ?? false
-        notifications = try container.decodeIfPresent(
-            NotificationSettings.self, forKey: .notifications) ?? .default
+        hasSeenOnboarding = lenient(.hasSeenOnboarding, false)
+        notifications = lenient(.notifications, NotificationSettings.default)
     }
 }
