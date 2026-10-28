@@ -18,8 +18,15 @@ import Foundation
 enum ProjectName {
     /// The project root among `candidates`: the one that encodes to `folder`.
     /// Sorted, so the choice cannot depend on set order.
+    ///
+    /// ⚠️ Case-insensitive when nothing matches exactly. Claude Code encodes the
+    /// path as it was typed and the transcripts record it as it is
+    /// (`-Users-me-projects-…` against `/Users/me/Projects/…`), and macOS
+    /// volumes are case-insensitive by default.
     static func root(of folder: String, among candidates: Set<String>) -> String? {
-        candidates.sorted().first { encoded($0) == folder }
+        let sorted = candidates.sorted()
+        return sorted.first { encoded($0) == folder }
+            ?? sorted.first { encoded($0).caseInsensitiveCompare(folder) == .orderedSame }
     }
 
     /// Every trailing run of `components`, shortest first:

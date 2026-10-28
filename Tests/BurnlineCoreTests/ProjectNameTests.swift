@@ -70,3 +70,21 @@ struct ProjectNameTests {
     let names = firstNames(["-Users-me-My-Project-v2": ["/Users/me/My Project.v2"]])
     #expect(names["-Users-me-My-Project-v2"] == "My Project.v2")
 }
+
+/// Claude Code encodes the path as it was typed, and the transcripts record it
+/// as it is: `-Users-me-projects-…` against `/Users/me/Projects/…` on this Mac.
+/// macOS volumes are case-insensitive by default, so case is no evidence of a
+/// different folder — and without the match the name fell back to a guess.
+@Test func aRootDifferingOnlyInCaseIsStillTheRoot() {
+    let names = firstNames([
+        "-Users-me-projects-ConcertTracker-iOS": ["/Users/me/Projects/ConcertTracker-iOS",
+                                                  "/Users/me/Projects/ConcertTracker-iOS/.superpowers/b2b"],
+    ])
+    #expect(names["-Users-me-projects-ConcertTracker-iOS"] == "ConcertTracker-iOS")
+}
+
+/// The control: an exact match wins over one that differs only in case.
+@Test func anExactRootIsPreferredOverOneDifferingInCase() {
+    let names = firstNames(["-p-Api": ["/p/API", "/p/Api"]])
+    #expect(names["-p-Api"] == "Api")
+}
