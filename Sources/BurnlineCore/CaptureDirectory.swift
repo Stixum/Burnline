@@ -63,18 +63,23 @@ public struct CaptureDirectory: Sendable {
     /// Every readable, compatible capture. A corrupt or version-mismatched file
     /// is skipped rather than fatal — one bad file must not cost the others.
     public func load() -> [RateLimitCapture] {
+        loadFiles().map(\.capture)
+    }
+
+    /// Each capture with the file it was read from.
+    private func loadFiles() -> [(url: URL, capture: RateLimitCapture)] {
         let files = (try? FileManager.default.contentsOfDirectory(
             at: root, includingPropertiesForKeys: nil)) ?? []
         return files
             .filter { $0.pathExtension == "json" }
-            .compactMap { url in
+            .compactMap { url -> (url: URL, capture: RateLimitCapture)? in
                 guard let data = try? Data(contentsOf: url),
                       let capture = try? JSONDecoder().decode(RateLimitCapture.self, from: data),
                       capture.isCompatible
                 else { return nil }
-                return capture
+                return (url, capture)
             }
-            .sorted { ($0.sessionId ?? "") < ($1.sessionId ?? "") }
+            .sorted { ($0.capture.sessionId ?? "") < ($1.capture.sessionId ?? "") }
     }
 
     /// When the helper last wrote any per-session file — modification time,
@@ -98,11 +103,15 @@ public struct CaptureDirectory: Sendable {
     /// republishing a dead window's reading restamps it with the wall clock
     /// every 30s, so by the raw `capturedAt` it is always current — and that
     /// replay is the one file this exists to remove.
+    ///
+    /// 🔴 Deletes the file the capture was READ FROM, never a path built from
+    /// the `sessionId` inside it. `save` refuses an unsafe id, but nothing
+    /// checks a file already on disk: `"../rate-limit-highwater"` deleted the
+    /// high-water mark one level up, and a file whose name was not its id was
+    /// never removed at all.
     public func prune(before cutoff: TimeInterval) {
-        for capture in load() where capture.correctedForRepublishing().capturedAt < cutoff {
-            guard let sessionId = capture.sessionId else { continue }
-            try? FileManager.default.removeItem(
-                at: root.appendingPathComponent("\(sessionId).json"))
+        for (url, capture) in loadFiles() where capture.correctedForRepublishing().capturedAt < cutoff {
+            try? FileManager.default.removeItem(at: url)
         }
     }
 

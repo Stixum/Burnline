@@ -84,6 +84,38 @@ private func sessionCapture(_ id: String?, percent: Double = 50,
     #expect(directory.load().map(\.sevenDay.usedPercent) == [20])
 }
 
+/// `prune` deleted `<sessionId>.json` using the id read from INSIDE each file,
+/// which `save` refuses when unsafe but `load` never checked. A file naming
+/// `../rate-limit-highwater` deleted the high-water mark one level up.
+@Test func pruneNeverDeletesAPathNamedInsideAFile() throws {
+    let scratch = directoryScratch()
+    let captures = scratch.appendingPathComponent("captures", isDirectory: true)
+    try FileManager.default.createDirectory(at: captures, withIntermediateDirectories: true)
+    let mark = scratch.appendingPathComponent("rate-limit-highwater.json")
+    try Data("{}".utf8).write(to: mark)
+    try JSONEncoder().encode(sessionCapture("../rate-limit-highwater", capturedAt: 100))
+        .write(to: captures.appendingPathComponent("x.json"))
+
+    CaptureDirectory(directory: scratch).prune(before: 1_000)
+
+    #expect(FileManager.default.fileExists(atPath: mark.path))
+    #expect(!FileManager.default.fileExists(atPath: captures.appendingPathComponent("x.json").path))
+}
+
+/// The other half of the same defect: a stale file whose name is not its id
+/// was never removed, because the delete aimed at a file that did not exist.
+@Test func aStaleFileWhoseNameDiffersFromItsIdIsStillPruned() throws {
+    let scratch = directoryScratch()
+    let captures = scratch.appendingPathComponent("captures", isDirectory: true)
+    try FileManager.default.createDirectory(at: captures, withIntermediateDirectories: true)
+    try JSONEncoder().encode(sessionCapture("bbb", capturedAt: 100))
+        .write(to: captures.appendingPathComponent("aaa.json"))
+
+    CaptureDirectory(directory: scratch).prune(before: 1_000)
+
+    #expect(!FileManager.default.fileExists(atPath: captures.appendingPathComponent("aaa.json").path))
+}
+
 // MARK: - Choosing between them
 
 /// The point of keeping every session's write: the freshest reading wins on its
