@@ -103,11 +103,11 @@ public enum NotificationDecision {
         return (emissions, updated)
     }
 
-    /// "Tuesday 9:00 PM" — the weekly reset in the user's own clock.
+    /// "Tuesday 9:00 PM" — the weekly reset in the user's own clock, to the
+    /// minute. Through `ResetSchedule.description` like every other surface:
+    /// formatted raw, a reset half a second short of midnight read as the
+    /// previous day at 11:59 PM.
     static func resetDescription(_ date: Date, timeZone: TimeZone) -> String {
-        let formatter = DateFormatter()
-        formatter.timeZone = timeZone
-        formatter.setLocalizedDateFormatFromTemplate("EEEE jmm")
-        return formatter.string(from: date)
+        ResetSchedule.description(of: date, .full, on: timeZone)
     }
 }

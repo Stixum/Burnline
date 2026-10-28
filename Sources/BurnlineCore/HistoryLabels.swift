@@ -109,6 +109,10 @@ public enum HistoryLabels {
     /// The end instant is the reset, which is the *start* of the next window —
     /// bounds are half-open everywhere in this codebase — so printing it as the
     /// closing date is correct and needs no −1 day.
+    ///
+    /// Both bounds are rounded to the minute first: Anthropic reports the reset
+    /// half a second short of the hour, and a midnight reset printed raw names
+    /// the day before.
     public static func windowRange(start: Date, end: Date) -> String {
         windowRange(start: start, end: end, timeZone: .current, locale: .autoupdatingCurrent)
     }
@@ -116,7 +120,8 @@ public enum HistoryLabels {
     public static func windowRange(start: Date, end: Date,
                                    timeZone: TimeZone, locale: Locale) -> String {
         let formatter = template("dMMM", timeZone: timeZone, locale: locale)
-        return "\(formatter.string(from: start)) – \(formatter.string(from: end))"
+        let first = ResetSchedule.toTheMinute(start), last = ResetSchedule.toTheMinute(end)
+        return "\(formatter.string(from: first)) – \(formatter.string(from: last))"
     }
 
     // MARK: - Final reading
