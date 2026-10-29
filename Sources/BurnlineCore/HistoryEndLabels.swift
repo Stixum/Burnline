@@ -23,6 +23,23 @@ import Foundation
 /// figure comes from it.
 public enum HistoryEndLabels {
 
+    /// Whether the chart draws a legend. A single series is already named by
+    /// its direct label, and a one-entry legend is furniture.
+    public static func legendIsVisible(seriesCount: Int) -> Bool {
+        seriesCount >= 2
+    }
+
+    /// Whether a series is named at the end of its line.
+    ///
+    /// ⚠️ **The live week only, whenever there is a legend.** Labelling every
+    /// line put three names in one corner: prior weeks finish near their
+    /// allowance together, their stacked plates crowded the `now` rule's label
+    /// and covered the lines they named, and the legend already said the same
+    /// thing. `rampIndex` 0 is the live window (`HistoryOverlay`).
+    public static func isLabelled(rampIndex: Int, seriesCount: Int) -> Bool {
+        rampIndex == 0 || !legendIsVisible(seriesCount: seriesCount)
+    }
+
     /// The gap between a line's last point and the bottom of its label.
     public static let spacing: Double = 3
     /// The least space between two stacked labels.

@@ -96,3 +96,28 @@ private func expectLegible(_ boxes: [HistoryEndLabels.Box],
     #expect(boxes[0].maxY == y(percent: 40) - HistoryEndLabels.spacing)
     #expect(boxes[1].maxY == y(percent: 40) - HistoryEndLabels.spacing)
 }
+
+// Three labels in one corner were clutter: the prior weeks finish near their
+// allowance together, their stacked names crowded the `now` rule's label, and
+// the legend below the plot already names them by colour. Only the live week
+// is labelled at its end; a chart drawing one series has no legend, so that
+// series keeps its label whichever week it is.
+
+@Test func onlyTheLiveWeekIsLabelledWhenTheLegendNamesThePriors() {
+    #expect(HistoryEndLabels.legendIsVisible(seriesCount: 3))
+    #expect(HistoryEndLabels.isLabelled(rampIndex: 0, seriesCount: 3))
+    #expect(!HistoryEndLabels.isLabelled(rampIndex: 1, seriesCount: 3))
+    #expect(!HistoryEndLabels.isLabelled(rampIndex: 2, seriesCount: 3))
+}
+
+@Test func aLonePriorWeekKeepsItsLabelBecauseNoLegendIsDrawn() {
+    #expect(!HistoryEndLabels.legendIsVisible(seriesCount: 1))
+    #expect(HistoryEndLabels.isLabelled(rampIndex: 1, seriesCount: 1))
+}
+
+@Test func twoPriorsWithoutTheLiveWeekAreLeftToTheLegend() {
+    // The first quarter-hour after a reset: the live window has too few points
+    // to draw, so the chart holds two priors and the legend names both.
+    #expect(!HistoryEndLabels.isLabelled(rampIndex: 1, seriesCount: 2))
+    #expect(!HistoryEndLabels.isLabelled(rampIndex: 2, seriesCount: 2))
+}

@@ -2,9 +2,9 @@ import SwiftUI
 import Charts
 import BurnlineCore
 
-/// The direct label at the end of each History burn curve, so a series is
-/// identifiable without tracing a colour back to the legend. Both chart modes
-/// draw their labels through this one view.
+/// The direct label at the end of a History burn curve: the live week's, or a
+/// lone series' when there is no legend (`HistoryEndLabels.isLabelled`). Both
+/// chart modes draw their labels through this one view.
 ///
 /// 🔴 **Laid out together, never as one annotation per point.** An annotation
 /// is fitted to the plot on its own and knows nothing of its neighbours. In

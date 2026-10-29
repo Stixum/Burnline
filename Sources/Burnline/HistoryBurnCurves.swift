@@ -8,9 +8,10 @@ import BurnlineCore
 /// do not all start on the same weekday — the reset moves whenever a new one is
 /// observed — so a clock axis compares Tuesday of one week to Friday of another.
 ///
-/// **Colour encodes recency, not identity**, so identity is carried twice over
-/// in text: a legend and a label on the end of each line. Nothing here is
-/// distinguished by colour alone.
+/// **Colour encodes recency, not identity**, so identity is carried in text:
+/// the legend names every week, and the live week is also named at the end of
+/// its line (`HistoryEndLabels.isLabelled`). Nothing here is distinguished by
+/// colour alone.
 struct HistoryBurnCurves: View {
     /// Newest first among what is drawn. 🔴 Each entry carries its OWN ramp
     /// position — this array is filtered (a week with one point or fewer is
@@ -46,6 +47,9 @@ struct HistoryBurnCurves: View {
         let color: Color
         let fraction: Double
         let units: Double
+        /// Whether the end of this line carries its name. Every line keeps
+        /// its dot; see `HistoryEndLabels.isLabelled`.
+        let isLabelled: Bool
     }
 
     private var samples: [Sample] {
@@ -67,7 +71,9 @@ struct HistoryBurnCurves: View {
             // for the first quarter-hour after a reset, when the live window
             // has too few points to draw and is not in this array at all.
             return Endpoint(id: curve.label, color: Theme.curve(at: curve.rampIndex),
-                            fraction: last.elapsedFraction, units: last.units)
+                            fraction: last.elapsedFraction, units: last.units,
+                            isLabelled: HistoryEndLabels.isLabelled(
+                                rampIndex: curve.rampIndex, seriesCount: curves.count))
         }
     }
 
@@ -144,7 +150,7 @@ struct HistoryBurnCurves: View {
         // there is no meaningful fixed ceiling to name. The percent face names
         // one, and the two answers live side by side on the mode.
         .chartXScale(domain: 0...1)
-        .historyEndLabels(endpoints.map {
+        .historyEndLabels(endpoints.filter(\.isLabelled).map {
             HistoryEndLabelOverlay.Label(text: $0.id, fraction: $0.fraction, value: $0.units)
         })
         // ⚠️ Explicit range from each week's ramp position, never
@@ -156,7 +162,8 @@ struct HistoryBurnCurves: View {
         // Position first, visibility outermost. A single series is already
         // named by its direct label, and a one-entry legend is furniture.
         .chartLegend(position: .bottom, alignment: .leading, spacing: 10)
-        .chartLegend(curves.count >= 2 ? .visible : .hidden)
+        .chartLegend(HistoryEndLabels.legendIsVisible(seriesCount: curves.count)
+                     ? .visible : .hidden)
         .chartXAxis {
             AxisMarks(values: Self.dayTicks) { value in
                 AxisGridLine().foregroundStyle(Theme.hairline)

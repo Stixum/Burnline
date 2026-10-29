@@ -12,7 +12,7 @@ import BurnlineCore
 /// is the only series the event is visible in.
 ///
 /// **Colour still encodes recency, not identity** — the same ramp, the same
-/// legend, the same direct label on the end of each line. Nothing here is
+/// legend, the same direct label on the live week's line. Nothing here is
 /// distinguished by colour alone, and no new token was minted: green, amber and
 /// red stay reserved for the delta.
 struct HistoryPercentTrend: View {
@@ -90,6 +90,9 @@ struct HistoryPercentTrend: View {
         let color: Color
         let fraction: Double
         let percent: Double
+        /// Whether the end of this line carries its name. Every line keeps
+        /// its dot; see `HistoryEndLabels.isLabelled`.
+        let isLabelled: Bool
     }
 
     /// Two vertices of the pace diagonal. A `RuleMark` draws verticals and
@@ -151,7 +154,9 @@ struct HistoryPercentTrend: View {
         curves.compactMap { curve in
             guard let last = curve.series.points.last else { return nil }
             return Endpoint(id: curve.label, color: Theme.curve(at: curve.rampIndex),
-                            fraction: last.elapsedFraction, percent: last.percent)
+                            fraction: last.elapsedFraction, percent: last.percent,
+                            isLabelled: HistoryEndLabels.isLabelled(
+                                rampIndex: curve.rampIndex, seriesCount: curves.count))
         }
     }
 
@@ -354,7 +359,7 @@ struct HistoryPercentTrend: View {
             nowLine
         }
         .chartXScale(domain: 0...1)
-        .historyEndLabels(endpoints.map {
+        .historyEndLabels(endpoints.filter(\.isLabelled).map {
             HistoryEndLabelOverlay.Label(text: $0.id, fraction: $0.fraction, value: $0.percent)
         })
         // Explicit range rather than `prefix(count)`: the ramp position is the
@@ -363,7 +368,8 @@ struct HistoryPercentTrend: View {
         .chartForegroundStyleScale(domain: curves.map(\.label),
                                    range: curves.map { Theme.curve(at: $0.rampIndex) })
         .chartLegend(position: .bottom, alignment: .leading, spacing: 10)
-        .chartLegend(curves.count >= 2 ? .visible : .hidden)
+        .chartLegend(HistoryEndLabels.legendIsVisible(seriesCount: curves.count)
+                     ? .visible : .hidden)
         .chartXAxis {
             AxisMarks(values: Self.dayTicks) { value in
                 AxisGridLine().foregroundStyle(Theme.hairline)
