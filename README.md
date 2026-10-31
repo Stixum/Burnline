@@ -98,7 +98,7 @@ If the figure stops because **Claude Code is signed out**, the menu bar figure g
 
 **If you use extra usage, the popover shows what you've spent this month against your cap**, as `Extra usage  $12.40 of $35`. Past an hour old it says so (`· 3h ago`), because the figure only moves when `/usage` runs. It turns amber with a ⚠ at the limit, and goes grey with a ⏸ while Anthropic has paused it and you've left it on (`paused · out of credits`). Turned off, or never set up, there is no row.
 
-**Settings states the API credits your plan includes**: $200 a month on Max 20x, $100 on Max 5x, with a link to the Console. That is eligibility, not a balance. The credits live in a Console organization Burnline can't read, and they pay for the API and the Agent SDK, not Claude Code, so they never move the weekly figure.
+**Settings states the API credits your plan includes**: $200 a month on Ultra, $100 on Max, with a link to the Console. That is eligibility, not a balance. The credits live in a Console organization Burnline can't read, and they pay for the API and the Agent SDK, not Claude Code, so they never move the weekly figure.
 
 ## Re-grants
 

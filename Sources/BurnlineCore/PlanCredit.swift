@@ -2,7 +2,7 @@ import Foundation
 
 /// The monthly Claude Platform credit a subscription plan includes.
 ///
-/// Anthropic grants Max subscribers API credits each billing cycle, in a
+/// Anthropic grants Max and Ultra subscribers API credits each billing cycle, in a
 /// Console organization the user links from claude.ai. **Burnline cannot see
 /// that organization**, so this states eligibility and points at the Console —
 /// it never claims a balance. The credits cover the API and the Agent SDK, not
@@ -10,12 +10,14 @@ import Foundation
 ///
 /// ⚠️ **The amounts are Anthropic's prices, hardcoded.** Source:
 /// https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers,
-/// checked 2026-10-17. A price change means editing this table.
+/// checked 2026-10-31. A price change means editing this table.
 ///
-/// Only the two Max tiers resolve. `default_claude_max_20x` is observed on a real
-/// account; `default_claude_max_5x` is inferred. Team is deliberately absent —
-/// its pooled credit depends on seat counts — and every unknown tier is nil, so a
-/// wrong guess shows no line rather than a wrong claim.
+/// Only two tiers resolve. `default_claude_max_20x` is observed on a real
+/// account; `default_claude_max_5x` is inferred. Anthropic renamed the plans on
+/// 2026-10-30 (Max 20x → Ultra, Max 5x → Max); the 20x string was unchanged the
+/// next day, so the names here follow the plans, not the strings. Team is
+/// deliberately absent — its pooled credit depends on seat counts — and every
+/// unknown tier is nil, so a wrong guess shows no line rather than a wrong claim.
 public struct PlanCredit: Equatable, Sendable {
     public let planName: String
     public let monthlyDollars: Int
@@ -23,10 +25,10 @@ public struct PlanCredit: Equatable, Sendable {
     public init?(rateLimitTier: String?) {
         switch rateLimitTier {
         case "default_claude_max_20x":
-            planName = "Max 20x"
+            planName = "Ultra"
             monthlyDollars = 200
         case "default_claude_max_5x":
-            planName = "Max 5x"
+            planName = "Max"
             monthlyDollars = 100
         default:
             return nil
