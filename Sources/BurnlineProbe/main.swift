@@ -239,12 +239,14 @@ if let epoch = snapshot.regrant {
 // probe is the place to confirm the export landed *before* running the helper.
 // What the poll measures its anchor's age from — proven readings only, which
 // is not the source's age above when an undated session re-confirms the mark.
+// On the probe's one clock, `now`: a fresh `Date()` here lands after the cold
+// scan and reads ~50s older than the capture line for the same reading.
 let pollAnchorNote: String = {
-    let now = Date().timeIntervalSince1970
-    guard let proven = resolution.lastProvenAt(now: now) else {
+    let at = now.timeIntervalSince1970
+    guard let proven = resolution.lastProvenAt(now: at) else {
         return "none proven — the poll would run now"
     }
-    return "proven \(Int(now - proven))s ago"
+    return "proven \(Int(at - proven))s ago"
 }()
 
 let dataDirectoryNote = ApplicationSupport.isOverridden()
