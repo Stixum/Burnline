@@ -131,6 +131,8 @@ Two honest limits worth knowing:
 
 It uses no message quota. `/usage` produces no assistant turn.
 
+If a refresh fails, it tries again after five minutes, then ten, twenty and forty, and then settles back at its normal pace.
+
 Before starting a session it runs `claude auth status`, which reads no network and spends nothing, and skips the session entirely if there is no usable credential — a signed-out session cannot refresh anything. While that is true the Refresh control is hidden rather than left to spin.
 
 **macOS will ask for folder access the first time, naming Claude Code.** Documents, Downloads, whatever cloud drives you have. That is Claude Code looking at your home directory when it starts, which it does whenever you run it.
