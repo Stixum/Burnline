@@ -237,6 +237,16 @@ if let epoch = snapshot.regrant {
 // writing. `BURNLINE_DATA_DIR` is what makes the statusline helper safe to
 // exercise, and a typo'd export fails by silently using live data — so the
 // probe is the place to confirm the export landed *before* running the helper.
+// What the poll measures its anchor's age from — proven readings only, which
+// is not the source's age above when an undated session re-confirms the mark.
+let pollAnchorNote: String = {
+    let now = Date().timeIntervalSince1970
+    guard let proven = resolution.lastProvenAt(now: now) else {
+        return "none proven — the poll would run now"
+    }
+    return "proven \(Int(now - proven))s ago"
+}()
+
 let dataDirectoryNote = ApplicationSupport.isOverridden()
     ? "\(ApplicationSupport.directory().path)   (BURNLINE_DATA_DIR override — not live data)"
     : "\(ApplicationSupport.directory().path)   (live data)"
@@ -252,6 +262,7 @@ Burnline probe
   high water       \(highWaterNote)
   allowance epoch  \(epochNote)
   source           \(describeSource(snapshot.source))
+  poll anchor      \(pollAnchorNote)
   auto schedule    \(snapshot.isScheduleAutomatic)
   scanned          \(cache.files.count) files
   cold scan        \(String(format: "%.2f", elapsed))s   (empty cache, reads every retained file)

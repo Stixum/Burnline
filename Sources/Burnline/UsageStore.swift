@@ -110,6 +110,13 @@ final class UsageStore {
     @ObservationIgnored private var scheduledRebuild: Task<Void, Never>?
     @ObservationIgnored private let poller = UsagePoller()
     @ObservationIgnored private var lastPollAt: Date?
+    /// Polls in a row that refreshed nothing. Sets the retry floor
+    /// (`PollDecision.retryFloor`); reset by any poll that moved the cache.
+    @ObservationIgnored private var consecutivePollFailures = 0
+    /// When a reading was last PROVEN minted (`Resolution.lastProvenAt`): what
+    /// the poll measures its anchor's age from. Never `snapshot.liveAge`, which
+    /// an undated republish of the same figure keeps at "just now".
+    @ObservationIgnored private var pollAnchor: TimeInterval?
     @ObservationIgnored private let highWaterStore = HighWaterStore()
     @ObservationIgnored private var highWater = HighWaterStore().load()
 
@@ -451,8 +458,9 @@ final class UsageStore {
             ceiling: storedSettings.usageRefreshInterval)
 
         if PollDecision.shouldPoll(enabled: storedSettings.refreshesUsageAutomatically,
-                                   anchorAge: snapshot.liveAge,
+                                   anchorAge: pollAnchor.map { Date().timeIntervalSince1970 - $0 },
                                    lastPollAt: lastPollAt,
+                                   consecutiveFailures: consecutivePollFailures,
                                    interval: interval,
                                    now: Date()) {
             lastPollAt = Date()
@@ -503,6 +511,7 @@ final class UsageStore {
         case let .skippedSignedOut(kind):
             // The poller's own pre-spawn probe already answered; folding it here
             // saves asking twice for one finding.
+            consecutivePollFailures += 1
             lastAuthProbeAt = Date()
             authBlock = AuthReducer.reduce(authBlock, .probe(.blocked(kind), discoveredByPoll: false),
                                            now: Date())
@@ -512,13 +521,19 @@ final class UsageStore {
                 // `poll()` probes before it spawns, so a completed poll has
                 // already asked — recording that keeps the standalone trigger
                 // from asking again a second later.
+                consecutivePollFailures = 0
                 lastAuthProbeAt = Date()
                 authBlock = AuthReducer.reduce(authBlock, .pollRefreshedCache, now: Date())
             } else {
+                consecutivePollFailures += 1
                 await probeAuthorization(discoveredByPoll: true)
             }
 
-        case .skippedBusy, .failed:
+        case .failed:
+            consecutivePollFailures += 1
+
+        case .skippedBusy:
+            // Another poll is already running; this one attempted nothing.
             break
         }
     }
@@ -753,6 +768,7 @@ final class UsageStore {
 
         let resolution = CaptureSelection.resolve(dated, against: highWater)
         let capture = resolution.trusted
+        pollAnchor = resolution.lastProvenAt(now: Date().timeIntervalSince1970)
         if resolution.highWater != highWater {
             highWater = resolution.highWater
             try? highWaterStore.save(resolution.highWater)

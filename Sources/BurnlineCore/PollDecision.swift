@@ -62,22 +62,49 @@ public enum PollDecision {
         return min(banded, ceiling.seconds)
     }
 
+    /// The wait after one poll that refreshed nothing. Matches the CLI's own
+    /// five-minute throttle on writing `fetchedAtMs`: sooner, a retry could not
+    /// show a moved cache even if it worked.
+    public static let firstRetry: TimeInterval = 5 * 60
+
+    /// How long to wait before the next poll, given how many in a row have
+    /// failed to refresh the anchor.
+    ///
+    /// The interval used to be the floor after a failure too, so one miss at
+    /// minute 46 meant the next attempt at minute 91 — past the hour the UI
+    /// calls stale. A failure now retries after `firstRetry` and doubles from
+    /// there, settling at the interval: a failure that persists (Claude Code
+    /// missing, the command renamed) costs a few extra sessions, then the old
+    /// cadence. Never longer than the interval, so it cannot loosen one.
+    public static func retryFloor(afterFailures failures: Int,
+                                  interval: TimeInterval) -> TimeInterval {
+        guard failures > 0 else { return interval }
+        let backoff = firstRetry * pow(2, Double(min(failures, 32) - 1))
+        return min(backoff, interval)
+    }
+
     /// - Parameters:
     ///   - anchorAge: seconds since the freshest usable reading; `nil` when
     ///     there is none, which is the strongest case for polling rather than
     ///     the weakest.
     ///   - lastPollAt: when this app last spawned a poll, successful or not.
-    ///   - interval: from `interval(weeklyPercent:...)`. Doubles as the retry
-    ///     floor: a poll that fails to refresh anything leaves the anchor stale
-    ///     and the first condition true forever, so without this it would spawn
-    ///     a session on every scan tick.
+    ///   - consecutiveFailures: polls in a row that refreshed nothing; 0 after
+    ///     one that did. Sets the retry floor through `retryFloor`, without
+    ///     which a failed poll leaves the anchor stale and the first condition
+    ///     true forever, spawning a session on every scan tick.
+    ///   - interval: from `interval(weeklyPercent:...)`.
     public static func shouldPoll(enabled: Bool,
                                   anchorAge: TimeInterval?,
                                   lastPollAt: Date?,
+                                  consecutiveFailures: Int,
                                   interval: TimeInterval,
                                   now: Date) -> Bool {
         guard enabled else { return false }
-        if let lastPollAt, now.timeIntervalSince(lastPollAt) < interval { return false }
+        if let lastPollAt,
+           now.timeIntervalSince(lastPollAt) < retryFloor(afterFailures: consecutiveFailures,
+                                                         interval: interval) {
+            return false
+        }
         guard let anchorAge else { return true }
         return anchorAge > interval
     }

@@ -191,6 +191,26 @@ public enum CaptureSelection {
         /// The open allowance epoch, if any. Both call sites reach through the
         /// same two levels; this is the one place that spelling lives.
         public var regrant: RateLimitHighWater.Regrant? { highWater.sevenDay?.regrant }
+
+        /// The latest instant any reading for a week still running was PROVEN
+        /// minted: the poll's anchor, so `nil` (nothing proven) polls.
+        ///
+        /// 🔴 Not `trusted.capturedAt`, which is what `Snapshot.liveAge` reads.
+        /// An equal re-confirmation moves that forward with or without proof,
+        /// so an idle session republishing the figure the mark already holds,
+        /// undated, kept the anchor at "just now" and the poll never fired.
+        /// Every candidate counts, the mark's refusals included: a poll whose
+        /// reading lost still proved a fresh fetch. A proof for a week that has
+        /// reset does not, or it would hold back the new week's first poll.
+        public func lastProvenAt(now: TimeInterval) -> TimeInterval? {
+            let fromCandidates = candidates
+                .map(\.capture)
+                .filter { $0.sevenDay.resetsAt > now }
+                .compactMap(\.provenAt)
+            let fromMark = highWater.sevenDay
+                .flatMap { $0.resetsAt > now ? $0.provenAt : nil }
+            return (fromCandidates + [fromMark].compactMap { $0 }).max()
+        }
     }
 
     /// Select, then reconcile, then report — in that order, once.
