@@ -147,6 +147,9 @@ struct HistoryBreakdown: View {
                 // ends; every bar starts at the same baseline, so the leading
                 // ends round identically and read as one edge.
                 .cornerRadius(4)
+                .accessibilityLabel(row.label)
+                .accessibilityValue(HistoryAccessibility.breakdownValue(units: row.units,
+                                                                       share: row.share))
                 .annotation(position: .trailing, spacing: 6,
                             overflowResolution: AnnotationOverflowResolution(
                                 x: .fit(to: .chart), y: .disabled)) {

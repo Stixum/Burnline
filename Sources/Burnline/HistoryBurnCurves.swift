@@ -189,5 +189,11 @@ struct HistoryBurnCurves: View {
             }
         }
         .frame(height: 208)
+        // One element that says where each week ended. Charts' own per-mark
+        // description is the raw plotted pair, hundreds of times over.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(HistoryAccessibility.unitCurvesLabel)
+        .accessibilityValue(HistoryAccessibility.unitCurvesValue(
+            endpoints.map { .init(label: $0.id, value: $0.units) }))
     }
 }

@@ -370,6 +370,11 @@ struct HistoryPercentTrend: View {
         .chartLegend(position: .bottom, alignment: .leading, spacing: 10)
         .chartLegend(HistoryEndLabels.legendIsVisible(seriesCount: curves.count)
                      ? .visible : .hidden)
+        // One element that says where each week ended; see `HistoryBurnCurves`.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(HistoryAccessibility.percentCurvesLabel)
+        .accessibilityValue(HistoryAccessibility.percentCurvesValue(
+            endpoints.map { .init(label: $0.id, value: $0.percent) }))
         .chartXAxis {
             AxisMarks(values: Self.dayTicks) { value in
                 AxisGridLine().foregroundStyle(Theme.hairline)
