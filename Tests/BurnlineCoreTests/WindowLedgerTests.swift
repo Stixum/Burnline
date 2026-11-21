@@ -207,22 +207,23 @@ private func writtenWindow(startingAt start: Date) -> WindowRow {
     #expect(rows.first?.boundsSource == .schedule)
 }
 
-@Test func boundsRollBackAcrossADSTBoundaryByCalendarDays() {
-    // 1 Nov 2026 is the fall-back, so this window is 169 hours. Roll back
-    // 604_800 seconds instead of 7 calendar days and the reset slides an hour
-    // off its wall-clock time, mis-slicing an hour of tokens into the
-    // neighbouring week — and every week after it, cumulatively.
+@Test func boundsRollBackAcrossADSTBoundaryBy168Hours() {
+    // 1 Nov 2026 is the fall-back. Anthropic's reset is fixed in UTC, so the
+    // week before an anchor observed after it is still 168 hours and starts an
+    // hour LATER on the wall clock. Roll back 7 calendar days instead and the
+    // boundary sits an hour early, mis-slicing an hour of tokens into the
+    // neighbouring week — and every week before it.
     let dstAnchor = at(2026, 11, 4, 14, 23)
-    let previous = at(2026, 10, 28, 14, 23)
+    let previous = dstAnchor.addingTimeInterval(-168 * 3_600)
     let rows = WindowLedger(anchor: dstAnchor, schedule: placeholder)
         .writableRows(coverage: coverage(from: previous, through: dstAnchor),
                       written: [], cells: [], tracking: [], now: at(2026, 11, 10, 12))
     #expect(rows.count == 1)
     #expect(rows.first?.start == previous)
     #expect(rows.first?.end == dstAnchor)
-    let hours = (rows.first?.end.timeIntervalSince(previous) ?? 0) / 3600
-    #expect(hours == 169)
-    #expect(hours != 168)
+    // The control: seven calendar days back is a different instant here.
+    #expect(previous != at(2026, 10, 28, 14, 23))
+    #expect(previous == at(2026, 10, 28, 15, 23))
 }
 
 @Test func recoverAnchorTakesTheNewestObservedReset() {

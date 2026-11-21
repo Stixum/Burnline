@@ -113,8 +113,7 @@ public struct WindowLedger: Sendable {
         let origin = anchor ?? WindowMath.window(for: schedule, now: now).start
         let base: BoundsSource = anchor == nil ? .schedule : .extrapolated
 
-        var bounds = Self.grid(origin: origin, earliest: earliest, now: now,
-                               timeZone: schedule.timeZone)
+        var bounds = Self.grid(origin: origin, earliest: earliest, now: now)
         guard bounds.count >= 2 else { return [] }
 
         var rows: [WindowRow] = []
@@ -366,7 +365,7 @@ public struct WindowLedger: Sendable {
 
     // MARK: - Grid
 
-    /// Window boundaries as whole calendar weeks either side of `origin`.
+    /// Window boundaries in 168-hour steps either side of `origin`.
     ///
     /// 🔴 BOTH directions. The anchor is a reset observed before a quit; come
     /// back a fortnight later and the closed windows end at anchor+7d and
@@ -374,30 +373,28 @@ public struct WindowLedger: Sendable {
     /// completes and no row is ever written — silently, which is the absence
     /// this whole feature exists for.
     ///
-    /// ⚠️ Always `Calendar.date(byAdding: .day, value: ±7)`, never `±604_800`.
-    /// A DST week is 167 or 169 hours and the reset must hold its wall-clock
-    /// time across the transition.
-    static func grid(origin: Date, earliest: Date, now: Date, timeZone: TimeZone) -> [Date] {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
+    /// ⚠️ Always `±SnapshotBuilder.weekSeconds`, never calendar days. The
+    /// reset is fixed in UTC and every week is 168 hours; see `weekSeconds`
+    /// for the observation. Calendar days in a zone with DST slide the grid an
+    /// hour off the real boundary at each transition.
+    static func grid(origin: Date, earliest: Date, now: Date) -> [Date] {
+        let week = SnapshotBuilder.weekSeconds
 
         var forward: [Date] = []
         var cursor = origin
         var steps = 0
-        while cursor <= now, steps < maximumSteps,
-              let next = calendar.date(byAdding: .day, value: 7, to: cursor) {
-            forward.append(next)
-            cursor = next
+        while cursor <= now, steps < maximumSteps {
+            cursor = cursor.addingTimeInterval(week)
+            forward.append(cursor)
             steps += 1
         }
 
         var backward: [Date] = []
         cursor = origin
         steps = 0
-        while cursor > earliest, steps < maximumSteps,
-              let previous = calendar.date(byAdding: .day, value: -7, to: cursor) {
-            backward.append(previous)
-            cursor = previous
+        while cursor > earliest, steps < maximumSteps {
+            cursor = cursor.addingTimeInterval(-week)
+            backward.append(cursor)
             steps += 1
         }
 

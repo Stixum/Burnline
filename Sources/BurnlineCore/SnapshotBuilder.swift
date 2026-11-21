@@ -31,7 +31,7 @@ public enum SnapshotBuilder {
         let window: Window
         let scheduleIsAutomatic: Bool
         if let capture = rateLimit {
-            window = windowFromReset(capture.sevenDay.resetsDate, now: now, timeZone: .current)
+            window = windowFromReset(capture.sevenDay.resetsDate, now: now)
             scheduleIsAutomatic = true
         } else {
             window = WindowMath.window(for: settings.resetSchedule, now: now)
@@ -196,20 +196,28 @@ public enum SnapshotBuilder {
             .elapsedFraction
     }
 
-    /// The window ending at `reset`, rolled forward in 7-day steps if that
-    /// instant has already passed — a capture can outlive its own window.
-    static func windowFromReset(_ reset: Date, now: Date, timeZone: TimeZone) -> Window {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
+    /// The length of Anthropic's weekly window: exactly 168 hours.
+    ///
+    /// 🔴 Seconds, not calendar days. The reset is fixed in UTC: every observed
+    /// `resets_at` from August to November 2026 fell on 07:00Z, on both sides
+    /// of the 1 November clock change, so on a clock with DST the reset moves
+    /// an hour (Fri 2:00 AM CDT became Fri 1:00 AM CST) and the week stays 168
+    /// hours. Stepping by calendar days in the local zone kept the wall-clock
+    /// time instead, which put the start of the transition week an hour early
+    /// and rolled a dead capture an hour off. Observed on one account, across
+    /// one autumn transition.
+    public static let weekSeconds: TimeInterval = 604_800
 
+    /// The window ending at `reset`, rolled forward in 168-hour steps if that
+    /// instant has already passed — a capture can outlive its own window.
+    static func windowFromReset(_ reset: Date, now: Date) -> Window {
         var end = reset
-        // Calendar arithmetic, not seconds: a DST week is 167 or 169 hours.
-        while end <= now {
-            end = calendar.date(byAdding: .day, value: 7, to: end) ?? end.addingTimeInterval(7 * 86_400)
+        if end <= now {
+            // Closed form rather than a loop: a reset years dead is one step.
+            let weeks = (now.timeIntervalSince(end) / weekSeconds).rounded(.down) + 1
+            end = end.addingTimeInterval(weeks * weekSeconds)
         }
-        let start = calendar.date(byAdding: .day, value: -7, to: end)
-            ?? end.addingTimeInterval(-7 * 86_400)
-        return Window(start: start, end: end, now: now)
+        return Window(start: end.addingTimeInterval(-weekSeconds), end: end, now: now)
     }
 
     /// The exact percentage at capture time, carried forward by whatever has
