@@ -22,6 +22,16 @@ VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resourc
 BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Resources/Info.plist)
 echo "==> Releasing ${APP_NAME} ${VERSION} (build ${BUILD_NUMBER})"
 
+# Either skip flag makes this a dry run: everything is built, signed, notarized
+# and checked, and then the script stops before the feed. A DMG from untested
+# or uncommitted code must not come with an appcast that describes it as a
+# release, because nothing afterwards can tell the two apart.
+DRY_RUN=0
+if [ "${BURNLINE_SKIP_TESTS:-}" = "1" ] || [ "${BURNLINE_ALLOW_DIRTY:-}" = "1" ]; then
+  DRY_RUN=1
+  echo "==> DRY RUN (a skip flag is set): no appcast will be written, and this is not a release."
+fi
+
 # --- 0. preconditions ------------------------------------------------------
 if [ "${BURNLINE_ALLOW_DIRTY:-}" != "1" ] && [ -n "$(git status --porcelain)" ]; then
   echo "!!! Working tree is dirty. Commit or stash first." >&2
@@ -227,6 +237,20 @@ else
   rm -f "${QTEST}"
   echo "!!! The DMG fails Gatekeeper when quarantined. Do not publish it." >&2
   exit 1
+fi
+
+# --- dry runs stop here ----------------------------------------------------
+# Before the feed is touched, and with a non-zero status: exit 0 from this
+# script means "publishable", and `./release.sh && gh release create` must not
+# go on to publish a dry run. The staged app is removed for step 9's reason.
+if [ "${DRY_RUN}" = "1" ]; then
+  rm -rf "${APP}"
+  echo >&2
+  echo "!!! Dry run complete: ${DMG} passed every check, but it is NOT a release." >&2
+  echo "    BURNLINE_SKIP_TESTS / BURNLINE_ALLOW_DIRTY was set, so the update was not" >&2
+  echo "    signed and docs/appcast.xml is unchanged. Do not publish this DMG." >&2
+  echo "    Re-run without the flags, on a clean tree, to release." >&2
+  exit 3
 fi
 
 # --- 8. the appcast -------------------------------------------------------
