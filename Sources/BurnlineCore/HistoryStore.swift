@@ -349,10 +349,24 @@ public struct HistoryStore: Sendable {
             try data.write(to: url, options: .atomic)
             return
         }
-        let handle = try FileHandle(forWritingTo: url)
+        let handle = try FileHandle(forUpdating: url)
         defer { try? handle.close() }
-        try handle.seekToEnd()
-        try handle.write(contentsOf: data)
+        // 🔴 A crash or a full disk mid-append leaves half a row and no
+        // newline. Appending straight after it fuses the first new row onto
+        // the fragment, and both are skipped as one undecodable line — a row
+        // that was written whole, lost, and never refilled because coverage
+        // marks its bucket archived. Close the torn line first: the fragment
+        // is then skipped alone, which is the row that was already gone.
+        let end = try handle.seekToEnd()
+        var payload = data
+        if end > 0 {
+            try handle.seek(toOffset: end - 1)
+            if try handle.read(upToCount: 1) != Data([newline]) {
+                payload = Data([newline]) + data
+            }
+            try handle.seekToEnd()
+        }
+        try handle.write(contentsOf: payload)
     }
 
     /// One JSON value per line. A missing file is an empty result, never an

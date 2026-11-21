@@ -43,6 +43,49 @@ private let hb0 = 1_786_924_800
     #expect(read.skipped > 0)
 }
 
+/// A crash or a full disk mid-append leaves half a row with no newline. The
+/// next append used to start on that same line, so its first row fused with
+/// the fragment and was lost — and coverage then marked the bucket archived,
+/// so nothing ever refilled it.
+@Test func anAppendAfterATornLineLosesOnlyTheTornRow() throws {
+    let (store, dir) = temporaryStore()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let start = Date(timeIntervalSince1970: Double(hb0))
+    try store.append(rows: [HistoryRow(bucket: hb0, project: "P", model: "M",
+                                       counts: TokenCounts(output: 1))])
+    let file = dir.appendingPathComponent(HistoryFileName.forBucket(hb0))
+    let handle = try FileHandle(forWritingTo: file)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(#"{"bucket":1786925700,"proj"#.utf8))   // torn: no newline
+    try handle.close()
+
+    try store.append(rows: [
+        HistoryRow(bucket: hb0 + 900, project: "P", model: "M", counts: TokenCounts(output: 2)),
+        HistoryRow(bucket: hb0 + 1_800, project: "P", model: "M", counts: TokenCounts(output: 3)),
+    ])
+
+    let read = try store.rows(in: start...start.addingTimeInterval(3_600))
+    #expect(read.rows.map(\.output) == [1, 2, 3])
+    #expect(read.skipped == 1)                    // the fragment, and nothing else
+}
+
+@Test func aCoverageRecordAppendedAfterATornLineStillCounts() throws {
+    let (store, dir) = temporaryStore()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try store.appendCoverage(CoverageRecord(from: hb0, through: hb0, filledBy: "scan", truncated: false))
+    let handle = try FileHandle(forWritingTo: dir.appendingPathComponent("coverage.jsonl"))
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(#"{"from":17869"#.utf8))                // torn: no newline
+    try handle.close()
+
+    try store.appendCoverage(CoverageRecord(from: hb0 + 900, through: hb0 + 900,
+                                            filledBy: "scan", truncated: false))
+
+    let coverage = try store.loadCoverage()
+    #expect(coverage.contains(hb0))
+    #expect(coverage.contains(hb0 + 900))
+}
+
 @Test func coverageRoundTripsThroughItsLog() throws {
     // ⚠️ Real 900-spaced bucket starts, not toy integers — under bucket-index
     // algebra, 100/200/300/400 all map to bucket 0 and correctly merge into ONE
