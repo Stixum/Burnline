@@ -23,6 +23,8 @@ A macOS menu bar app that shows where you *should* be in your Claude weekly usag
 
 Your weekly limit resets on a fixed day and time. Seven days is 100%, so each day is about 14.3%, and on day 5 you're roughly 71% through.
 
+The reset is fixed in UTC, so where clocks change it moves an hour on yours: 2:00 AM in summer was 1:00 AM after the autumn change. Burnline reads the real reset from Claude Code and follows it. The day and time you can type in Settings are only a stand-in until the first reading arrives, and they do not move by themselves.
+
 `/usage` gives you the actual number. Nothing gives you the target to judge it against, and neither is visible without stopping what you're doing.
 
 ## Install
@@ -179,7 +181,7 @@ The probe's first line says which directory is in play. `BURNLINE_OPEN_SETTINGS=
 
 Everything funnels through **`SnapshotBuilder`**, which builds the one immutable `Snapshot` every view reads. The app and the probe both go through it, so start there and work outwards.
 
-- `WindowMath`: reset schedule plus now, into window bounds and elapsed fraction. The half that cannot be wrong.
+- `SnapshotBuilder.windowFromReset`: Anthropic's reset instant plus now, into window bounds. A week is exactly 168 hours. `WindowMath` does the same from the typed stand-in schedule, on the wall clock.
 - `TranscriptScanner`: walks `~/.claude/projects` incrementally. `ConsumptionModel` weights the result.
 - `RateLimitHighWater`: picks which reading to trust when sources disagree, which they routinely do, and decides whether a falling figure is a re-grant or a replay.
 - `UsagePoller`: the only thing that starts a process. It and the Sparkle update check are the only routes to the network.
