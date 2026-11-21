@@ -56,3 +56,53 @@ import Foundation
     #expect(SingleInstance.verdict(bundleIdentifier: "com.stixum.burnline",
                                    otherInstances: -1) == .run)
 }
+
+// MARK: - The tie-break
+
+private let app = "com.stixum.burnline"
+private func copy(_ startedAt: TimeInterval?, _ pid: Int32) -> SingleInstance.Instance {
+    .init(startedAt: startedAt, pid: pid)
+}
+
+/// The race the count rule loses: two copies launched together each see the
+/// other. Exactly one of the two verdicts must be `.run`.
+@Test func ofTwoCopiesLaunchedTogetherExactlyOneRuns() {
+    let first = copy(1_000.0, 500), second = copy(1_000.4, 501)
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: first, others: [second]) == .run)
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: second, others: [first]) == .standDown)
+}
+
+@Test func copiesStartedInTheSameInstantAreSeparatedByPid() {
+    let low = copy(1_000, 500), high = copy(1_000, 501)
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: low, others: [high]) == .run)
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: high, others: [low]) == .standDown)
+}
+
+/// The ordinary case: a copy already running for days, whatever its pid.
+@Test func aLaterCopyStandsDownForALongRunningOneEvenWithALowerPid() {
+    let incumbent = copy(1_000, 90_000), newcomer = copy(500_000, 312)
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: newcomer, others: [incumbent]) == .standDown)
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: incumbent, others: [newcomer]) == .run)
+}
+
+/// Two writers on the archive is worse than no copy running, so an ordering
+/// that cannot be established is not trusted.
+@Test func anUnknownStartTimeFallsBackToStandingDown() {
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: copy(nil, 500),
+                                   others: [copy(2_000, 501)]) == .standDown)
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: copy(1_000, 500),
+                                   others: [copy(nil, 501)]) == .standDown)
+}
+
+@Test func theOldestOfThreeIsTheOnlyOneThatRuns() {
+    let a = copy(1, 10), b = copy(2, 11), c = copy(3, 12)
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: a, others: [b, c]) == .run)
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: b, others: [a, c]) == .standDown)
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: c, others: [a, b]) == .standDown)
+}
+
+@Test func theTieBreakStillNeverFiresWithoutABundleIdentifier() {
+    #expect(SingleInstance.verdict(bundleIdentifier: nil, mine: copy(nil, 500),
+                                   others: [copy(1, 2)]) == .run)
+    #expect(SingleInstance.verdict(bundleIdentifier: app, mine: copy(nil, 500), others: []) == .run)
+}

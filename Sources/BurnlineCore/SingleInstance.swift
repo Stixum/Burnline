@@ -51,4 +51,39 @@ public enum SingleInstance {
 
         return .standDown
     }
+
+    /// One running copy, identified by when its process started and its pid.
+    public struct Instance: Equatable, Sendable {
+        public let startedAt: TimeInterval?
+        public let pid: Int32
+
+        public init(startedAt: TimeInterval?, pid: Int32) {
+            self.startedAt = startedAt
+            self.pid = pid
+        }
+    }
+
+    /// The same question, with a tie-break: **the oldest copy runs.**
+    ///
+    /// Counting alone has a race. Two copies launched together (login item plus
+    /// a click) each see the other and both stand down, leaving none. Ordering
+    /// them by process start time, then pid, gives both sides the same answer
+    /// and exactly one survivor.
+    ///
+    /// 🔴 Fails to the safe side. Two writers on the history archive is the
+    /// outcome this guard exists to prevent, and no copy running is only an
+    /// inconvenience — so when any start time is unknown the ordering is not
+    /// trusted and the count rule applies: another copy exists, stand down.
+    public static func verdict(bundleIdentifier: String?,
+                               mine: Instance, others: [Instance]) -> Verdict {
+        guard verdict(bundleIdentifier: bundleIdentifier,
+                      otherInstances: others.count) == .standDown else { return .run }
+        guard let myStart = mine.startedAt else { return .standDown }
+
+        for other in others {
+            guard let theirStart = other.startedAt else { return .standDown }
+            if (theirStart, other.pid) < (myStart, mine.pid) { return .standDown }
+        }
+        return .run
+    }
 }
