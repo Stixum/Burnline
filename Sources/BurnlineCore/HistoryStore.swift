@@ -250,8 +250,13 @@ public struct HistoryStore: Sendable {
     public func saveTracking(_ file: TrackingFile) throws {
         createDirectory()
         let target = url("tracking.json")
-        if let existing = try? Data(contentsOf: target),
-           (try? JSON.decoder.decode(TrackingFile.self, from: existing))?.isCompatible != true {
+        // "Exists but cannot be read at all" (permissions, an I/O error) is
+        // set aside too. Only a file that is not there may be written fresh:
+        // testing `Data(contentsOf:)` alone let an unreadable file fall
+        // through to the overwrite below.
+        let readable = (try? Data(contentsOf: target))
+            .flatMap { try? JSON.decoder.decode(TrackingFile.self, from: $0) }?.isCompatible == true
+        if FileManager.default.fileExists(atPath: target.path), !readable {
             let stamp = "\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(8))"
             try FileManager.default.moveItem(at: target, to: url("tracking.json.unreadable-\(stamp)"))
         }

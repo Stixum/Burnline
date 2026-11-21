@@ -709,6 +709,28 @@ private func setAside(in directory: URL) -> [URL] {
     #expect(try kept.first.map { try Data(contentsOf: $0) } == original)
 }
 
+/// A file that exists but cannot be read at all used to fall through to the
+/// overwrite: the set-aside ran only when the bytes could be loaded.
+@Test func aTrackingFileThatCannotBeReadAtAllIsSetAsideToo() async throws {
+    let directory = writerDirectory()
+    let store = HistoryStore(directory: directory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let file = directory.appendingPathComponent("tracking.json")
+    let original = Data(#"{"version":1,"entries":[]}"#.utf8)
+    try original.write(to: file)
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+
+    await HistoryWriter(store: store, schedule: writerSchedule).observe(trackedEntry)
+
+    #expect(try store.loadTracking().entries == [trackedEntry])
+    let kept = setAside(in: directory)
+    #expect(kept.count == 1)
+    for url in kept {
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+    }
+    #expect(try kept.first.map { try Data(contentsOf: $0) } == original)
+}
+
 @Test func aTrackingFileFromAnotherVersionIsSetAsideToo() async throws {
     let directory = writerDirectory()
     let store = HistoryStore(directory: directory)
