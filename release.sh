@@ -29,6 +29,37 @@ if [ "${BURNLINE_ALLOW_DIRTY:-}" != "1" ] && [ -n "$(git status --porcelain)" ];
   exit 1
 fi
 
+# The version gate. Sparkle compares CFBundleVersion against `sparkle:version`
+# and nothing else: a build number that did not increase yields a notarized DMG
+# and a feed every installed copy silently ignores. Re-running for a version
+# that already shipped is worse — the feed is rewritten with a signature for a
+# NEW DMG while the release still serves the old one, and updates break for
+# everyone. Neither has an override: a dry run of a shipped version has nothing
+# to prove that the shipped artefact did not.
+#
+# Read from the working tree, which the dirty check above has just shown to be
+# the committed feed (under BURNLINE_ALLOW_DIRTY it may be a previous run's).
+if ! [[ "${BUILD_NUMBER}" =~ ^[0-9]+$ ]]; then
+  echo "!!! CFBundleVersion '${BUILD_NUMBER}' is not a whole number." >&2
+  exit 1
+fi
+SHIPPED_BUILD=$(sed -n 's/.*<sparkle:version>\([^<]*\)<\/sparkle:version>.*/\1/p' docs/appcast.xml 2>/dev/null | head -1)
+if ! [[ "${SHIPPED_BUILD}" =~ ^[0-9]+$ ]]; then
+  echo "!!! Could not read the shipped build number from docs/appcast.xml." >&2
+  echo "    Without it there is no way to tell this build is newer. Restore the feed." >&2
+  exit 1
+fi
+if [ "${BUILD_NUMBER}" -le "${SHIPPED_BUILD}" ]; then
+  echo "!!! CFBundleVersion ${BUILD_NUMBER} does not exceed the shipped build ${SHIPPED_BUILD}." >&2
+  echo "    Sparkle would ignore this release. Bump it in Resources/Info.plist." >&2
+  exit 1
+fi
+if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+  echo "!!! Tag v${VERSION} already exists: ${VERSION} has shipped." >&2
+  echo "    Bump CFBundleShortVersionString in Resources/Info.plist." >&2
+  exit 1
+fi
+
 IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
   | grep "Developer ID Application" | head -1 | awk '{print $2}' || true)
 if [ -z "${IDENTITY}" ]; then
@@ -222,6 +253,38 @@ if [ -z "${ED_SIGNATURE}" ] || [ -z "${DMG_LENGTH}" ]; then
   echo "!!! Could not parse sign_update output: ${SIGNATURE_LINE}" >&2
   exit 1
 fi
+
+# The signature gate. sign_update signs with whatever EdDSA key the keychain
+# holds, and its own --verify checks against that same key — so neither can
+# tell that the key is not the one installed copies trust. This checks the
+# signature the way Sparkle will: against SUPublicEDKey from the bundle that
+# is inside the DMG. A feed that fails here would be rejected by every install.
+PUBLIC_ED_KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "${APP}/Contents/Info.plist")
+VERIFIER_STUB=$(mktemp -t burnline-verify)
+VERIFIER="${VERIFIER_STUB}.swift"
+cat > "${VERIFIER}" <<'VERIFY'
+import CryptoKit
+import Foundation
+
+let arguments = CommandLine.arguments
+guard arguments.count == 4,
+      let key = Data(base64Encoded: arguments[1]),
+      let signature = Data(base64Encoded: arguments[2]),
+      let publicKey = try? Curve25519.Signing.PublicKey(rawRepresentation: key),
+      let file = try? Data(contentsOf: URL(fileURLWithPath: arguments[3]))
+else { exit(2) }
+exit(publicKey.isValidSignature(signature, for: file) ? 0 : 1)
+VERIFY
+VERIFIED=0
+swift "${VERIFIER}" "${PUBLIC_ED_KEY}" "${ED_SIGNATURE}" "${DMG}" || VERIFIED=$?
+rm -f "${VERIFIER}" "${VERIFIER_STUB}"
+if [ "${VERIFIED}" -ne 0 ]; then
+  echo "!!! The update signature does not verify against SUPublicEDKey (${VERIFIED})." >&2
+  echo "    The keychain's EdDSA key is not the one installed copies trust." >&2
+  echo "    Do not publish: every install would reject this update. The feed is unchanged." >&2
+  exit 1
+fi
+echo "    signature verifies against SUPublicEDKey"
 
 # `sparkle:version` is CFBundleVersion and is what Sparkle actually compares —
 # it must increase on every release, independently of the human-facing version.
