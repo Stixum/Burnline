@@ -269,14 +269,14 @@ private func blockLine(id: String, output: Int) -> String {
         {"type":"assistant","cwd":"\(cwd)","timestamp":"\(recentISO)","message":{"id":"\(id)","model":"claude-sonnet-5","usage":{"output_tokens":5}}}\n
         """
     }
-    _ = dir.write(cwdLine("/Users/me/Projects/train-times", id: "a"),
-                  to: "projects/-Users-me-Projects-train-times/s.jsonl")
+    _ = dir.write(cwdLine("/Users/me/Projects/bus-times", id: "a"),
+                  to: "projects/-Users-me-Projects-bus-times/s.jsonl")
     let scanner = TranscriptScanner(rootURL: dir.url)
     var cache = try scanner.scan(cache: ScanCache(), now: Date())
-    dir.append(line(output: 3), to: "projects/-Users-me-Projects-train-times/s.jsonl")
+    dir.append(line(output: 3), to: "projects/-Users-me-Projects-bus-times/s.jsonl")
     cache = try scanner.scan(cache: cache, now: Date().addingTimeInterval(1))
 
     let state = try #require(cache.files.values.first)
-    #expect(state.workingDirectories == ["/Users/me/Projects/train-times"])
+    #expect(state.workingDirectories == ["/Users/me/Projects/bus-times"])
 }
 

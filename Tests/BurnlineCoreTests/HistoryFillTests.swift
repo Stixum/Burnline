@@ -357,11 +357,11 @@ private final class ProgressLog: @unchecked Sendable {
     let tree = FillTree()
     let stamp = clock.addingTimeInterval(-2 * day)
     tree.session("""
-        {"type":"assistant","cwd":"/Users/me/Projects/train-times","timestamp":"\(iso(stamp))","message":{"model":"claude-sonnet-5","usage":{"output_tokens":100}}}\n
-        """, at: "projects/-Users-me-Projects-train-times/a.jsonl", modified: stamp)
+        {"type":"assistant","cwd":"/Users/me/Projects/bus-times","timestamp":"\(iso(stamp))","message":{"model":"claude-sonnet-5","usage":{"output_tokens":100}}}\n
+        """, at: "projects/-Users-me-Projects-bus-times/a.jsonl", modified: stamp)
 
     let filled = try HistoryFill(rootURL: tree.root).cells(from: clock.addingTimeInterval(-5 * day), to: clock)
-    #expect(filled.rows.map(\.project) == ["-Users-me-Projects-train-times"])
-    #expect(filled.workingDirectories == ["-Users-me-Projects-train-times": ["/Users/me/Projects/train-times"]])
+    #expect(filled.rows.map(\.project) == ["-Users-me-Projects-bus-times"])
+    #expect(filled.workingDirectories == ["-Users-me-Projects-bus-times": ["/Users/me/Projects/bus-times"]])
 }
 

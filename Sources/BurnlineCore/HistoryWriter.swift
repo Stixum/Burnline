@@ -169,7 +169,7 @@ public actor HistoryWriter {
     /// 🔴 The ONE place a folder becomes a name, for the flush, the fill and
     /// the heal alike. Names used to be resolved in each path against whatever
     /// set of folders that path held, so a project's name flipped when the set
-    /// changed (`iOS` ↔ `ConcertTracker/iOS`), and a bucket written twice
+    /// changed (`iOS` ↔ `PhotoLibrary/iOS`), and a bucket written twice
     /// across a flip was counted twice.
     func named(_ rows: [HistoryRow], workingDirectories: [String: Set<String>]) -> [HistoryRow] {
         guard !rows.isEmpty else { return rows }

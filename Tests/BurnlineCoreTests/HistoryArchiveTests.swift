@@ -96,13 +96,13 @@ private func cache(files: [String: [String: TokenCounts]]) -> ScanCache {
 /// The flush hands the writer the folder and the evidence to name it from;
 /// naming itself is `HistoryWriter`'s, once, for every path.
 @Test func theFlushCarriesEachFoldersWorkingDirectories() {
-    var scan = cache(files: ["/p/projects/-Users-me-Projects-train-times/a.jsonl":
+    var scan = cache(files: ["/p/projects/-Users-me-Projects-bus-times/a.jsonl":
                                 ["claude-opus-5": TokenCounts(output: 10)]])
-    scan.files["/p/projects/-Users-me-Projects-train-times/a.jsonl"]?.workingDirectories =
-        ["/Users/me/Projects/train-times"]
+    scan.files["/p/projects/-Users-me-Projects-bus-times/a.jsonl"]?.workingDirectories =
+        ["/Users/me/Projects/bus-times"]
     let payload = HistoryArchive.payload(from: scan, coverage: Coverage(records: []),
                                          through: bucketStart + 900)
-    #expect(payload.rows.map(\.project) == ["-Users-me-Projects-train-times"])
-    #expect(payload.workingDirectories == ["-Users-me-Projects-train-times": ["/Users/me/Projects/train-times"]])
+    #expect(payload.rows.map(\.project) == ["-Users-me-Projects-bus-times"])
+    #expect(payload.workingDirectories == ["-Users-me-Projects-bus-times": ["/Users/me/Projects/bus-times"]])
 }
 

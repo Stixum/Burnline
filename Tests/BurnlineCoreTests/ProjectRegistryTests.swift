@@ -5,7 +5,7 @@ import Foundation
 // A project's name used to be derived again on every flush and fill, from
 // whichever folders that path happened to hold: a parent was added only on a
 // basename collision, so the name flipped as the set changed. Measured on a
-// copy of the real archive, `ConcertTracker/iOS` and `iOS` were one project,
+// copy of the real archive, `PhotoLibrary/iOS` and `iOS` were one project,
 // and a bucket written twice across a flip was counted twice — dedupe keys on
 // the name. The registry assigns a name once and never derives it again.
 
@@ -37,29 +37,29 @@ private func registry(_ names: [String: String] = [:]) -> ProjectRegistry {
 
 // MARK: - Seeding from the archive
 
-/// The rehearsal's regression: the cwd fix took `ConcertTracker/iOS` (3.16B
+/// The rehearsal's regression: the cwd fix took `PhotoLibrary/iOS` (3.16B
 /// tokens of history) down to `iOS`. A folder seen for the first time keeps
 /// the most specific name the archive already files its path under.
 @Test func aNewFolderInheritsTheMostSpecificNameTheArchiveUsesForItsPath() {
     var projects = registry()
     let names = projects.names(
-        for: ["-Users-me-projects-ConcertTracker-iOS": ["/Users/me/projects/ConcertTracker/iOS"]],
-        existing: { ["iOS", "ConcertTracker/iOS", "Burnline"] })
-    #expect(names["-Users-me-projects-ConcertTracker-iOS"] == "ConcertTracker/iOS")
+        for: ["-Users-me-projects-PhotoLibrary-iOS": ["/Users/me/projects/PhotoLibrary/iOS"]],
+        existing: { ["iOS", "PhotoLibrary/iOS", "Burnline"] })
+    #expect(names["-Users-me-projects-PhotoLibrary-iOS"] == "PhotoLibrary/iOS")
 }
 
 /// The control: only a name that is a suffix of the real path is inherited.
-/// The old split named worktrees by their last word and `TrainTimes-iOS` as
-/// `TrainTimes/iOS`; carrying those forward would undo the cwd fix.
+/// The old split named worktrees by their last word and `BusTimes-iOS` as
+/// `BusTimes/iOS`; carrying those forward would undo the cwd fix.
 @Test func anArchivedNameThatIsNotASuffixOfThePathIsNotInherited() {
     var projects = registry()
     let worktree = "-Users-me-p--claude-worktrees-gallant-swanson-584f92"
     let names = projects.names(
         for: [worktree: ["/Users/me/p/.claude/worktrees/gallant-swanson-584f92"],
-              "-Users-me-p-TrainTimes-iOS": ["/Users/me/p/TrainTimes-iOS"]],
-        existing: { ["584f92", "TrainTimes/iOS", "iOS"] })
+              "-Users-me-p-BusTimes-iOS": ["/Users/me/p/BusTimes-iOS"]],
+        existing: { ["584f92", "BusTimes/iOS", "iOS"] })
     #expect(names[worktree] == "gallant-swanson-584f92")
-    #expect(names["-Users-me-p-TrainTimes-iOS"] == "TrainTimes-iOS")
+    #expect(names["-Users-me-p-BusTimes-iOS"] == "BusTimes-iOS")
 }
 
 // MARK: - Folders with no root, and plain names
@@ -68,24 +68,24 @@ private func registry(_ names: [String: String] = [:]) -> ProjectRegistry {
 /// alone — used, but not registered, so a later `cwd` can still correct it.
 @Test func aFolderWithNoMatchingWorkingDirectoryIsNamedButNotRegistered() {
     var projects = registry()
-    let guess = projects.names(for: ["-Users-me-p-train-times": []], existing: { [] })
-    #expect(guess["-Users-me-p-train-times"] == "times")
+    let guess = projects.names(for: ["-Users-me-p-bus-times": []], existing: { [] })
+    #expect(guess["-Users-me-p-bus-times"] == "times")
     #expect(projects.names.isEmpty)
 
-    let named = projects.names(for: ["-Users-me-p-train-times": ["/Users/me/p/train-times"]],
+    let named = projects.names(for: ["-Users-me-p-bus-times": ["/Users/me/p/bus-times"]],
                                existing: { [] })
-    #expect(named["-Users-me-p-train-times"] == "train-times")
-    #expect(projects.names == ["-Users-me-p-train-times": "train-times"])
+    #expect(named["-Users-me-p-bus-times"] == "bus-times")
+    #expect(projects.names == ["-Users-me-p-bus-times": "bus-times"])
 }
 
 /// The guess does not depend on the set either: the longest archived name the
 /// folder split ends with, else its last word.
 @Test func anUnregisteredFolderKeepsAnArchivedNameItsSplitEndsWith() {
     var projects = registry()
-    let names = projects.names(for: ["-Users-me-projects-ConcertTracker-iOS": [],
+    let names = projects.names(for: ["-Users-me-projects-PhotoLibrary-iOS": [],
                                      "-Users-me-other-iOS": []],
-                               existing: { ["iOS", "ConcertTracker/iOS"] })
-    #expect(names["-Users-me-projects-ConcertTracker-iOS"] == "ConcertTracker/iOS")
+                               existing: { ["iOS", "PhotoLibrary/iOS"] })
+    #expect(names["-Users-me-projects-PhotoLibrary-iOS"] == "PhotoLibrary/iOS")
     #expect(names["-Users-me-other-iOS"] == "iOS")
 }
 

@@ -7,7 +7,7 @@ import Foundation
 /// 🔴 Names used to be derived again on every flush and fill, from whichever
 /// folders that path held: a parent was added only on a basename collision,
 /// so a name flipped as the set changed. On a copy of the real archive
-/// `ConcertTracker/iOS` and `iOS` were one project, and a bucket written twice
+/// `PhotoLibrary/iOS` and `iOS` were one project, and a bucket written twice
 /// across a flip was counted twice — dedupe keys on the name. A name here, once
 /// given, is never computed again.
 public struct ProjectRegistry: Equatable, Sendable, Codable {

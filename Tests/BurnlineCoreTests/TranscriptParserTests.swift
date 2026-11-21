@@ -154,12 +154,12 @@ private func block(id: String, output: Int = 135) -> String {
 
 @Test func theParserReportsTheWorkingDirectoriesItsUsageLinesName() {
     let text = """
-    {"type":"assistant","cwd":"/Users/me/Projects/train-times","timestamp":"2026-10-01T12:00:00Z","message":{"id":"a","model":"claude-sonnet-5","usage":{"output_tokens":5}}}
-    {"type":"assistant","cwd":"/Users/me/Projects/train-times/Sources","timestamp":"2026-10-01T12:01:00Z","message":{"id":"b","model":"claude-sonnet-5","usage":{"output_tokens":7}}}
+    {"type":"assistant","cwd":"/Users/me/Projects/bus-times","timestamp":"2026-10-01T12:00:00Z","message":{"id":"a","model":"claude-sonnet-5","usage":{"output_tokens":5}}}
+    {"type":"assistant","cwd":"/Users/me/Projects/bus-times/Sources","timestamp":"2026-10-01T12:01:00Z","message":{"id":"b","model":"claude-sonnet-5","usage":{"output_tokens":7}}}
 
     """
     let parsed = TranscriptParser().parse(Data(text.utf8), after: nil)
-    #expect(parsed.workingDirectories == ["/Users/me/Projects/train-times",
-                                          "/Users/me/Projects/train-times/Sources"])
+    #expect(parsed.workingDirectories == ["/Users/me/Projects/bus-times",
+                                          "/Users/me/Projects/bus-times/Sources"])
 }
 

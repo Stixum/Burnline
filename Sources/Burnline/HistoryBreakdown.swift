@@ -31,7 +31,7 @@ struct HistoryBreakdown: View {
     ///
     /// 🔴 **Fixed, not fitted.** Swift Charts' own leading `AxisValueLabel` drew
     /// the names *inside* the plot area, straight across the bars, and long ones
-    /// (`TokenEstimator`, `seanmccauley`, `ConcertTracker/iOS` — collision
+    /// (`DocumentScanner`, `alexandra`, `PhotoLibrary/iOS` — collision
     /// disambiguation puts a slash in real project names) were unreadable while
     /// short ones hid behind their own bar. The gutter is the fix, and it has to
     /// be a constant: sized to the widest label it would jump every time the

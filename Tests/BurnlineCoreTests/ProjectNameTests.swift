@@ -34,14 +34,14 @@ struct ProjectNameTests {
 // MARK: - Names from the transcript's own working directory
 
 // Claude Code encodes the project path by turning every character but a letter
-// or digit into "-", which cannot be undone: `train-times` and `train/times`
+// or digit into "-", which cannot be undone: `bus-times` and `bus/times`
 // encode alike. Split on "-", a kebab-case project was named by its last word.
 // The transcripts carry the real path as `cwd`, and the one whose encoding
 // reproduces the folder name is the project root.
 
 @Test func aHyphenatedProjectIsNamedFromItsOwnWorkingDirectory() {
-    let names = firstNames(["-Users-me-Projects-train-times": ["/Users/me/Projects/train-times"]])
-    #expect(names["-Users-me-Projects-train-times"] == "train-times")
+    let names = firstNames(["-Users-me-Projects-bus-times": ["/Users/me/Projects/bus-times"]])
+    #expect(names["-Users-me-Projects-bus-times"] == "bus-times")
 }
 
 @Test func hyphenatedProjectsSharingABasenameStayApart() {
@@ -57,11 +57,11 @@ struct ProjectNameTests {
 /// path that encodes to the folder is the root; the rest are ignored.
 @Test func aWorkingDirectoryThatIsNotTheRootIsIgnored() {
     let names = firstNames([
-        "-Users-me-Projects-train-times": ["/Users/me/Projects/train-times/Sources",
-                                           "/Users/me/Projects/train-times"],
+        "-Users-me-Projects-bus-times": ["/Users/me/Projects/bus-times/Sources",
+                                           "/Users/me/Projects/bus-times"],
         "-Users-me-Projects-other-app": ["/Users/me/Projects/other-app/Sources"],
     ])
-    #expect(names["-Users-me-Projects-train-times"] == "train-times")
+    #expect(names["-Users-me-Projects-bus-times"] == "bus-times")
     // No root among them: the folder name, split as before.
     #expect(names["-Users-me-Projects-other-app"] == "app")
 }
@@ -77,10 +77,10 @@ struct ProjectNameTests {
 /// different folder — and without the match the name fell back to a guess.
 @Test func aRootDifferingOnlyInCaseIsStillTheRoot() {
     let names = firstNames([
-        "-Users-me-projects-ConcertTracker-iOS": ["/Users/me/Projects/ConcertTracker-iOS",
-                                                  "/Users/me/Projects/ConcertTracker-iOS/.superpowers/b2b"],
+        "-Users-me-projects-PhotoLibrary-iOS": ["/Users/me/Projects/PhotoLibrary-iOS",
+                                                  "/Users/me/Projects/PhotoLibrary-iOS/.superpowers/b2b"],
     ])
-    #expect(names["-Users-me-projects-ConcertTracker-iOS"] == "ConcertTracker-iOS")
+    #expect(names["-Users-me-projects-PhotoLibrary-iOS"] == "PhotoLibrary-iOS")
 }
 
 /// The control: an exact match wins over one that differs only in case.

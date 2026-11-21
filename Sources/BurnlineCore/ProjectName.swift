@@ -10,7 +10,7 @@ import Foundation
 /// accepted).
 ///
 /// ⚠️ The encoding cannot be undone. Every character but an ASCII letter or
-/// digit becomes `-`, so `train-times`, `train/times` and `train.times` all
+/// digit becomes `-`, so `bus-times`, `bus/times` and `bus.times` all
 /// encode alike, and splitting on `-` named a kebab-case project by its last
 /// word. The path comes from the transcripts' own `cwd` instead, and only one
 /// that re-encodes to the folder name counts: a session that `cd`s elsewhere
@@ -30,7 +30,7 @@ enum ProjectName {
     }
 
     /// Every trailing run of `components`, shortest first:
-    /// `["iOS", "ConcertTracker/iOS", "projects/ConcertTracker/iOS", …]`.
+    /// `["iOS", "PhotoLibrary/iOS", "projects/PhotoLibrary/iOS", …]`.
     static func suffixes(of components: [String]) -> [String] {
         components.indices.reversed().map { components[$0...].joined(separator: "/") }
     }
