@@ -110,9 +110,16 @@ public struct UsageUtilization: Sendable, Decodable {
 
         init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            sevenDay = ((try? c.decodeIfPresent(RawReading.self, forKey: .sevenDay)) ?? nil)?.resolved
-            fiveHour = ((try? c.decodeIfPresent(RawReading.self, forKey: .fiveHour)) ?? nil)?.resolved
             let limits = ((try? c.decodeIfPresent([RawLimit].self, forKey: .limits)) ?? nil) ?? []
+            // 🔴 `seven_day` first, then the `weekly_all` entry in `limits`,
+            // which carries the same account-wide figure. About thirty of
+            // `seven_day`'s siblings were already null on 2026-11-21; if it
+            // follows them and nothing else is read, every user drops to
+            // pace-only with no error. Only `weekly_all` may stand in: a
+            // session limit or a per-model one is a different quantity.
+            sevenDay = ((try? c.decodeIfPresent(RawReading.self, forKey: .sevenDay)) ?? nil)?.resolved
+                ?? limits.first { $0.kind == "weekly_all" }?.resolvedReading
+            fiveHour = ((try? c.decodeIfPresent(RawReading.self, forKey: .fiveHour)) ?? nil)?.resolved
             scopedWeekly = limits.first { $0.kind == "weekly_scoped" }?.resolvedScoped
             spend = (try? c.decodeIfPresent(ExtraUsage.RawSpend.self, forKey: .spend)) ?? nil
             extraUsage = (try? c.decodeIfPresent(ExtraUsage.RawExtraUsage.self, forKey: .extraUsage)) ?? nil
@@ -146,6 +153,7 @@ public struct UsageUtilization: Sendable, Decodable {
         var kind: String?
         var percent: Double?
         var severity: String?
+        var resetsAt: String?
         var scope: Scope?
 
         struct Scope: Decodable {
@@ -165,17 +173,29 @@ public struct UsageUtilization: Sendable, Decodable {
             enum CodingKeys: String, CodingKey { case model }
         }
 
-        enum CodingKeys: String, CodingKey { case kind, percent, severity, scope }
+        enum CodingKeys: String, CodingKey {
+            case kind, percent, severity, scope
+            case resetsAt = "resets_at"
+        }
 
         init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? nil
             percent = (try? c.decodeIfPresent(Double.self, forKey: .percent)) ?? nil
             severity = (try? c.decodeIfPresent(String.self, forKey: .severity)) ?? nil
+            resetsAt = (try? c.decodeIfPresent(String.self, forKey: .resetsAt)) ?? nil
             scope = (try? c.decodeIfPresent(Scope.self, forKey: .scope)) ?? nil
         }
 
         /// A scoped limit without a model name says nothing a user could read.
+        /// This entry as a window reading. Like `RawReading.resolved`, a
+        /// percentage with no reset instant cannot be placed in a window and
+        /// is dropped.
+        var resolvedReading: Reading? {
+            guard let percent, let date = UsageUtilization.date(from: resetsAt) else { return nil }
+            return Reading(percent: percent, resetsAt: date)
+        }
+
         var resolvedScoped: ScopedLimit? {
             guard let percent, let name = scope?.model?.displayName else { return nil }
             return ScopedLimit(percent: percent, severity: severity ?? "normal", modelName: name)

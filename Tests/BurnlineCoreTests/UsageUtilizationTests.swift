@@ -188,3 +188,71 @@ private func utilizationCapture(_ percent: Double, fetchedAt: TimeInterval) thro
                                          rateLimit: nil, now: Date(), isScanning: false)
     #expect(snapshot.scopedWeekly == nil)
 }
+
+// MARK: - The `limits` fallback
+
+// The block carries the weekly figure twice: `seven_day`, and a `limits` entry
+// of kind `weekly_all`. About thirty of `seven_day`'s siblings were already
+// null on 2026-11-21 while `limits` kept growing, so `seven_day` going the
+// same way is the likely shape change — and with only `seven_day` read, every
+// user would drop to pace-only with no error.
+
+/// Shaped from the real block observed 2026-11-21, with `seven_day` nulled.
+private let utilizationWithOnlyLimits = """
+{"fetchedAtMs":1795289746321,
+ "utilization":{
+   "five_hour":null,"seven_day":null,"seven_day_opus":null,
+   "limits":[
+     {"kind":"weekly_all","group":"weekly","percent":25,"severity":"normal",
+      "resets_at":"2026-11-27T07:00:00.258694+00:00","scope":null,"is_active":true}]}}
+"""
+
+@Test func theWeeklyFigureFallsBackToTheLimitsEntryWhenSevenDayIsNull() throws {
+    let u = try decodeUtilization(utilizationWithOnlyLimits)
+    #expect(u.sevenDay?.percent == 25)
+    // To the millisecond: the ISO8601 parser keeps three fractional digits.
+    let resetsAt = try #require(u.sevenDay?.resetsAt).timeIntervalSince1970
+    #expect(abs(resetsAt - 1_795_762_800.258694) < 0.001)
+
+    // And it reaches the pipeline as a proven capture, like `seven_day` does.
+    let capture = try #require(u.asCapture())
+    #expect(capture.sevenDay.usedPercent == 25)
+    #expect(capture.provenAt == 1_795_289_746.321)
+}
+
+/// `seven_day` is the field with three months of history behind it. While it
+/// is present it is the figure; the fallback never overrides it.
+@Test func sevenDayWinsOverADisagreeingLimitsEntry() throws {
+    let u = try decodeUtilization("""
+    {"fetchedAtMs":1000,"utilization":{
+      "seven_day":{"utilization":40,"resets_at":"2026-11-27T07:00:00Z"},
+      "limits":[{"kind":"weekly_all","percent":99,"resets_at":"2026-12-04T07:00:00Z"}]}}
+    """)
+    #expect(u.sevenDay?.percent == 40)
+    #expect(u.sevenDay?.resetsAt == Date(timeIntervalSince1970: 1_795_762_800))
+}
+
+/// The same rule as a `seven_day` with no boundary: a percentage that cannot
+/// be placed in a window is dropped, not guessed at.
+@Test func aWeeklyLimitsEntryWithNoResetInstantIsNotAFallback() throws {
+    let u = try decodeUtilization("""
+    {"fetchedAtMs":1000,"utilization":{"seven_day":null,
+      "limits":[{"kind":"weekly_all","percent":25,"resets_at":null}]}}
+    """)
+    #expect(u.sevenDay == nil)
+    #expect(u.asCapture() == nil)
+}
+
+/// The control: only `weekly_all` is the account-wide weekly figure. A session
+/// limit or a per-model one must never stand in for it.
+@Test func onlyTheWeeklyAllEntryCanStandInForSevenDay() throws {
+    let u = try decodeUtilization("""
+    {"fetchedAtMs":1000,"utilization":{"seven_day":null,
+      "limits":[
+        {"kind":"session","percent":3,"resets_at":"2026-11-21T20:00:00Z"},
+        {"kind":"weekly_scoped","percent":8,"resets_at":"2026-11-27T07:00:00Z",
+         "scope":{"model":{"display_name":"Fable"}}}]}}
+    """)
+    #expect(u.sevenDay == nil)
+    #expect(u.scopedWeekly?.percent == 8)
+}
