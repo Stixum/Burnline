@@ -80,11 +80,20 @@ struct SettingsView: View {
             store.refreshNotificationAuthorization()
             syncLoginItem()
             automaticUpdates = Updater.shared.automaticallyChecks
+            presentRequestedRefreshConfirmation()
+        }
+        // The popover's offer lands here: it never enables the refresh itself,
+        // so this alert is the one confirmation whichever way the user came.
+        // `onChange` covers a Settings window that was already open.
+        .onChange(of: store.refreshConfirmationRequested) {
+            presentRequestedRefreshConfirmation()
         }
         .alert("Let Burnline refresh your usage?", isPresented: $confirmingPoller) {
-            Button("Cancel", role: .cancel) { }
+            // Reading this and backing out is an answer, like declining setup:
+            // the popover does not offer again. The switch stays where it is.
+            Button("Cancel", role: .cancel) { store.chooseAutomaticRefresh(false) }
             Button("Turn on") {
-                store.settings.refreshesUsageAutomatically = true
+                store.chooseAutomaticRefresh(true)
                 store.refreshClaudeExecutable()
             }
         } message: {
@@ -272,8 +281,10 @@ struct SettingsView: View {
                 set: { wanted in
                     if wanted && !store.settings.refreshesUsageAutomatically {
                         confirmingPoller = true      // not enabled until confirmed
-                    } else {
-                        store.settings.refreshesUsageAutomatically = wanted
+                    } else if wanted != store.settings.refreshesUsageAutomatically {
+                        // Switching it off is an answer, recorded so the
+                        // popover never offers it back.
+                        store.chooseAutomaticRefresh(wanted)
                     }
                 }
             ))
@@ -619,6 +630,13 @@ struct SettingsView: View {
         case .noSettingsFile, .notConfigured: Theme.textMuted
         case .stalePath, .conflict, .unreadable: Theme.warning
         }
+    }
+
+    /// Shows the confirmation the popover's offer asked for, once.
+    private func presentRequestedRefreshConfirmation() {
+        guard store.takeRefreshConfirmationRequest(),
+              !store.settings.refreshesUsageAutomatically else { return }
+        confirmingPoller = true
     }
 
     private func setLaunchAtLogin(_ enabled: Bool) {

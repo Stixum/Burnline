@@ -584,6 +584,41 @@ final class UsageStore {
         claudeExecutable = ClaudeExecutable.resolve()
     }
 
+    // MARK: - The offer to refresh automatically
+
+    /// The popover's offer, when there is one to make. The rule is
+    /// `RefreshOffer.resolve`; this only hands it what the store holds.
+    var refreshOffer: RefreshOffer? {
+        RefreshOffer.resolve(choice: settings.refreshChoice, snapshot: snapshot,
+                             helper: statuslineReport,
+                             claudeFound: claudeExecutable != nil)
+    }
+
+    /// Records a yes or a no to automatic refresh, from wherever it was given:
+    /// the Settings switch, its confirmation, or the offer's "No thanks".
+    /// Either way the offer is answered and does not come back.
+    func chooseAutomaticRefresh(_ on: Bool) {
+        var updated = storedSettings
+        updated.chooseAutomaticRefresh(on)
+        settings = updated
+    }
+
+    /// Set by the offer's "Turn on…": Settings shows its confirmation when it
+    /// sees this, and clears it. The offer never enables anything itself, so
+    /// there is one confirmation and one place the switch lives.
+    private(set) var refreshConfirmationRequested = false
+
+    func requestRefreshConfirmation() {
+        refreshConfirmationRequested = true
+    }
+
+    /// True once per request.
+    func takeRefreshConfirmationRequest() -> Bool {
+        guard refreshConfirmationRequested else { return false }
+        refreshConfirmationRequested = false
+        return true
+    }
+
     /// True while a manual check is running, so the button can say so. A poll
     /// takes roughly half a minute; without feedback it looks like nothing
     /// happened.

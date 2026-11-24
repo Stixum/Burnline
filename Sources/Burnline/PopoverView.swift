@@ -43,6 +43,10 @@ struct PopoverView: View {
                     .padding(.top, 5)
             }
 
+            // Exceptions-only: a day without a reading, the refresh off, and
+            // nobody has said yes or no to it. `RefreshOffer` owns the rule.
+            refreshOffer
+
             UsageBar(estimatedPercent: snapshot.estimatedPercent,
                      targetPercent: snapshot.targetPercent,
                      endOfDayPercent: snapshot.endOfDayPercent,
@@ -81,6 +85,23 @@ struct PopoverView: View {
     @ViewBuilder private var authBanner: some View {
         if let block = snapshot.visibleAuthBlock {
             AuthBanner(block: block, anchorAge: snapshot.liveAge) { remedy(block.kind) }
+        }
+    }
+
+    /// The offer to turn on automatic refresh, for someone whose figure has
+    /// gone a day without a reading and who has never been asked.
+    ///
+    /// "Turn on…" enables nothing: it opens Settings, which shows the same
+    /// confirmation its own switch does, and that is where the switch then
+    /// lives. "No thanks" is recorded and the offer does not come back.
+    @ViewBuilder private var refreshOffer: some View {
+        if let offer = store.refreshOffer {
+            RefreshOfferBanner(offer: offer) {
+                store.requestRefreshConfirmation()
+                SettingsWindow.open(using: openWindow)
+            } decline: {
+                store.chooseAutomaticRefresh(false)
+            }
         }
     }
 
@@ -150,7 +171,10 @@ struct PopoverView: View {
         if store.wiringState != .configured {
             return "No usage figure yet. Set up the status line, or run /usage in Claude Code."
         }
-        return "Waiting for Claude Code. Usage appears after its next response."
+        // "in a terminal session": the desktop app's sessions never report, and
+        // without those words this promised them a figure that never came.
+        return "Waiting for Claude Code. Usage appears after its next response "
+            + "in a terminal session."
     }
 
     private var legend: some View {
@@ -376,7 +400,9 @@ struct PopoverView: View {
             let stale = CaptureAge.isStale(snapshot.liveAge)
             HStack(spacing: 4) {
                 Circle().fill(stale ? Theme.warning : Theme.success).frame(width: 5, height: 5)
-                Text("\(stale ? "Extrapolated" : "Live") · \(CaptureAge.description(snapshot.liveAge))")
+                // The words are `CaptureAge.sourceLabel`, so an old figure
+                // cannot be worded as a current one here.
+                Text(CaptureAge.sourceLabel(snapshot.liveAge))
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(stale ? Theme.warning : Theme.success)

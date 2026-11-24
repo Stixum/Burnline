@@ -21,6 +21,13 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
     /// whatever the user then does with the window — declining to wire the
     /// statusline is an answer, and re-asking every launch would be nagging.
     public var hasSeenOnboarding: Bool
+    /// Whether the user has said yes or no to automatic refresh: the popover's
+    /// offer, the Settings switch, or its confirmation. Absent in every file
+    /// written before the offer existed, so an install with the refresh off
+    /// decodes as never asked and may be offered it once; one with it on was
+    /// confirmed when it was enabled and is never asked. Read it through
+    /// `refreshChoice`, write it through `chooseAutomaticRefresh`.
+    public var hasAnsweredRefreshOffer: Bool
     public var notifications: NotificationSettings
 
     public init(resetSchedule: ResetSchedule, weights: Weights,
@@ -31,6 +38,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
                 refreshesUsageAutomatically: Bool = false,
                 usageRefreshInterval: RefreshInterval = .fortyFive,
                 hasSeenOnboarding: Bool = false,
+                hasAnsweredRefreshOffer: Bool = false,
                 notifications: NotificationSettings = .default) {
         self.resetSchedule = resetSchedule
         self.weights = weights
@@ -42,6 +50,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         self.refreshesUsageAutomatically = refreshesUsageAutomatically
         self.usageRefreshInterval = usageRefreshInterval
         self.hasSeenOnboarding = hasSeenOnboarding
+        self.hasAnsweredRefreshOffer = hasAnsweredRefreshOffer
         self.notifications = notifications
     }
 
@@ -79,6 +88,7 @@ public struct BurnlineSettings: Equatable, Sendable, Codable {
         // existing installs are treated as not having seen it. They get the
         // window once, and only if there is actually something to fix.
         hasSeenOnboarding = lenient(.hasSeenOnboarding, false)
+        hasAnsweredRefreshOffer = lenient(.hasAnsweredRefreshOffer, false)
         notifications = lenient(.notifications, NotificationSettings.default)
     }
 }
