@@ -7,6 +7,25 @@ APP="${BUILD_DIR}/${APP_NAME}.app"
 
 cd "$(dirname "$0")"
 
+# Refuses a built product that is missing or older than the sources it is
+# supposed to have been built from. The path lookup above is the fix; this is
+# the gate, so the same mistake fails loudly however it next comes about (a
+# renamed product, another change of output directory, a build that did
+# nothing). Positive control: the 1.6.7 binary that shipped as 1.6.8 fails it.
+require_fresh_product() {
+  local product="$1" newer
+  if [ ! -f "${product}" ]; then
+    echo "!!! ${product} was not built. Refusing to assemble a bundle without it." >&2
+    exit 1
+  fi
+  newer=$(find Sources Package.swift Package.resolved -type f -newer "${product}" -print -quit)
+  if [ -n "${newer}" ]; then
+    echo "!!! ${product} is older than ${newer}." >&2
+    echo "    It is not a build of these sources. Refusing to assemble a bundle from it." >&2
+    exit 1
+  fi
+}
+
 # Build + assemble, with no signing. Factored out so `release.sh` can produce a
 # byte-identical bundle and then apply its own stricter signing, rather than
 # duplicating these steps and drifting from them.
@@ -17,19 +36,26 @@ assemble_bundle() {
   # with nothing on screen explaining why. macOS 14 still supports 2018-2020
   # Intel machines, so "requires macOS 14" and "Apple silicon only" are not the
   # same statement.
+  local flags=(-c release)
   if [ "${BURNLINE_UNIVERSAL:-}" = "1" ]; then
     echo "==> Building universal release binaries (arm64 + x86_64)"
-    swift build -c release --arch arm64 --arch x86_64 --product "${APP_NAME}"
-    swift build -c release --arch arm64 --arch x86_64 --product BurnlineStatusline
-    # SwiftPM puts multi-arch output here, NOT in .build/release. Copying from
-    # the usual path silently ships a single-arch binary from an earlier build.
-    PRODUCTS=".build/apple/Products/Release"
+    flags+=(--arch arm64 --arch x86_64)
   else
     echo "==> Building release binaries (native arch)"
-    swift build -c release --product "${APP_NAME}"
-    swift build -c release --product BurnlineStatusline
-    PRODUCTS=".build/release"
   fi
+  swift build "${flags[@]}" --product "${APP_NAME}"
+  swift build "${flags[@]}" --product BurnlineStatusline
+
+  # 🔴 Ask SwiftPM where it put them; never name the directory here. This used
+  # to hardcode .build/apple/Products/Release, which is where the old build
+  # system wrote multi-arch output. When SwiftPM's default build system changed
+  # it began writing to .build/out/Products/Release, the old directory stayed
+  # on disk holding the previous release's binaries, and 1.6.8 shipped the
+  # 1.6.7 executable under a 1.6.8 Info.plist: universal, signed, notarized,
+  # and none of the release's code in it. Every gate passed.
+  PRODUCTS=$(swift build "${flags[@]}" --show-bin-path)
+  require_fresh_product "${PRODUCTS}/${APP_NAME}"
+  require_fresh_product "${PRODUCTS}/BurnlineStatusline"
 
   echo "==> Generating icon"
   swift Tools/make-icon.swift
