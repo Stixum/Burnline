@@ -361,31 +361,44 @@ struct PopoverView: View {
                 }
             }
         } else {
-            HStack(spacing: 12) {
+            // The label and the controls are two groups with one flexible gap.
+            // As a single row with 12pt between every item and a default
+            // spacer, the label could never come closer than 32pt to the first
+            // control, and "Extrapolated · 3d ago" truncated to "Extrapolated ·
+            // 3…": the age cut off in exactly the state that is about the age.
+            // The controls keep their size whatever happens; the label is the
+            // part that gives (see `sourceLabel`).
+            HStack(spacing: 0) {
                 sourceLabel
-                Spacer()
-                // Only when the status line is not wired. This is where a user
-                // notices the figure has stopped moving, so it is where the
-                // remedy belongs — but it must not add a row in the normal case,
-                // which is already a dense 300pt panel.
-                if store.wiringState != .configured {
-                    Button("Set up") { OnboardingWindow.open(using: openWindow) }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                }
-                checkNowButton
-                historyButton
-                Button("Settings") { SettingsWindow.open(using: openWindow) }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textMuted)
-                    .keyboardShortcut(",")
-                Button("Quit") { NSApplication.shared.terminate(nil) }
-                    .buttonStyle(.plain).font(.system(size: 11))
-                    .foregroundStyle(Theme.textMuted)
-                    .keyboardShortcut("q")
+                Spacer(minLength: 6)
+                footerControls.fixedSize()
             }
+        }
+    }
+
+    private var footerControls: some View {
+        HStack(spacing: 12) {
+            // Only when the status line is not wired. This is where a user
+            // notices the figure has stopped moving, so it is where the
+            // remedy belongs — but it must not add a row in the normal case,
+            // which is already a dense 300pt panel.
+            if store.wiringState != .configured {
+                Button("Set up") { OnboardingWindow.open(using: openWindow) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+            checkNowButton
+            historyButton
+            Button("Settings") { SettingsWindow.open(using: openWindow) }
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textMuted)
+                .keyboardShortcut(",")
+            Button("Quit") { NSApplication.shared.terminate(nil) }
+                .buttonStyle(.plain).font(.system(size: 11))
+                .foregroundStyle(Theme.textMuted)
+                .keyboardShortcut("q")
         }
     }
 
@@ -401,8 +414,15 @@ struct PopoverView: View {
             HStack(spacing: 4) {
                 Circle().fill(stale ? Theme.warning : Theme.success).frame(width: 5, height: 5)
                 // The words are `CaptureAge.sourceLabel`, so an old figure
-                // cannot be worded as a current one here.
-                Text(CaptureAge.sourceLabel(snapshot.liveAge))
+                // cannot be worded as a current one here. Whole, or else the
+                // age alone: never the age cut off. The tight case is an
+                // unwired status line, where "Set up" joins the controls; the
+                // dot keeps its colour and the amber line above keeps the words.
+                ViewThatFits(in: .horizontal) {
+                    Text(CaptureAge.sourceLabel(snapshot.liveAge))
+                    Text(CaptureAge.description(snapshot.liveAge))
+                }
+                .lineLimit(1)
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(stale ? Theme.warning : Theme.success)
