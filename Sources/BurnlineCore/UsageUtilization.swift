@@ -32,6 +32,20 @@ public struct UsageUtilization: Sendable, Decodable {
         public let resetsAt: Date
     }
 
+    /// Anthropic's own start of the weekly window, paired with the reset it
+    /// was reported beside: `seven_day_breakdown.window_started_at` and the
+    /// weekly reading's `resets_at`, from the same fetch. Checked against the
+    /// 168-hour rule by `SnapshotBuilder`; see `Snapshot.WindowStartCheck`.
+    public struct ReportedWindowStart: Equatable, Sendable {
+        public let startedAt: Date
+        public let resetsAt: Date
+
+        public init(startedAt: Date, resetsAt: Date) {
+            self.startedAt = startedAt
+            self.resetsAt = resetsAt
+        }
+    }
+
     /// The per-model weekly limit — `kind: "weekly_scoped"`.
     public struct ScopedLimit: Equatable, Sendable {
         public let percent: Double
@@ -57,6 +71,9 @@ public struct UsageUtilization: Sendable, Decodable {
     public let sevenDay: Reading?
     public let fiveHour: Reading?
     public let scopedWeekly: ScopedLimit?
+    /// `nil` when the field is absent or malformed, or when there is no weekly
+    /// reading to pair it with. Absent changes nothing.
+    public let weeklyWindowStart: ReportedWindowStart?
     /// Extra usage, when it is on or paused by Anthropic. See `ExtraUsage`.
     public let extraUsage: ExtraUsage?
     /// `oauthAccount.organizationRateLimitTier`, set by `UtilizationStore` —
@@ -83,6 +100,11 @@ public struct UsageUtilization: Sendable, Decodable {
         sevenDay = block?.sevenDay
         fiveHour = block?.fiveHour
         scopedWeekly = block?.scopedWeekly
+        weeklyWindowStart = block?.sevenDay.flatMap { reading in
+            UsageUtilization.date(from: block?.windowStartedAt).map {
+                ReportedWindowStart(startedAt: $0, resetsAt: reading.resetsAt)
+            }
+        }
         extraUsage = ExtraUsage.resolve(spend: block?.spend, extra: block?.extraUsage,
                                         fetchedAt: fetchedAt)
         rateLimitTier = nil
@@ -99,9 +121,12 @@ public struct UsageUtilization: Sendable, Decodable {
         var scopedWeekly: ScopedLimit?
         var spend: ExtraUsage.RawSpend?
         var extraUsage: ExtraUsage.RawExtraUsage?
+        /// `seven_day_breakdown.window_started_at`, unparsed.
+        var windowStartedAt: String?
 
         enum CodingKeys: String, CodingKey {
             case sevenDay = "seven_day"
+            case breakdown = "seven_day_breakdown"
             case fiveHour = "five_hour"
             case limits
             case spend
@@ -123,6 +148,19 @@ public struct UsageUtilization: Sendable, Decodable {
             scopedWeekly = limits.first { $0.kind == "weekly_scoped" }?.resolvedScoped
             spend = (try? c.decodeIfPresent(ExtraUsage.RawSpend.self, forKey: .spend)) ?? nil
             extraUsage = (try? c.decodeIfPresent(ExtraUsage.RawExtraUsage.self, forKey: .extraUsage)) ?? nil
+            windowStartedAt = ((try? c.decodeIfPresent(RawBreakdown.self, forKey: .breakdown)) ?? nil)?
+                .windowStartedAt
+        }
+    }
+
+    /// Only the start is read. `rows` splits the figure by surface (Claude
+    /// Code, chats, …) and is not used.
+    private struct RawBreakdown: Decodable {
+        var windowStartedAt: String?
+        enum CodingKeys: String, CodingKey { case windowStartedAt = "window_started_at" }
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            windowStartedAt = (try? c.decodeIfPresent(String.self, forKey: .windowStartedAt)) ?? nil
         }
     }
 
