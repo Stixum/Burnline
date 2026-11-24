@@ -154,7 +154,9 @@ struct SettingsView: View {
                 // reset string in the app: this one printed a 24-hour clock
                 // and a raw tzdata identifier while the popover row beside
                 // it printed `Tue 9:00 PM`.
-                Text("Resets \(store.settings.resetSchedule.description()). Used only until Claude Code reports the real reset.")
+                // The words are Core's (`fallbackCaption`), including the
+                // clock-change warning, which only zones with DST get.
+                Text(store.settings.resetSchedule.fallbackCaption(now: Date()))
                     .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
