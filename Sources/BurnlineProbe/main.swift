@@ -161,7 +161,8 @@ let snapshot = SnapshotBuilder.build(cache: cache, settings: settings,
                                      regrant: resolution.regrant,
                                      extraUsage: utilization?.extraUsage,
                                      planCredit: PlanCredit(rateLimitTier: utilization?.rateLimitTier),
-                                     reportedWindowStart: utilization?.weeklyWindowStart)
+                                     reportedWindowStart: utilization?.weeklyWindowStart,
+                                     trustedProvenAt: resolution.trustedProvenAt)
 
 // The per-model weekly limit, read off the SNAPSHOT rather than off the
 // `cachedUsageUtilization` block it came from. It is the row the popover

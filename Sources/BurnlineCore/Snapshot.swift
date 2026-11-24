@@ -239,7 +239,10 @@ public struct Snapshot: Equatable, Sendable {
         self.windowStartCheck = windowStartCheck
     }
 
-    /// Age of the live capture, when there is one.
+    /// Age of the live figure, when there is one: since it was last PROVEN
+    /// current when anything proves it, else since it was last seen. An undated
+    /// re-confirmation of the same figure does not make it younger
+    /// (`CaptureSelection.Resolution.trustedProvenAt`).
     public var liveAge: TimeInterval? {
         guard case let .live(capturedAt) = source else { return nil }
         return Date().timeIntervalSince(capturedAt)

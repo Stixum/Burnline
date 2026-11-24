@@ -25,7 +25,8 @@ public enum SnapshotBuilder {
                              authBlock: AuthBlock? = nil,
                              extraUsage: UsageUtilization.ExtraUsage? = nil,
                              planCredit: PlanCredit? = nil,
-                             reportedWindowStart: UsageUtilization.ReportedWindowStart? = nil) -> Snapshot {
+                             reportedWindowStart: UsageUtilization.ReportedWindowStart? = nil,
+                             trustedProvenAt: TimeInterval? = nil) -> Snapshot {
 
         // A capture pins the window exactly: its resets_at IS the boundary, so
         // no user-configured schedule is involved.
@@ -83,7 +84,12 @@ public enum SnapshotBuilder {
             estimated = extrapolate(capture: capture, cache: cache, window: window,
                                     epoch: epoch, weights: settings.weights)
             capturedPercent = capture.sevenDay.usedPercent
-            source = .live(capturedAt: capture.capturedDate)
+            // The age counts from the last PROOF of this figure when there
+            // is one (`Resolution.trustedProvenAt`), never later than the
+            // capture. Only the label's date moves: the window check above and
+            // the extrapolation below keep `capturedAt`.
+            source = .live(capturedAt: Date(timeIntervalSince1970:
+                min(capture.capturedAt, trustedProvenAt ?? capture.capturedAt)))
         } else if let calibrated = Calibration.estimatedPercent(
             unitsInWindow: units, anchors: settings.calibrationAnchors,
             weights: settings.weights, now: now) {

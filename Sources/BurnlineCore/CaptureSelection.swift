@@ -192,6 +192,28 @@ public enum CaptureSelection {
         /// same two levels; this is the one place that spelling lives.
         public var regrant: RateLimitHighWater.Regrant? { highWater.sevenDay?.regrant }
 
+        /// The latest instant the figure on screen is PROVEN to have been
+        /// current: the mark's proof, while the mark describes `trusted`.
+        /// What "Live · N" counts from (`SnapshotBuilder.build`).
+        ///
+        /// 🔴 Not `trusted.capturedAt`, for the reason `lastProvenAt` gives: an
+        /// equal re-confirmation moves that forward with or without proof, so
+        /// an idle session republishing the held figure undated kept the label
+        /// at "just now". The proof moves only on evidence, and a higher
+        /// reading resets it to its own (or none), so a figure that is news
+        /// still counts from when it landed. `nil` when nothing proves it, and
+        /// the age then falls back to the last sighting: an undated republish
+        /// and an undated fresh reading carry nothing that tells them apart.
+        /// Unlike `lastProvenAt`, a refused candidate's proof does not count:
+        /// it proves a fetch, not the figure shown.
+        public var trustedProvenAt: TimeInterval? {
+            guard let trusted, let mark = highWater.sevenDay,
+                  abs(mark.resetsAt - trusted.sevenDay.resetsAt) <= RateLimitHighWater.sameWindowTolerance,
+                  mark.usedPercent == trusted.sevenDay.usedPercent
+            else { return nil }
+            return mark.provenAt
+        }
+
         /// The latest instant any reading for a week still running was PROVEN
         /// minted: the poll's anchor, so `nil` (nothing proven) polls.
         ///
