@@ -56,6 +56,23 @@ extension ResetSchedule {
         return "\(day) \(Self.clock(hour: hour, minute: minute)) (\(zone))"
     }
 
+    /// The caption under the typed reset fields in Settings, shown while the
+    /// schedule is typed rather than read from Claude Code.
+    ///
+    /// ⚠️ **Says so where the typed time will drift.** The typed schedule is
+    /// wall-clock (`WindowMath`) and Anthropic's reset is fixed in UTC, so after
+    /// a clock change it is an hour off the real reset until the user sets the
+    /// hour again. Only reachable before any reset has been observed (the
+    /// high-water mark stands in for good after that), which is exactly when a
+    /// user has nothing else to check it against. In a zone with no clock
+    /// change ahead the sentence would be noise and is left out.
+    public func fallbackCaption(now: Date) -> String {
+        let caption = "Resets \(description()). Used only until Claude Code reports the real reset."
+        guard timeZone.nextDaylightSavingTimeTransition(after: now) != nil else { return caption }
+        return caption + " Doesn't follow daylight saving: after a clock change, "
+            + "set the hour here to match /usage."
+    }
+
     /// A reset instant, rendered on the clock it is given, to the nearest minute.
     ///
     /// Used wherever the *observed* reset is what matters — Claude Code's
