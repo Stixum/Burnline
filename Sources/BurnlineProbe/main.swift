@@ -160,7 +160,9 @@ let snapshot = SnapshotBuilder.build(cache: cache, settings: settings,
                                      scopedWeekly: utilization?.scopedWeekly,
                                      regrant: resolution.regrant,
                                      extraUsage: utilization?.extraUsage,
-                                     planCredit: PlanCredit(rateLimitTier: utilization?.rateLimitTier))
+                                     planCredit: PlanCredit(rateLimitTier: utilization?.rateLimitTier),
+                                     reportedWindowStart: utilization?.weeklyWindowStart,
+                                     trustedProvenAt: resolution.trustedProvenAt)
 
 // The per-model weekly limit, read off the SNAPSHOT rather than off the
 // `cachedUsageUtilization` block it came from. It is the row the popover
@@ -175,6 +177,20 @@ let scopedNote = snapshot.scopedWeekly.map {
 // app is handed, never what the source holds. Figures only, never JSON.
 let extraUsageNote = snapshot.extraUsage.map { "\($0.value)   (\($0.style))" } ?? "none"
 let planCreditNote = snapshot.planCredit?.settingsLine ?? "none"
+
+// Off the SNAPSHOT: the check is `SnapshotBuilder`'s, and the probe only
+// words it. A disagreement is shown here and nowhere else.
+let windowStartNote: String = {
+    switch snapshot.windowStartCheck {
+    case .notReported:
+        return "not reported (168-hour rule)"
+    case .agrees(let reported):
+        return "\(reported) from Anthropic, agrees with the 168-hour rule"
+    case .disagrees(let reported, let rule):
+        return "⚠️ Anthropic says \(reported), the 168-hour rule says \(rule) "
+            + "(\(DisplayValue.seconds(rule.timeIntervalSince(reported)))s apart); the rule stands"
+    }
+}()
 
 func percent(_ value: Double?) -> String {
     value.map { String(format: "%.1f%%", $0) } ?? "—"
@@ -272,6 +288,7 @@ Burnline probe
   re-scan drift    \(String(format: "%.0f", drift))   (must be 0: a no-op scan may not change totals)
   window           \(snapshot.window.start) → \(snapshot.window.end)
   duration         \(String(format: "%.0f", snapshot.window.totalDuration / 3600))h
+  window start     \(windowStartNote)
   day              \(String(format: "%.2f", snapshot.window.dayIndex)) of 7
   target           \(percent(snapshot.targetPercent))
   units in window  \(String(format: "%.0f", snapshot.unitsInWindow))

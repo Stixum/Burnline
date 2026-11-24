@@ -822,7 +822,9 @@ final class UsageStore {
                                          regrant: resolution.regrant,
                                          authBlock: authBlock,
                                          extraUsage: utilization?.extraUsage,
-                                         planCredit: PlanCredit(rateLimitTier: utilization?.rateLimitTier))
+                                         planCredit: PlanCredit(rateLimitTier: utilization?.rateLimitTier),
+                                         reportedWindowStart: utilization?.weeklyWindowStart,
+                                         trustedProvenAt: resolution.trustedProvenAt)
 
         // Before the observation feed's guards: the evaluation must run on
         // every rebuild, and the block below returns early.

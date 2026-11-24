@@ -182,6 +182,26 @@ public struct Snapshot: Equatable, Sendable {
     /// The plan's monthly API-credit eligibility, for the Settings line.
     public let planCredit: PlanCredit?
 
+    /// What Anthropic's own window start said about this window, when it said
+    /// anything. See `WindowStartCheck`.
+    public let windowStartCheck: WindowStartCheck
+
+    /// `seven_day_breakdown.window_started_at` against the 168-hour rule.
+    ///
+    /// Read for one window only: the one whose reset it was reported beside.
+    /// Within `SnapshotBuilder.windowStartTolerance` it **agrees** and is the
+    /// window's start. Further off it **disagrees** and the 168-hour rule
+    /// stands, because the archive grid, the high-water mark and the
+    /// notification marks are all keyed to it and one field nobody documents
+    /// does not outweigh three months of 168-hour windows. A disagreement is
+    /// shown by `BurnlineProbe`, not in the popover.
+    public enum WindowStartCheck: Equatable, Sendable {
+        /// Absent, malformed, about another window, or the typed schedule.
+        case notReported
+        case agrees(reportedStart: Date)
+        case disagrees(reportedStart: Date, ruleStart: Date)
+    }
+
     public init(window: Window, targetPercent: Double, estimatedPercent: Double?,
                 capturedPercent: Double? = nil,
                 projectedPercent: Double?, unitsInWindow: Double,
@@ -195,7 +215,8 @@ public struct Snapshot: Equatable, Sendable {
                 regrant: Regrant? = nil,
                 authBlock: AuthBlock? = nil,
                 extraUsage: ExtraUsageRow? = nil,
-                planCredit: PlanCredit? = nil) {
+                planCredit: PlanCredit? = nil,
+                windowStartCheck: WindowStartCheck = .notReported) {
         self.window = window
         self.targetPercent = targetPercent
         self.estimatedPercent = estimatedPercent
@@ -215,9 +236,13 @@ public struct Snapshot: Equatable, Sendable {
         self.authBlock = authBlock
         self.extraUsage = extraUsage
         self.planCredit = planCredit
+        self.windowStartCheck = windowStartCheck
     }
 
-    /// Age of the live capture, when there is one.
+    /// Age of the live figure, when there is one: since it was last PROVEN
+    /// current when anything proves it, else since it was last seen. An undated
+    /// re-confirmation of the same figure does not make it younger
+    /// (`CaptureSelection.Resolution.trustedProvenAt`).
     public var liveAge: TimeInterval? {
         guard case let .live(capturedAt) = source else { return nil }
         return Date().timeIntervalSince(capturedAt)

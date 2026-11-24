@@ -24,17 +24,22 @@ public enum SnapshotBuilder {
                              regrant: RateLimitHighWater.Regrant? = nil,
                              authBlock: AuthBlock? = nil,
                              extraUsage: UsageUtilization.ExtraUsage? = nil,
-                             planCredit: PlanCredit? = nil) -> Snapshot {
+                             planCredit: PlanCredit? = nil,
+                             reportedWindowStart: UsageUtilization.ReportedWindowStart? = nil,
+                             trustedProvenAt: TimeInterval? = nil) -> Snapshot {
 
         // A capture pins the window exactly: its resets_at IS the boundary, so
         // no user-configured schedule is involved.
         let window: Window
         let scheduleIsAutomatic: Bool
+        let windowStartCheck: Snapshot.WindowStartCheck
         if let capture = rateLimit {
-            window = windowFromReset(capture.sevenDay.resetsDate, now: now)
+            (window, windowStartCheck) = checked(windowFromReset(capture.sevenDay.resetsDate, now: now),
+                                                 against: reportedWindowStart)
             scheduleIsAutomatic = true
         } else {
             window = WindowMath.window(for: settings.resetSchedule, now: now)
+            windowStartCheck = .notReported
             scheduleIsAutomatic = false
         }
 
@@ -79,7 +84,12 @@ public enum SnapshotBuilder {
             estimated = extrapolate(capture: capture, cache: cache, window: window,
                                     epoch: epoch, weights: settings.weights)
             capturedPercent = capture.sevenDay.usedPercent
-            source = .live(capturedAt: capture.capturedDate)
+            // The age counts from the last PROOF of this figure when there
+            // is one (`Resolution.trustedProvenAt`), never later than the
+            // capture. Only the label's date moves: the window check above and
+            // the extrapolation below keep `capturedAt`.
+            source = .live(capturedAt: Date(timeIntervalSince1970:
+                min(capture.capturedAt, trustedProvenAt ?? capture.capturedAt)))
         } else if let calibrated = Calibration.estimatedPercent(
             unitsInWindow: units, anchors: settings.calibrationAnchors,
             weights: settings.weights, now: now) {
@@ -133,8 +143,39 @@ public enum SnapshotBuilder {
             authBlock: authBlock,
             // The user's own clock, like the re-grant row: an instant they lived through.
             extraUsage: extraUsage.flatMap { Snapshot.ExtraUsageRow($0, now: now, timeZone: .current) },
-            planCredit: planCredit
+            planCredit: planCredit,
+            windowStartCheck: windowStartCheck
         )
+    }
+
+    /// How far Anthropic's reported start may sit from the 168-hour rule and
+    /// still agree with it: the minute the two capture sources already
+    /// tolerate on a reset (`RateLimitHighWater.sameWindowTolerance`).
+    ///
+    /// 🔴 Must not exceed `WindowLedger.sameResetTolerance`. The notification
+    /// marks key on `window.start` and compare with that tolerance, so a start
+    /// that moved further between two rebuilds (the field present on one and
+    /// absent on the next) would re-fire an alert the user already had.
+    /// `theAgreementToleranceSitsInsideTheNotificationEpochTolerance`.
+    static let windowStartTolerance: TimeInterval = RateLimitHighWater.sameWindowTolerance
+
+    /// The 168-hour window, checked against the start Anthropic reported for
+    /// it. See `Snapshot.WindowStartCheck` for what each answer does.
+    ///
+    /// A start reported beside a different reset is about a different window
+    /// (typically a dead capture rolled forward while the block still describes
+    /// the week that ended) and is not read at all.
+    static func checked(_ window: Window,
+                        against reported: UsageUtilization.ReportedWindowStart?)
+        -> (Window, Snapshot.WindowStartCheck) {
+        guard let reported,
+              abs(reported.resetsAt.timeIntervalSince(window.end)) <= RateLimitHighWater.sameWindowTolerance
+        else { return (window, .notReported) }
+        guard abs(reported.startedAt.timeIntervalSince(window.start)) <= windowStartTolerance else {
+            return (window, .disagrees(reportedStart: reported.startedAt, ruleStart: window.start))
+        }
+        return (Window(start: reported.startedAt, end: window.end, now: window.now),
+                .agrees(reportedStart: reported.startedAt))
     }
 
     /// The open allowance epoch, in `Date` terms, when one belongs to `window`.
