@@ -54,6 +54,13 @@ public enum CaptureAge {
             + "A terminal session or Refresh now re-anchors it to Anthropic's figure."
     }
 
+    /// The popover footer's words for a live figure: `Live · 5m ago`, and past
+    /// the threshold `Extrapolated · 3d ago`. One string, so an old number can
+    /// never be worded as a current one by a view that forgot to check.
+    public static func sourceLabel(_ age: TimeInterval?) -> String {
+        "\(isStale(age) ? "Extrapolated" : "Live") · \(description(age))"
+    }
+
     public static func description(_ age: TimeInterval?) -> String {
         guard let age else { return "now" }
         if age < 90 { return "just now" }

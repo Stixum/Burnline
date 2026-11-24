@@ -72,7 +72,9 @@ The setup window opens on first launch. Click **Set up automatically** and it ad
 }
 ```
 
-Claude Code then reports usage after every response. Skip it and the figure goes stale and stays stale.
+Claude Code then reports usage after every response in a terminal session. Skip it and the figure goes stale and stays stale.
+
+**Only use the desktop app?** It never runs a status line, so the step above does nothing for you. Turn on [automatic refresh](#automatic-refresh) instead; Burnline offers it in the popover once the figure has gone a day without a reading.
 
 **Already have a status line?** Burnline leaves it alone and shows you the snippet to merge yourself.
 
@@ -132,6 +134,8 @@ Two honest limits worth knowing:
 **"Refresh usage automatically" is off by default.** Turn it on and Burnline runs `/usage` in a brief Claude Code session when the figure goes stale, because otherwise nothing corrects it.
 
 It uses no message quota. `/usage` produces no assistant turn.
+
+**Burnline asks once, and never turns it on itself.** When the figure has gone a day without a reading from Anthropic (or there is none at all and no status line has reported), the popover offers it. "Turn on…" opens Settings and asks you to confirm; "No thanks" is remembered and the offer does not come back. The switch is always in Settings, under General, and once it is off no further session is started. Nothing is installed or scheduled outside the app: the refresh only runs while Burnline is running.
 
 If a refresh fails, it tries again after five minutes, then ten, twenty and forty, and then settles back at its normal pace.
 

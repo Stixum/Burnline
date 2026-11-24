@@ -43,6 +43,10 @@ struct PopoverView: View {
                     .padding(.top, 5)
             }
 
+            // Exceptions-only: a day without a reading, the refresh off, and
+            // nobody has said yes or no to it. `RefreshOffer` owns the rule.
+            refreshOffer
+
             UsageBar(estimatedPercent: snapshot.estimatedPercent,
                      targetPercent: snapshot.targetPercent,
                      endOfDayPercent: snapshot.endOfDayPercent,
@@ -81,6 +85,23 @@ struct PopoverView: View {
     @ViewBuilder private var authBanner: some View {
         if let block = snapshot.visibleAuthBlock {
             AuthBanner(block: block, anchorAge: snapshot.liveAge) { remedy(block.kind) }
+        }
+    }
+
+    /// The offer to turn on automatic refresh, for someone whose figure has
+    /// gone a day without a reading and who has never been asked.
+    ///
+    /// "Turn on…" enables nothing: it opens Settings, which shows the same
+    /// confirmation its own switch does, and that is where the switch then
+    /// lives. "No thanks" is recorded and the offer does not come back.
+    @ViewBuilder private var refreshOffer: some View {
+        if let offer = store.refreshOffer {
+            RefreshOfferBanner(offer: offer) {
+                store.requestRefreshConfirmation()
+                SettingsWindow.open(using: openWindow)
+            } decline: {
+                store.chooseAutomaticRefresh(false)
+            }
         }
     }
 
@@ -150,7 +171,10 @@ struct PopoverView: View {
         if store.wiringState != .configured {
             return "No usage figure yet. Set up the status line, or run /usage in Claude Code."
         }
-        return "Waiting for Claude Code. Usage appears after its next response."
+        // "in a terminal session": the desktop app's sessions never report, and
+        // without those words this promised them a figure that never came.
+        return "Waiting for Claude Code. Usage appears after its next response "
+            + "in a terminal session."
     }
 
     private var legend: some View {
@@ -337,31 +361,44 @@ struct PopoverView: View {
                 }
             }
         } else {
-            HStack(spacing: 12) {
+            // The label and the controls are two groups with one flexible gap.
+            // As a single row with 12pt between every item and a default
+            // spacer, the label could never come closer than 32pt to the first
+            // control, and "Extrapolated · 3d ago" truncated to "Extrapolated ·
+            // 3…": the age cut off in exactly the state that is about the age.
+            // The controls keep their size whatever happens; the label is the
+            // part that gives (see `sourceLabel`).
+            HStack(spacing: 0) {
                 sourceLabel
-                Spacer()
-                // Only when the status line is not wired. This is where a user
-                // notices the figure has stopped moving, so it is where the
-                // remedy belongs — but it must not add a row in the normal case,
-                // which is already a dense 300pt panel.
-                if store.wiringState != .configured {
-                    Button("Set up") { OnboardingWindow.open(using: openWindow) }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                }
-                checkNowButton
-                historyButton
-                Button("Settings") { SettingsWindow.open(using: openWindow) }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textMuted)
-                    .keyboardShortcut(",")
-                Button("Quit") { NSApplication.shared.terminate(nil) }
-                    .buttonStyle(.plain).font(.system(size: 11))
-                    .foregroundStyle(Theme.textMuted)
-                    .keyboardShortcut("q")
+                Spacer(minLength: 6)
+                footerControls.fixedSize()
             }
+        }
+    }
+
+    private var footerControls: some View {
+        HStack(spacing: 12) {
+            // Only when the status line is not wired. This is where a user
+            // notices the figure has stopped moving, so it is where the
+            // remedy belongs — but it must not add a row in the normal case,
+            // which is already a dense 300pt panel.
+            if store.wiringState != .configured {
+                Button("Set up") { OnboardingWindow.open(using: openWindow) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+            checkNowButton
+            historyButton
+            Button("Settings") { SettingsWindow.open(using: openWindow) }
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textMuted)
+                .keyboardShortcut(",")
+            Button("Quit") { NSApplication.shared.terminate(nil) }
+                .buttonStyle(.plain).font(.system(size: 11))
+                .foregroundStyle(Theme.textMuted)
+                .keyboardShortcut("q")
         }
     }
 
@@ -376,7 +413,16 @@ struct PopoverView: View {
             let stale = CaptureAge.isStale(snapshot.liveAge)
             HStack(spacing: 4) {
                 Circle().fill(stale ? Theme.warning : Theme.success).frame(width: 5, height: 5)
-                Text("\(stale ? "Extrapolated" : "Live") · \(CaptureAge.description(snapshot.liveAge))")
+                // The words are `CaptureAge.sourceLabel`, so an old figure
+                // cannot be worded as a current one here. Whole, or else the
+                // age alone: never the age cut off. The tight case is an
+                // unwired status line, where "Set up" joins the controls; the
+                // dot keeps its colour and the amber line above keeps the words.
+                ViewThatFits(in: .horizontal) {
+                    Text(CaptureAge.sourceLabel(snapshot.liveAge))
+                    Text(CaptureAge.description(snapshot.liveAge))
+                }
+                .lineLimit(1)
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(stale ? Theme.warning : Theme.success)
