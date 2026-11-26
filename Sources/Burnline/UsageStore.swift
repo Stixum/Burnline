@@ -483,6 +483,7 @@ final class UsageStore {
         let interval = PollDecision.interval(
             weeklyPercent: snapshot.estimatedPercent,
             fiveHourPercent: snapshot.fiveHour?.usedPercent,
+            scopedWeeklyPercent: snapshot.scopedWeekly?.percent,
             projectedPercent: snapshot.projectedPercent,
             ceiling: storedSettings.usageRefreshInterval)
 

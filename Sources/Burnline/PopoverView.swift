@@ -214,7 +214,7 @@ struct PopoverView: View {
             // the statusline payload omits it entirely, which is why this was
             // recorded for months as impossible to obtain.
             if let scoped = snapshot.scopedWeekly {
-                row(scoped.rowLabel, scoped.rowValue)
+                scopedRow(scoped)
             }
             // Extra usage, on or paused by Anthropic. Every string and the
             // shape come from `Snapshot.ExtraUsageRow`; this only draws it.
@@ -284,6 +284,27 @@ struct PopoverView: View {
             }
         }
         .help(extra.tooltip)
+    }
+
+    /// The per-model weekly limit, graded by Anthropic: plain, amber with a
+    /// symbol (`warning`), or red with a symbol (`critical`). The grade is also
+    /// a word in the value, so status is never colour alone. Style, words and
+    /// tooltip are `ScopedLimit`'s (tested); this only draws them.
+    @ViewBuilder
+    private func scopedRow(_ scoped: UsageUtilization.ScopedLimit) -> some View {
+        Group {
+            switch scoped.rowStyle {
+            case .plain:
+                row(scoped.rowLabel, scoped.rowValue)
+            case .warning:
+                symbolRow("exclamationmark.triangle.fill", scoped.rowLabel, scoped.rowValue,
+                          tint: Theme.warning)
+            case .critical:
+                symbolRow("exclamationmark.octagon.fill", scoped.rowLabel, scoped.rowValue,
+                          tint: Theme.danger)
+            }
+        }
+        .help(scoped.rowHelp)
     }
 
     /// The `rejectionRow` shape — 9pt symbol, 5pt gaps — in any tint.

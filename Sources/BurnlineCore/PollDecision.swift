@@ -42,18 +42,26 @@ public enum PollDecision {
     /// Missing signals are not pressure. Early in a window there is no estimate
     /// and no projection, and treating `nil` as urgent would poll a brand new
     /// window at the tightest rate for nothing.
+    ///
+    /// 🔴 **A per-model weekly limit (`scopedWeeklyPercent`) bands like the
+    /// weekly one, and the higher of the two wins.** It is a share of its own
+    /// cap and stops that model's work on its own. On 2026-11-26 Fable stood at
+    /// 94% while the all-models figure read 74%, so the refresh sat in its
+    /// 45-minute band while the limit that mattered was critical.
     public static func interval(weeklyPercent: Double?,
                                 fiveHourPercent: Double?,
+                                scopedWeeklyPercent: Double?,
                                 projectedPercent: Double?,
                                 ceiling: RefreshInterval) -> TimeInterval {
+        let weeklyPercent = max(weeklyPercent ?? 0, scopedWeeklyPercent ?? 0)
         let banded: TimeInterval
-        if (weeklyPercent ?? 0) > 92 || (fiveHourPercent ?? 0) > 90 {
+        if weeklyPercent > 92 || (fiveHourPercent ?? 0) > 90 {
             banded = critical
-        } else if (weeklyPercent ?? 0) > 80
+        } else if weeklyPercent > 80
                     || (fiveHourPercent ?? 0) > 70
                     || (projectedPercent ?? 0) > 100 {
             banded = elevated
-        } else if (weeklyPercent ?? 0) > 50 || (fiveHourPercent ?? 0) > 50 {
+        } else if weeklyPercent > 50 || (fiveHourPercent ?? 0) > 50 {
             banded = normal
         } else {
             banded = relaxed
