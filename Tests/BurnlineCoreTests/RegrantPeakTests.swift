@@ -67,8 +67,14 @@ private func row(regrantAt hours: Double?, percent: Double = 1, observed: Int = 
     // readings may be walked.
     let before = TrackingEntry(percent: 87, at: peakBase.addingTimeInterval(-600),
                                resetsAt: peakBase)
+    // The next week's reset after it is the drop that matters: walked over
+    // the whole file it becomes the "last re-grant", and the row's own 99% is
+    // lost.
+    let nextWeek = TrackingEntry(percent: 3, at: peakBase.addingTimeInterval(peakWeek + 600),
+                                 resetsAt: peakBase.addingTimeInterval(2 * peakWeek))
     let series = [before, reading(4, hours: 1), reading(60, hours: 50),
-                  reading(99, hours: 100.8), reading(1, hours: 100.9)]
+                  reading(99, hours: 100.8), reading(1, hours: 100.9),
+                  reading(80, hours: 167), nextWeek]
     #expect(WindowLedger.percentBeforeLastRegrant(of: row(regrantAt: 100.9),
                                                   in: series) == 99)
 }

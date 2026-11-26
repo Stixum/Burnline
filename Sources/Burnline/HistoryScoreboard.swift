@@ -161,15 +161,21 @@ struct HistoryScoreboard: View {
                          + "seven days they cover is a guess.")
             }
         }
-        .lineLimit(1)
+        // ⚠️ Two lines, not one. The re-grant note grew " at 99%" (2026-11-26),
+        // and on the newest week, the row selected by default with "In
+        // breakdown" beside it, one line cut it to "Re-granted day 5 at 99%,
+        // open…": the half that says what the new allowance opened at was the
+        // half lost. A second line costs that one row ~13pt.
+        .lineLimit(2)
     }
 
     /// Symbol + word + colour. Never colour alone.
     private func note(_ text: String, _ symbol: String, _ tint: Color,
                       help: String) -> some View {
-        HStack(spacing: 4) {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
             Image(systemName: symbol).font(.system(size: 9.5))
             Text(text).font(.system(size: 10.5))
+                .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(tint)
         .help(help)
