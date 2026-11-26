@@ -81,6 +81,10 @@ struct HistoryViewModel: Equatable, Sendable {
     let coverageBegins: Date?
     let hasGaps: Bool
     let skippedLines: Int
+    /// When this was read off disk and under which archive revision: what the
+    /// header's "Read at" line reports, and what it compares with the store's
+    /// revision to tell a current read from one the archive has moved past.
+    let read: HistoryReadState
     /// What `breakdown` actually covers, always resolved. The view's picker
     /// reads its selection back from here, so "the most recent complete window"
     /// can be the default without the view knowing which window that is.
@@ -128,13 +132,15 @@ actor HistoryLoader {
     private let store: HistoryStore
     private var cached: Archive?
 
-    /// ⚠️ Long enough that flipping the dimension picker never re-reads disk,
-    /// short enough that a window left open does not quietly show an archive
-    /// from an hour ago — the forward flush appends to it every 60 seconds.
+    /// ⚠️ Long enough that flipping the dimension picker never re-reads disk.
     ///
-    /// An age check rather than an explicit invalidate-on-appear because two
-    /// `.task` modifiers on one view have no defined order between them, and the
-    /// wrong order there is either a double read or a stale one.
+    /// 🔴 **Not what keeps an open window current, and never was.** This said
+    /// it was "short enough that a window left open does not quietly show an
+    /// archive from an hour ago", but an age check only matters if something
+    /// asks again, and nothing did: the window's `LoadKey` had no input that
+    /// moved after the launch fill, so it drew one read for as long as it was
+    /// open. What re-reads now is the archive revision in `LoadKey`, and a
+    /// read is reused only under the revision it was taken at.
     private static let cacheLifetime: TimeInterval = 15
 
     init(directory: URL) {
@@ -153,6 +159,8 @@ actor HistoryLoader {
         let tracking: [TrackingEntry]
         let skipped: Int
         let loadedAt: Date
+        /// `HistoryWriter.revision` when the read began.
+        let revision: Int
     }
 
     /// Drops the cached read, so the next call goes to disk.
@@ -168,8 +176,10 @@ actor HistoryLoader {
     }
 
     func viewModel(dimension: HistoryQuery.Dimension, range: HistoryRange,
-                   currentWindow: Window, weights: Weights) -> HistoryViewModel {
-        let archive = load(through: currentWindow.end, now: currentWindow.now)
+                   currentWindow: Window, weights: Weights,
+                   revision: Int) -> HistoryViewModel {
+        let archive = load(through: currentWindow.end, now: currentWindow.now,
+                           revision: revision)
 
         // Newest first, and the source of both the curve selection and the
         // range control's options.
@@ -201,6 +211,7 @@ actor HistoryLoader {
                 .map { Date(timeIntervalSince1970: Double($0.lowerBound)) },
             hasGaps: hasGaps(archive.coverage),
             skippedLines: archive.skipped,
+            read: HistoryReadState(readAt: archive.loadedAt, revision: archive.revision),
             range: resolved
         )
     }
@@ -299,8 +310,12 @@ actor HistoryLoader {
 
     // MARK: - Reading
 
-    private func load(through: Date, now: Date) -> Archive {
-        if let cached, now.timeIntervalSince(cached.loadedAt) < Self.cacheLifetime {
+    private func load(through: Date, now: Date, revision: Int) -> Archive {
+        // A cached read is reused only for a picker change: same revision, and
+        // young. A write since it was taken means the disk holds something it
+        // does not.
+        if let cached, cached.revision == revision,
+           now.timeIntervalSince(cached.loadedAt) < Self.cacheLifetime {
             return cached
         }
 
@@ -324,7 +339,8 @@ actor HistoryLoader {
             // observations before the scan has written a single cell, and
             // zeroing them here would blank the one chart that had data.
             let empty = Archive(cells: [], windows: windows, coverage: coverage,
-                                tracking: tracking, skipped: 0, loadedAt: now)
+                                tracking: tracking, skipped: 0, loadedAt: now,
+                                revision: revision)
             cached = empty
             return empty
         }
@@ -335,7 +351,8 @@ actor HistoryLoader {
         let read: (rows: [HistoryRow], skipped: Int) =
             (try? store.rows(in: lower...upper)) ?? (rows: [], skipped: 0)
         let archive = Archive(cells: read.rows, windows: windows, coverage: coverage,
-                              tracking: tracking, skipped: read.skipped, loadedAt: now)
+                              tracking: tracking, skipped: read.skipped, loadedAt: now,
+                              revision: revision)
         cached = archive
         return archive
     }

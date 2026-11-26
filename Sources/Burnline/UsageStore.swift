@@ -51,6 +51,13 @@ final class UsageStore {
     /// progress for the 20.4 seconds rather than a spinner that reads as a hang.
     private(set) var historyFillState: HistoryFillState = .idle
 
+    /// `HistoryWriter.revision` as last seen, and when it was seen to move.
+    /// Observed: the History window keys its reload on the revision and its
+    /// "Read at" line on both. Without this an open window never re-read the
+    /// archive after the launch fill (2026-11-26: 41% drawn, 74% on disk).
+    private(set) var historyRevision = 0
+    private(set) var historyRevisionChangedAt: Date?
+
     /// Written through to disk on every mutation, so SwiftUI bindings in the
     /// settings window persist without any explicit save step.
     @ObservationIgnored private var storedSettings: BurnlineSettings
@@ -343,6 +350,7 @@ final class UsageStore {
                 }
             }
 
+            await self?.syncHistoryRevision()
             await self?.finishHistoryFill(failure: failure)
         }
     }
@@ -368,6 +376,16 @@ final class UsageStore {
     /// point an empty archive means empty, not "not yet".
     private func finishHistoryFill(failure: String?) {
         historyFillState = failure.map { .failed($0) } ?? .complete
+    }
+
+    /// Publishes the writer's revision after anything that may have written
+    /// the archive: the flush, an observation, the fill. Only a change is
+    /// assigned, so an idle flush does not wake an open History window.
+    private func syncHistoryRevision() async {
+        let revision = await historyWriter.revision
+        guard revision != historyRevision else { return }
+        historyRevision = revision
+        historyRevisionChangedAt = Date()
     }
 
     /// The archive's forward path, run after every successful scan.
@@ -438,6 +456,7 @@ final class UsageStore {
         // not a fresh one: the cache was built against it, so anything later
         // would claim coverage for buckets this scan never read.
         await flushHistory(cache: updated, observation: currentObservation, now: now)
+        await syncHistoryRevision()
 
         // On the 60s scan path, not the 10s rebuild: this is directory I/O plus
         // deletes. Placed after `rebuild()` so `snapshot.window` is the current
@@ -853,7 +872,13 @@ final class UsageStore {
         guard entry != lastObservationSent else { return }
         lastObservationSent = entry
         let writer = historyWriter
-        Task.detached(priority: .utility) { await writer.observe(entry) }
+        // The revision is read back after the write, so a new reading reaches
+        // an open History window within one rebuild rather than at the next
+        // 60s flush.
+        Task.detached(priority: .utility) { [weak self] in
+            await writer.observe(entry)
+            await self?.syncHistoryRevision()
+        }
     }
 
     // MARK: - Notifications
