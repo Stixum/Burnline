@@ -80,10 +80,14 @@ struct HistoryView: View {
     private struct LoadKey: Equatable {
         let dimension: HistoryQuery.Dimension
         let range: HistoryRange
-        let fill: HistoryFillState.ReloadPhase
-        /// A weight edit restates every unit figure. The loader caches raw
-        /// tokens and weights them per call, so no invalidation is needed.
-        let weights: Weights
+        /// 🔴 **Fill phase, weights and the archive's own revision, from
+        /// `UsageStore.historyArchiveKey` and nowhere else.** The revision is
+        /// the input this window shipped without: the fill phase stops moving
+        /// once the launch fill finishes, so nothing here changed while the
+        /// window stayed open and it drew one read for a day beside a live
+        /// "now" line (2026-11-26: 41% drawn, 74% on disk). It moves only when
+        /// the writer actually wrote, so an idle Mac re-reads nothing.
+        let archive: HistoryReload.ArchiveKey
     }
 
     var body: some View {
@@ -110,8 +114,7 @@ struct HistoryView: View {
         .background(Theme.background)
         .preferredColorScheme(.dark)
         .task(id: LoadKey(dimension: dimension, range: range,
-                          fill: store.historyFillState.reloadPhase,
-                          weights: store.settings.weights)) {
+                          archive: store.historyArchiveKey)) {
             await load()
         }
     }
@@ -123,6 +126,9 @@ struct HistoryView: View {
         let phase = store.historyFillState.reloadPhase
         let window = store.snapshot.window
         let weights = store.settings.weights
+        // Read before the archive is, so a write that lands mid-read counts as
+        // unread and the next key change reads it.
+        let revision = store.historyRevision.revision
 
         // The loader holds its read for 15 seconds so the pickers never hit
         // disk. A fill that has just changed phase is the one case where that
@@ -130,7 +136,8 @@ struct HistoryView: View {
         // nowhere else: a picker change still re-aggregates from memory.
         if phase != loadedPhase { await loader.invalidate() }
         let loaded = await loader.viewModel(dimension: dimension, range: range,
-                                            currentWindow: window, weights: weights)
+                                            currentWindow: window, weights: weights,
+                                            revision: revision)
 
         // A superseded read must never land on top of a newer one. `.task(id:)`
         // cancels the outgoing task, but a cancelled task still resumes and
@@ -309,6 +316,8 @@ struct HistoryView: View {
                 .help("The scale is arbitrary; only week-to-week comparison means "
                       + "anything. This Mac's Claude Code only.")
 
+            if let model { freshness(model) }
+
             if let model, model.hasGaps {
                 warning("The history has gaps. Usage during them is unknown, not zero. "
                         + "Affected weeks are marked below; their totals are floors.",
@@ -405,6 +414,25 @@ struct HistoryView: View {
     }
 
     /// Symbol + word + colour. Never colour alone.
+    /// When the window last read the archive. Muted while the read holds every
+    /// write; amber, with a symbol, once a write has gone unread past
+    /// `HistoryFreshness.grace`, which means the reload above did not land.
+    /// Words and rule are `HistoryFreshness`'s, so they have tests.
+    @ViewBuilder private func freshness(_ model: HistoryViewModel) -> some View {
+        let line = HistoryFreshness.line(read: model.read,
+                                         archiveRevision: store.historyRevision.revision,
+                                         archiveChangedAt: store.historyRevision.changedAt,
+                                         now: store.snapshot.window.now)
+        if line.isBehind {
+            warning(line.text, symbol: "clock.badge.exclamationmark")
+        } else {
+            Text(line.text)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textMuted)
+                .monospacedDigit()
+        }
+    }
+
     private func warning(_ text: String, symbol: String) -> some View {
         HStack(alignment: .top, spacing: 5) {
             Image(systemName: symbol).font(.system(size: 10)).padding(.top, 1)

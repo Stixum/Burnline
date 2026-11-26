@@ -30,6 +30,19 @@ public actor HistoryWriter {
     /// Every name the cell files hold, read the first time a folder needs one.
     private var archivedNames: Set<String>?
 
+    /// Counts the writes that change what the History window draws: cells,
+    /// coverage, window rows and tracking entries. It starts at 0 in each
+    /// process and only ever goes up.
+    ///
+    /// 🔴 **This is the History window's reload signal.** Before it, nothing
+    /// told an open window the archive had moved, so it drew its first read
+    /// for as long as it stayed open while the live "now" line moved on
+    /// (2026-11-26: a curve ending at 41% with 74% on disk, 29 hours later).
+    /// Bumped only after a write that succeeded and changed something, so an
+    /// idle Mac's 60-second flush and a republished reading cost the window
+    /// nothing. The manifest is not counted: the window does not draw it.
+    public private(set) var revision = 0
+
     /// Loads everything the archive knows about itself. `loadManifest`,
     /// `loadWindows` and `loadCoverage` all return empty defaults rather than
     /// throwing when absent, so a first launch needs no special case.
@@ -87,7 +100,7 @@ public actor HistoryWriter {
         // is loaded and rewritten on every commit.
         if !tracking.entries.contains(entry) {
             tracking.entries.append(entry)
-            try? store.saveTracking(tracking)
+            if (try? store.saveTracking(tracking)) != nil { revision += 1 }
         }
         advanceAnchor(to: entry.resetsAt)
     }
@@ -220,6 +233,7 @@ public actor HistoryWriter {
         } catch {
             return false
         }
+        revision += 1
 
         let windows = (try? store.loadWindows()) ?? []
         let from = Date(timeIntervalSince1970: Double(range.lowerBound))
@@ -250,6 +264,7 @@ public actor HistoryWriter {
             } catch {
                 return false
             }
+            revision += 1
         }
 
         do {
@@ -275,6 +290,7 @@ public actor HistoryWriter {
         } catch {
             return
         }
+        if !fresh.isEmpty { revision += 1 }
 
         // Rows in an unclosed bucket are harmless — the next flush restates
         // that bucket in full — so they are kept even when there is nothing to
@@ -289,6 +305,7 @@ public actor HistoryWriter {
         do {
             try store.appendCoverage(record)
             coverage = coverage.adding(record)
+            revision += 1
         } catch {
             // In-memory coverage stays in step with the log: claiming a range
             // that was never written is the one mistake with no remedy.
@@ -351,6 +368,7 @@ public actor HistoryWriter {
         } catch {
             return
         }
+        revision += 1
 
         // ⚠️ NOTHING IS PRUNED HERE, AND THAT IS THE POINT.
         //
@@ -424,6 +442,7 @@ public actor HistoryWriter {
         } catch {
             return nil
         }
+        revision += 1
         return kept
     }
 
