@@ -45,7 +45,7 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
         cells: [],
         coverage: Coverage(records: []),
         weights: .default
-    )
+    , tracking: [])
 
     #expect(rows.map(\.window.start) == [newest, middle, oldest])
 }
@@ -66,7 +66,7 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
                       cacheWrite: 1_000, cacheRead: 900_000)]
 
     let rows = HistoryQuery.scoreboard(windows: [window], cells: cells,
-                                       coverage: Coverage(records: []), weights: .default)
+                                       coverage: Coverage(records: []), weights: .default, tracking: [])
 
     #expect(rows.count == 1)
     #expect(rows[0].usedPercent == nil)
@@ -79,7 +79,7 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
     let start = Date(timeIntervalSince1970: Double(queryBase))
     let rows = HistoryQuery.scoreboard(windows: [weekRow(start: start, finalPercent: 64.5)],
                                        cells: [], coverage: Coverage(records: []),
-                                       weights: .default)
+                                       weights: .default, tracking: [])
 
     #expect(rows[0].usedPercent == 64.5)
 }
@@ -101,13 +101,13 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
     ])
 
     let gapped = HistoryQuery.scoreboard(windows: [weekRow(start: start)], cells: [],
-                                         coverage: holed, weights: .default)
+                                         coverage: holed, weights: .default, tracking: [])
     #expect(gapped[0].hasGap)
 
     // Positive control: the same window, fully covered, must NOT be flagged.
     let whole = HistoryQuery.scoreboard(windows: [weekRow(start: start)], cells: [],
                                         coverage: covering(firstBucket, lastBucket),
-                                        weights: .default)
+                                        weights: .default, tracking: [])
     #expect(!whole[0].hasGap)
 }
 
@@ -145,7 +145,7 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
     }
     let rows = HistoryQuery.scoreboard(
         windows: [weekRow(start: start, counts: counts), weekRow(start: nextStart)],
-        cells: mine + theirs, coverage: Coverage(records: []), weights: .default)
+        cells: mine + theirs, coverage: Coverage(records: []), weights: .default, tracking: [])
     let breakdown = HistoryQuery.breakdown(cells: mine, by: .project, weights: .default,
                                            limit: 10)
 
@@ -176,7 +176,7 @@ private func isClose(_ lhs: Double, _ rhs: Double, _ tolerance: Double = 1e-6) -
 
     let rows = HistoryQuery.scoreboard(
         windows: [weekRow(start: start), weekRow(start: nextStart)],
-        cells: cells, coverage: Coverage(records: []), weights: .default)
+        cells: cells, coverage: Coverage(records: []), weights: .default, tracking: [])
 
     #expect(rows.map(\.window.start) == [nextStart, start])
     #expect(isClose(rows[1].units, 30 * Weights.default.output))   // 10 + 20, not 999
@@ -211,7 +211,7 @@ private func regrantedWeek(start: Date, duration: TimeInterval = sevenDays,
     let rows = HistoryQuery.scoreboard(
         windows: [regrantedWeek(start: start, at: 3.5 * 86_400, percent: 3,
                                 finalPercent: 30)],
-        cells: [], coverage: Coverage(records: []), weights: .default)
+        cells: [], coverage: Coverage(records: []), weights: .default, tracking: [])
 
     let note = rows[0].regrantNote
     // 🔴 `3%` is `regrant.percent` — what the new allowance opened at, which on
@@ -237,7 +237,7 @@ private func regrantedWeek(start: Date, duration: TimeInterval = sevenDays,
     let start = Date(timeIntervalSince1970: Double(queryBase))
     let rows = HistoryQuery.scoreboard(
         windows: [weekRow(start: start, finalPercent: 91)],
-        cells: [], coverage: Coverage(records: []), weights: .default)
+        cells: [], coverage: Coverage(records: []), weights: .default, tracking: [])
 
     #expect(rows[0].window.regrant == nil)
     #expect(rows[0].regrantNote == nil)
@@ -496,7 +496,7 @@ private func regrantedWeek(start: Date, duration: TimeInterval = sevenDays,
 
     let scoreboard = HistoryQuery.scoreboard(
         windows: [window, weekRow(start: nextStart)], cells: cells,
-        coverage: Coverage(records: []), weights: .default)
+        coverage: Coverage(records: []), weights: .default, tracking: [])
     let bars = HistoryQuery.breakdown(cells: HistoryQuery.cells(cells, in: window),
                                       by: .project, weights: .default, limit: 10)
 

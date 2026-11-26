@@ -45,16 +45,26 @@ public enum HistoryQuery {
         /// not idle. The app was not running; tokens may well have been burned.
         public let hasGap: Bool
 
-        public init(window: WindowRow, units: Double, usedPercent: Double?, hasGap: Bool) {
+        /// The reading just before this week's last re-grant: how far the
+        /// allowance that ended had climbed. Nil for an ordinary week, and when
+        /// `tracking.json` no longer agrees with the row about the re-grant.
+        /// See `WindowLedger.percentBeforeLastRegrant`.
+        public let regrantPeak: Double?
+
+        public init(window: WindowRow, units: Double, usedPercent: Double?, hasGap: Bool,
+                    regrantPeak: Double?) {
             self.window = window
             self.units = units
             self.usedPercent = usedPercent
             self.hasGap = hasGap
+            self.regrantPeak = regrantPeak
         }
 
         /// This week's re-grant annotation, or nil for every ordinary week.
         /// See `RegrantNote`.
-        public var regrantNote: RegrantNote? { RegrantNote(window: window) }
+        public var regrantNote: RegrantNote? {
+            RegrantNote(window: window, reachedBefore: regrantPeak)
+        }
     }
 
     /// 🔴 **The scoreboard's fourth state: a week whose allowance was re-issued
@@ -85,6 +95,16 @@ public enum HistoryQuery {
         /// way of asking, the same rule `Mark.regrant` and `Snapshot.regrant`
         /// already hold.
         public init?(window: WindowRow) {
+            self.init(window: window, reachedBefore: nil)
+        }
+
+        /// - Parameter reachedBefore: the figure the allowance had reached
+        ///   just before the (last) re-grant, when known. 🔴 Added because the
+        ///   row otherwise prints only the climb since the re-grant: the week of
+        ///   2026-11-20 reached 99%, was re-granted, and closed near 80%, and
+        ///   read as an ordinary 80% week beside the largest unit total in the
+        ///   archive. Wording chosen by Sean on 2026-11-26.
+        public init?(window: WindowRow, reachedBefore: Double?) {
             guard let regrant = window.regrant else { return nil }
             let day = Self.day(of: regrant.at, in: window)
             // 🔴 `regrant.percent`, never `finalPercent`. This is the first
@@ -101,21 +121,27 @@ public enum HistoryQuery {
             // "Rate since re-grant"; a scoreboard cell has no such frame, and
             // the tooltip cannot rescue a label that reads wrong on sight.
             let percent = HistoryLabels.percent(regrant.percent)
+            // "day 5 at 99%": the re-grant came on day 5, when the week stood
+            // at 99%. Left out, not guessed, when the readings are gone.
+            let reached = reachedBefore.map { " at \(HistoryLabels.percent($0))" } ?? ""
             if regrant.observed > 1 {
                 // 🔴 A DIFFERENT sentence when there was more than one, which is
                 // the whole reason `observed` exists. `at` and `percent`
                 // describe the last of them, so the wording says "last" rather
                 // than letting a three-allowance week read as a two.
-                label = "Re-granted \(regrant.observed)×, last day \(day), opened at \(percent)"
+                label = "Re-granted \(regrant.observed)×, last day \(day)\(reached), "
+                    + "opened at \(percent)"
                 help = "Anthropic re-granted this week's limit \(regrant.observed) times "
                     + "without moving the reset. The percentage beside this is the climb "
-                    + "since the last of them, on day \(day), not the week's usage. The "
-                    + "units are unaffected."
+                    + "since the last of them, on day \(day)"
+                    + (reachedBefore.map { ", when it stood at \(HistoryLabels.percent($0))" } ?? "")
+                    + ", not the week's usage. The units are unaffected."
             } else {
-                label = "Re-granted day \(day), opened at \(percent)"
-                help = "Anthropic re-granted this week's limit part-way through, without "
-                    + "moving the reset. The percentage beside this is the climb since then, "
-                    + "not the week's usage. The units are unaffected."
+                label = "Re-granted day \(day)\(reached), opened at \(percent)"
+                help = "Anthropic re-granted this week's limit part-way through"
+                    + (reachedBefore.map { ", when it stood at \(HistoryLabels.percent($0))," } ?? ",")
+                    + " without moving the reset. The percentage beside this is the climb "
+                    + "since then, not the week's usage. The units are unaffected."
             }
         }
 
@@ -191,8 +217,12 @@ public enum HistoryQuery {
     /// but they are summed across every model — so weighting them loses every
     /// per-model multiplier and the headline disagrees with the `breakdown`
     /// bars printed under it. See `ScoreboardRow.units`.
+    /// - Parameter tracking: every retained capture reading, for the figure a
+    ///   re-granted week reached before its re-grant. Required, not defaulted:
+    ///   a caller that forgot it would quietly print the shorter wording.
     public static func scoreboard(windows: [WindowRow], cells: [HistoryRow],
-                                  coverage: Coverage, weights: Weights) -> [ScoreboardRow] {
+                                  coverage: Coverage, weights: Weights,
+                                  tracking: [TrackingEntry]) -> [ScoreboardRow] {
         // ⚠️ ONCE per query, before the walk — the rule spelled out on
         // `breakdown`, and the reason `burnCurve` resolves up front too.
         let resolved = ConsumptionModel.ResolvedMultipliers(models: cells.lazy.map(\.model),
@@ -217,7 +247,8 @@ public enum HistoryQuery {
                     units: units(in: window, weighted: weighted),
                     // 🔴 Passed through unchanged. nil stays nil.
                     usedPercent: window.finalPercent,
-                    hasGap: hasGap(in: window, coverage: coverage)
+                    hasGap: hasGap(in: window, coverage: coverage),
+                    regrantPeak: WindowLedger.percentBeforeLastRegrant(of: window, in: tracking)
                 )
             }
     }
