@@ -173,7 +173,8 @@ actor HistoryLoader {
         // Newest first, and the source of both the curve selection and the
         // range control's options.
         let scoreboard = HistoryQuery.scoreboard(windows: archive.windows, cells: archive.cells,
-                                                 coverage: archive.coverage, weights: weights)
+                                                 coverage: archive.coverage, weights: weights,
+                                                 tracking: archive.tracking)
 
         // 🔴 ONE list of weeks, decided once, mapped over by both charts. The
         // toggle's premise is that the two modes show the same weeks under the

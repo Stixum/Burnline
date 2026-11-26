@@ -328,6 +328,26 @@ public struct WindowLedger: Sendable {
     ///
     /// The returned entry is the one AFTER the drop: the reading before it is
     /// the last of the allowance that ended.
+    /// The reading just before a written row's last re-grant: how far the
+    /// allowance that ended had climbed (99% on the week of 2026-11-20).
+    ///
+    /// Read from `tracking.json` at display time rather than stored on the
+    /// row, so rows written before this existed gain it too; the file is never
+    /// pruned. Walked over the row's own bounds with the same containment and
+    /// the same adjacency rule that annotated it, and only trusted when that
+    /// walk lands on the row's own re-grant instant: a series that disagrees
+    /// with the row gives nil, never a figure from another account of the week.
+    public static func percentBeforeLastRegrant(of row: WindowRow,
+                                                in tracking: [TrackingEntry]) -> Double? {
+        guard let regrant = row.regrant else { return nil }
+        let entries = contained(tracking, from: row.start, to: row.end)
+        // `regrantIndices` never returns 0, so the reading before always exists.
+        guard let last = regrantIndices(in: entries).last, last > 0,
+              abs(entries[last].at.timeIntervalSince(regrant.at)) <= 1
+        else { return nil }
+        return entries[last - 1].percent
+    }
+
     static func regrantObservations(in entries: [TrackingEntry]) -> [TrackingEntry] {
         regrantIndices(in: entries).map { entries[$0] }
     }
