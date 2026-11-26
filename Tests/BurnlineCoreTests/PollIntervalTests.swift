@@ -11,7 +11,7 @@ private let relaxedInputs = (weekly: 20.0, fiveHour: 10.0, projected: 60.0)
 
 @Test func theRelaxedIntervalStillNeverLetsTheFigureGoStale() {
     let interval = PollDecision.interval(weeklyPercent: relaxedInputs.weekly,
-                                         fiveHourPercent: relaxedInputs.fiveHour,
+                                         fiveHourPercent: relaxedInputs.fiveHour, scopedWeeklyPercent: nil,
                                          projectedPercent: relaxedInputs.projected,
                                          ceiling: .sixty)
     // Derived from the staleness threshold, not hardcoded: the anchor must be
@@ -23,11 +23,11 @@ private let relaxedInputs = (weekly: 20.0, fiveHour: 10.0, projected: 60.0)
 
 /// Any one of the three signals can be the binding constraint, so the worst wins.
 @Test func pressureOnAnySignalShortensTheInterval() {
-    let byWeekly = PollDecision.interval(weeklyPercent: 85, fiveHourPercent: 5,
+    let byWeekly = PollDecision.interval(weeklyPercent: 85, fiveHourPercent: 5, scopedWeeklyPercent: nil,
                                          projectedPercent: 50, ceiling: .sixty)
-    let byFiveHour = PollDecision.interval(weeklyPercent: 20, fiveHourPercent: 75,
+    let byFiveHour = PollDecision.interval(weeklyPercent: 20, fiveHourPercent: 75, scopedWeeklyPercent: nil,
                                            projectedPercent: 50, ceiling: .sixty)
-    let byProjection = PollDecision.interval(weeklyPercent: 20, fiveHourPercent: 5,
+    let byProjection = PollDecision.interval(weeklyPercent: 20, fiveHourPercent: 5, scopedWeeklyPercent: nil,
                                              projectedPercent: 130, ceiling: .sixty)
     for interval in [byWeekly, byFiveHour, byProjection] {
         #expect(interval == PollDecision.elevated)
@@ -37,10 +37,10 @@ private let relaxedInputs = (weekly: 20.0, fiveHour: 10.0, projected: 60.0)
 /// The five-hour window is the one that bites soonest and is never extrapolated
 /// between anchors, so it earns the tightest band on its own.
 @Test func criticalPressureWinsOverEverythingElse() {
-    #expect(PollDecision.interval(weeklyPercent: 95, fiveHourPercent: 5,
+    #expect(PollDecision.interval(weeklyPercent: 95, fiveHourPercent: 5, scopedWeeklyPercent: nil,
                                   projectedPercent: 50, ceiling: .sixty)
             == PollDecision.critical)
-    #expect(PollDecision.interval(weeklyPercent: 10, fiveHourPercent: 93,
+    #expect(PollDecision.interval(weeklyPercent: 10, fiveHourPercent: 93, scopedWeeklyPercent: nil,
                                   projectedPercent: 50, ceiling: .sixty)
             == PollDecision.critical)
 }
@@ -50,14 +50,14 @@ private let relaxedInputs = (weekly: 20.0, fiveHour: 10.0, projected: 60.0)
 /// than the pressure bands intend.
 @Test func theCeilingOnlyEverTightens() {
     let relaxedAtFifteen = PollDecision.interval(weeklyPercent: relaxedInputs.weekly,
-                                                 fiveHourPercent: relaxedInputs.fiveHour,
+                                                 fiveHourPercent: relaxedInputs.fiveHour, scopedWeeklyPercent: nil,
                                                  projectedPercent: relaxedInputs.projected,
                                                  ceiling: .fifteen)
     #expect(relaxedAtFifteen == 15 * 60)
 
     // Critical pressure is already tighter than any ceiling, so the ceiling
     // must not loosen it.
-    let criticalAtSixty = PollDecision.interval(weeklyPercent: 95, fiveHourPercent: 95,
+    let criticalAtSixty = PollDecision.interval(weeklyPercent: 95, fiveHourPercent: 95, scopedWeeklyPercent: nil,
                                                 projectedPercent: 200, ceiling: .sixty)
     #expect(criticalAtSixty == PollDecision.critical)
 }
@@ -65,7 +65,7 @@ private let relaxedInputs = (weekly: 20.0, fiveHour: 10.0, projected: 60.0)
 /// Early in a window there is no estimate and no projection. Missing signals
 /// must not read as pressure, or a fresh window would poll at the tightest rate.
 @Test func intervalIgnoresMissingSignalsRatherThanTreatingThemAsPressure() {
-    #expect(PollDecision.interval(weeklyPercent: nil, fiveHourPercent: nil,
+    #expect(PollDecision.interval(weeklyPercent: nil, fiveHourPercent: nil, scopedWeeklyPercent: nil,
                                   projectedPercent: nil, ceiling: .sixty)
             == PollDecision.relaxed)
 }

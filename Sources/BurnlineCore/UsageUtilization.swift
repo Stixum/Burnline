@@ -51,10 +51,64 @@ public struct UsageUtilization: Sendable, Decodable {
         public let percent: Double
         public let severity: String
         public let modelName: String
+        /// This limit's own `resets_at`. Nil when the entry carried none, in
+        /// which case nothing can place it in a window and it never notifies.
+        public let resetsAt: Date?
+
+        public init(percent: Double, severity: String, modelName: String, resetsAt: Date?) {
+            self.percent = percent
+            self.severity = severity
+            self.modelName = modelName
+            self.resetsAt = resetsAt
+        }
+
+        /// How the popover draws the row, from Anthropic's own grading.
+        ///
+        /// 🔴 **Why the row is graded at all.** On 2026-11-26 this limit
+        /// (Fable) stood at 94% graded `critical` while the all-models figure
+        /// Burnline tracks read 74% `normal`. The limit about to stop work was
+        /// a grey row among grey rows.
+        public enum Style: Equatable, Sendable {
+            case plain
+            /// Amber with a symbol.
+            case warning
+            /// Red with a symbol.
+            case critical
+        }
+
+        /// The same rule as extra usage: anything but `normal` is raised, so a
+        /// grade this build has never seen still draws attention. `critical`
+        /// is the one grade drawn above a warning.
+        public var rowStyle: Style {
+            switch gradeWord {
+            case nil: .plain
+            case "critical": .critical
+            default: .warning
+            }
+        }
+
+        /// Anthropic's grade, lowercased, or nil when it is `normal` or blank.
+        var gradeWord: String? {
+            let word = severity.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return word.isEmpty || word == "normal" ? nil : word
+        }
 
         /// Assembled here like `FiveHourStatus.rowValue`, so no view body does
-        /// formatting of its own.
-        public var rowValue: String { "\(DisplayValue.whole(percent))%" }
+        /// formatting of its own. A raised grade is named in the value, because
+        /// status is never colour alone.
+        public var rowValue: String {
+            let figure = "\(DisplayValue.whole(percent))%"
+            return gradeWord.map { "\(figure) · \($0)" } ?? figure
+        }
+
+        /// The row's tooltip: what this limit is and why it can stop work
+        /// while the weekly figure still has room.
+        public var rowHelp: String {
+            let grade = gradeWord.map { "Anthropic grades this limit \($0). " } ?? ""
+            return grade + "This is \(modelName)'s own weekly limit, separate from the "
+                + "all-models figure above: \(modelName) stops at its own limit even "
+                + "while the weekly figure has room."
+        }
 
         /// The popover row's label.
         ///
@@ -236,7 +290,8 @@ public struct UsageUtilization: Sendable, Decodable {
 
         var resolvedScoped: ScopedLimit? {
             guard let percent, let name = scope?.model?.displayName else { return nil }
-            return ScopedLimit(percent: percent, severity: severity ?? "normal", modelName: name)
+            return ScopedLimit(percent: percent, severity: severity ?? "normal", modelName: name,
+                               resetsAt: UsageUtilization.date(from: resetsAt))
         }
     }
 

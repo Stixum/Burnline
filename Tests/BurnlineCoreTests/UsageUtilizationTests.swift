@@ -177,7 +177,7 @@ private func utilizationCapture(_ percent: Double, fetchedAt: TimeInterval) thro
 /// this app would then have to keep current.
 @Test func theScopedRowLabelFollowsWhateverModelWasReported() {
     let limit = UsageUtilization.ScopedLimit(percent: 12, severity: "normal",
-                                             modelName: "Opus")
+                                             modelName: "Opus", resetsAt: nil)
 
     #expect(limit.rowLabel == "Opus weekly")
 }

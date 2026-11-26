@@ -14,6 +14,8 @@ public enum NotificationDecision {
         case behindPace = "behind-pace"
         case weekly
         case fiveHour = "five-hour"
+        /// A per-model weekly limit graded `warning` or worse by Anthropic.
+        case modelWeekly = "model-weekly"
     }
 
     /// One notification to deliver. Body text is assembled here, not in the
@@ -100,7 +102,53 @@ public enum NotificationDecision {
                 epochStartedAt: five.startedAt.timeIntervalSince1970)
         }
 
+        // Per-model weekly (Fable on Sean's plan): Anthropic's own grade, no
+        // threshold of ours. It can stop a model's work while the all-models
+        // figure above has room (2026-11-26: Fable 94% `critical`, all models
+        // 74% `normal`, and no alert). Fires once per grade per allowance: a
+        // warning, then a critical, never the same grade twice and never on the
+        // way back down.
+        //
+        // Only for the window on screen: a cached block from a week that has
+        // ended, or an entry with no reset at all, cannot be placed in it.
+        // Keyed on the weekly epoch, so a re-grant re-arms it.
+        if let scoped = snapshot.scopedWeekly,
+           let level = ModelLimitAlert.level(scoped.rowStyle),
+           let resetsAt = scoped.resetsAt,
+           abs(resetsAt.timeIntervalSince(snapshot.window.end)) <= WindowLedger.sameResetTolerance,
+           !ModelLimitAlert.suppresses(marks.modelWeekly, resetsAt: weeklyReset,
+                                       level: level, epochStartedAt: weeklyEpoch) {
+            emissions.append(Emission(
+                signal: .modelWeekly,
+                title: "\(scoped.rowLabel) limit at \(DisplayValue.whole(scoped.percent))%",
+                body: "Anthropic grades it \(scoped.gradeWord ?? "raised"). "
+                    + "Resets \(resetDescription(snapshot.window.end, timeZone: timeZone))."))
+            updated.modelWeekly = NotificationMarks.Mark(
+                resetsAt: weeklyReset, threshold: level, epochStartedAt: weeklyEpoch)
+        }
+
         return (emissions, updated)
+    }
+
+    /// The per-model alert's grades, as the mark's `threshold`: a warning is 1,
+    /// critical is 2. A mark suppresses its own grade and every lower one, so
+    /// a warning after a critical says nothing new.
+    enum ModelLimitAlert {
+        static func level(_ style: UsageUtilization.ScopedLimit.Style) -> Double? {
+            switch style {
+            case .plain: nil
+            case .warning: 1
+            case .critical: 2
+            }
+        }
+
+        static func suppresses(_ mark: NotificationMarks.Mark?, resetsAt: TimeInterval,
+                               level: Double, epochStartedAt: TimeInterval) -> Bool {
+            guard let mark else { return false }
+            return abs(mark.resetsAt - resetsAt) <= WindowLedger.sameResetTolerance
+                && abs(mark.epochStartedAt - epochStartedAt) <= WindowLedger.sameResetTolerance
+                && mark.threshold >= level
+        }
     }
 
     /// "Tuesday 9:00 PM" — the weekly reset in the user's own clock, to the

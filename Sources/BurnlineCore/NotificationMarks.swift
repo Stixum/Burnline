@@ -53,13 +53,23 @@ public struct NotificationMarks: Equatable, Sendable, Codable {
     /// times inside one weekly window, and neither says anything about the
     /// other.
     public var fiveHour: Mark?
+    /// The per-model weekly alert. `threshold` holds the grade it fired at
+    /// (1 warning, 2 critical), not a percentage; see
+    /// `NotificationDecision.ModelLimitAlert`.
+    ///
+    /// Optional and added without a version bump on purpose: a file from
+    /// before it has no such key and decodes as nil (nothing fired), which is
+    /// the truth, and no existing mark changes meaning.
+    public var modelWeekly: Mark?
 
     public init(version: Int = NotificationMarks.currentVersion,
-                behindPace: Mark? = nil, weekly: Mark? = nil, fiveHour: Mark? = nil) {
+                behindPace: Mark? = nil, weekly: Mark? = nil, fiveHour: Mark? = nil,
+                modelWeekly: Mark? = nil) {
         self.version = version
         self.behindPace = behindPace
         self.weekly = weekly
         self.fiveHour = fiveHour
+        self.modelWeekly = modelWeekly
     }
 
     public var isCompatible: Bool { version == Self.currentVersion }
