@@ -181,3 +181,101 @@ private func freshnessLine(readRevision: Int, archiveRevision: Int,
     #expect(!line.isBehind)
     #expect(line.text == "Read at 12:00 AM")
 }
+
+// MARK: - The writer counts only writes that landed
+
+@Test func cellsForTheBucketStillFillingAdvanceTheRevision() async throws {
+    // A busy minute: the flush restates the bucket still filling and claims no
+    // coverage (the clamp refuses an unclosed bucket). Those rows are the only
+    // write, so they must move the revision or the window sees new cells only
+    // every 15 minutes.
+    let dir = reloadDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let writer = HistoryWriter(store: HistoryStore(directory: dir), schedule: reloadSchedule)
+
+    let filling = Bucket.key(for: Date()) * reloadStep
+    let before = await writer.revision
+    await writer.commit(payload: HistoryArchive.Payload(rows: [reloadCell(filling)],
+                                                        span: filling...filling),
+                        filledBy: "scan", observation: nil)
+    #expect(await writer.currentCoverage().contains(filling) == false)
+    #expect(await writer.revision > before)
+}
+
+/// A "directory" that is a regular file: every write under it throws.
+private func unwritableDirectory() throws -> URL {
+    let url = reloadDirectory()
+    try Data("not a directory".utf8).write(to: url)
+    return url
+}
+
+@Test func aTrackingWriteThatFailsLeavesTheRevisionAlone() async throws {
+    let dir = try unwritableDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let writer = HistoryWriter(store: HistoryStore(directory: dir), schedule: reloadSchedule)
+
+    await writer.observe(reloadEntry(41, minutesAgo: 3))
+    #expect(await writer.revision == 0)
+}
+
+@Test func aCellWriteThatFailsLeavesTheRevisionAlone() async throws {
+    let dir = try unwritableDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let writer = HistoryWriter(store: HistoryStore(directory: dir), schedule: reloadSchedule)
+
+    let bucket = closedBucket()
+    await writer.commit(payload: HistoryArchive.Payload(rows: [reloadCell(bucket)],
+                                                        span: bucket...bucket),
+                        filledBy: "scan", observation: nil)
+    #expect(await writer.revision == 0)
+}
+
+// MARK: - The reload key and the cache
+
+private func archiveKey(revision: Int) -> HistoryReload.ArchiveKey {
+    HistoryReload.ArchiveKey(fill: .finished, weights: .default, archiveRevision: revision)
+}
+
+@Test func twoReloadKeysDifferingOnlyInRevisionAreUnequal() {
+    // The bug: nothing in the key moved after the launch fill. The revision
+    // is the field that does.
+    #expect(archiveKey(revision: 7) != archiveKey(revision: 8))
+    #expect(archiveKey(revision: 7) == archiveKey(revision: 7))
+}
+
+@Test func aCachedReadIsNeverReusedAcrossANewRevision() {
+    // Two seconds old, so age alone would reuse it: the original bug for up
+    // to the cache lifetime.
+    let readAt = Date()
+    #expect(!HistoryReload.mayReuse(cachedRevision: 7, cachedAt: readAt, revision: 8,
+                                    now: readAt.addingTimeInterval(2)))
+}
+
+@Test func aYoungCachedReadAnswersAPickerChange() {
+    let readAt = Date()
+    #expect(HistoryReload.mayReuse(cachedRevision: 7, cachedAt: readAt, revision: 7,
+                                   now: readAt.addingTimeInterval(2)))
+}
+
+@Test func anOldCachedReadIsNotReusedEvenUnderTheSameRevision() {
+    let readAt = Date()
+    #expect(!HistoryReload.mayReuse(cachedRevision: 7, cachedAt: readAt, revision: 7,
+                                    now: readAt.addingTimeInterval(HistoryReload.cacheLifetime)))
+}
+
+// MARK: - Publishing the revision
+
+@Test func anUnchangedRevisionIsNotRepublished() {
+    // Restamping it on every flush would keep `changedAt` young forever, and
+    // the amber "Last read at" line could never show on a busy Mac.
+    let current = HistoryReload.Published(revision: 8, changedAt: readInstant)
+    #expect(HistoryReload.publish(writerRevision: 8, over: current,
+                                  now: readInstant.addingTimeInterval(600)) == nil)
+}
+
+@Test func aNewRevisionIsPublishedWithTheMomentItArrived() {
+    let current = HistoryReload.Published(revision: 8, changedAt: readInstant)
+    let arrived = readInstant.addingTimeInterval(600)
+    #expect(HistoryReload.publish(writerRevision: 9, over: current, now: arrived)
+            == HistoryReload.Published(revision: 9, changedAt: arrived))
+}

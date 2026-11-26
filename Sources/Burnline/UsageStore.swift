@@ -51,12 +51,20 @@ final class UsageStore {
     /// progress for the 20.4 seconds rather than a spinner that reads as a hang.
     private(set) var historyFillState: HistoryFillState = .idle
 
-    /// `HistoryWriter.revision` as last seen, and when it was seen to move.
-    /// Observed: the History window keys its reload on the revision and its
-    /// "Read at" line on both. Without this an open window never re-read the
-    /// archive after the launch fill (2026-11-26: 41% drawn, 74% on disk).
-    private(set) var historyRevision = 0
-    private(set) var historyRevisionChangedAt: Date?
+    /// `HistoryWriter.revision` as last seen, and when it first arrived.
+    /// Observed: the History window keys its reload on the revision (through
+    /// `historyArchiveKey`) and its "Read at" line on both. Without this an
+    /// open window never re-read the archive after the launch fill
+    /// (2026-11-26: 41% drawn, 74% on disk).
+    private(set) var historyRevision = HistoryReload.Published(revision: 0, changedAt: nil)
+
+    /// The History window's reload inputs beyond its own pickers, built here
+    /// and nowhere else so the window cannot leave the revision out.
+    var historyArchiveKey: HistoryReload.ArchiveKey {
+        HistoryReload.ArchiveKey(fill: historyFillState.reloadPhase,
+                                 weights: settings.weights,
+                                 archiveRevision: historyRevision.revision)
+    }
 
     /// Written through to disk on every mutation, so SwiftUI bindings in the
     /// settings window persist without any explicit save step.
@@ -379,13 +387,15 @@ final class UsageStore {
     }
 
     /// Publishes the writer's revision after anything that may have written
-    /// the archive: the flush, an observation, the fill. Only a change is
-    /// assigned, so an idle flush does not wake an open History window.
+    /// the archive: the flush, an observation, the fill. The rule (only a
+    /// change is published, stamped when it first arrives) is
+    /// `HistoryReload.publish`.
     private func syncHistoryRevision() async {
         let revision = await historyWriter.revision
-        guard revision != historyRevision else { return }
-        historyRevision = revision
-        historyRevisionChangedAt = Date()
+        if let next = HistoryReload.publish(writerRevision: revision, over: historyRevision,
+                                            now: Date()) {
+            historyRevision = next
+        }
     }
 
     /// The archive's forward path, run after every successful scan.

@@ -80,19 +80,14 @@ struct HistoryView: View {
     private struct LoadKey: Equatable {
         let dimension: HistoryQuery.Dimension
         let range: HistoryRange
-        let fill: HistoryFillState.ReloadPhase
-        /// A weight edit restates every unit figure. The loader caches raw
-        /// tokens and weights them per call, so no invalidation is needed.
-        let weights: Weights
-        /// 🔴 **The archive's own revision (`HistoryWriter.revision`), and the
-        /// input whose absence this window shipped without.** The fill phase
-        /// stops moving once the launch fill finishes, so before this nothing
-        /// here changed while the window stayed open: it drew one read for a
-        /// day beside a live "now" line (2026-11-26: 41% drawn, 74% on disk).
-        /// It moves only when the writer actually wrote (a new reading, new
-        /// cells, a closed week), so an idle Mac re-reads nothing, and a busy
-        /// one at most once per 60-second flush plus once per new reading.
-        let archiveRevision: Int
+        /// 🔴 **Fill phase, weights and the archive's own revision, from
+        /// `UsageStore.historyArchiveKey` and nowhere else.** The revision is
+        /// the input this window shipped without: the fill phase stops moving
+        /// once the launch fill finishes, so nothing here changed while the
+        /// window stayed open and it drew one read for a day beside a live
+        /// "now" line (2026-11-26: 41% drawn, 74% on disk). It moves only when
+        /// the writer actually wrote, so an idle Mac re-reads nothing.
+        let archive: HistoryReload.ArchiveKey
     }
 
     var body: some View {
@@ -119,9 +114,7 @@ struct HistoryView: View {
         .background(Theme.background)
         .preferredColorScheme(.dark)
         .task(id: LoadKey(dimension: dimension, range: range,
-                          fill: store.historyFillState.reloadPhase,
-                          weights: store.settings.weights,
-                          archiveRevision: store.historyRevision)) {
+                          archive: store.historyArchiveKey)) {
             await load()
         }
     }
@@ -135,7 +128,7 @@ struct HistoryView: View {
         let weights = store.settings.weights
         // Read before the archive is, so a write that lands mid-read counts as
         // unread and the next key change reads it.
-        let revision = store.historyRevision
+        let revision = store.historyRevision.revision
 
         // The loader holds its read for 15 seconds so the pickers never hit
         // disk. A fill that has just changed phase is the one case where that
@@ -427,8 +420,8 @@ struct HistoryView: View {
     /// Words and rule are `HistoryFreshness`'s, so they have tests.
     @ViewBuilder private func freshness(_ model: HistoryViewModel) -> some View {
         let line = HistoryFreshness.line(read: model.read,
-                                         archiveRevision: store.historyRevision,
-                                         archiveChangedAt: store.historyRevisionChangedAt,
+                                         archiveRevision: store.historyRevision.revision,
+                                         archiveChangedAt: store.historyRevision.changedAt,
                                          now: store.snapshot.window.now)
         if line.isBehind {
             warning(line.text, symbol: "clock.badge.exclamationmark")

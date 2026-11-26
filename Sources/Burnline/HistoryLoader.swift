@@ -132,17 +132,6 @@ actor HistoryLoader {
     private let store: HistoryStore
     private var cached: Archive?
 
-    /// ⚠️ Long enough that flipping the dimension picker never re-reads disk.
-    ///
-    /// 🔴 **Not what keeps an open window current, and never was.** This said
-    /// it was "short enough that a window left open does not quietly show an
-    /// archive from an hour ago", but an age check only matters if something
-    /// asks again, and nothing did: the window's `LoadKey` had no input that
-    /// moved after the launch fill, so it drew one read for as long as it was
-    /// open. What re-reads now is the archive revision in `LoadKey`, and a
-    /// read is reused only under the revision it was taken at.
-    private static let cacheLifetime: TimeInterval = 15
-
     init(directory: URL) {
         store = HistoryStore(directory: directory)
     }
@@ -311,11 +300,12 @@ actor HistoryLoader {
     // MARK: - Reading
 
     private func load(through: Date, now: Date, revision: Int) -> Archive {
-        // A cached read is reused only for a picker change: same revision, and
-        // young. A write since it was taken means the disk holds something it
-        // does not.
-        if let cached, cached.revision == revision,
-           now.timeIntervalSince(cached.loadedAt) < Self.cacheLifetime {
+        // 🔴 `HistoryReload.mayReuse`: a picker change within the cache
+        // lifetime, never across a revision. The age check alone was this
+        // file's claim to keep an open window current, and it never did.
+        if let cached, HistoryReload.mayReuse(cachedRevision: cached.revision,
+                                              cachedAt: cached.loadedAt,
+                                              revision: revision, now: now) {
             return cached
         }
 
