@@ -127,6 +127,9 @@ private func appSource(_ file: String) throws -> String {
         let segment = try #require(HistoryPace.sinceRegrant(series))
         let anchor = segment.point(along: HistoryPace.sinceRegrantLabelPosition)
         #expect(anchor.percent < anchor.fraction * HistoryChartMode.fullAllowance)  // under the diagonal
-        #expect(abs(anchor.fraction - 0.5) > 0.05 || abs(anchor.percent - 50) > 10)
+        // The whole-week label sits on the diagonal's midpoint and above it,
+        // from 50% up; the re-based one hangs above its anchor, so the anchor
+        // has to sit well below 50 for the two not to meet.
+        #expect(anchor.percent < 45)
     }
 }
