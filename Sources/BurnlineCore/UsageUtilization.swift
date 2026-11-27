@@ -24,6 +24,17 @@ import Foundation
 /// copied, logged, or included in diagnostics.
 public struct UsageUtilization: Sendable, Decodable {
 
+    /// The name of the limit every weekly figure in Burnline follows.
+    ///
+    /// The chart, the menu bar, pace, projection, notifications and the archive
+    /// all track `seven_day` / `weekly_all`: the all-models limit. Claude's plan
+    /// panel shows a per-model limit beside it (2026-11-26: all models 74%,
+    /// Fable 94% `critical`), and before this name was printed nothing in
+    /// Burnline said which of the two its figure was. One constant, so the
+    /// popover legend, the spoken menu bar label and the History caption cannot
+    /// drift apart. Never on the per-model row: see `ScopedLimit.rowLabel`.
+    public static let allModelsName = "all models"
+
     /// One window's reading. Constructed only with a reset instant: a percentage
     /// whose window boundary is unknown can never be judged still-valid, so it
     /// is worse than no reading — the same rule `StatuslinePayload` applies.
