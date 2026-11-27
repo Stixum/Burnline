@@ -179,7 +179,8 @@ struct PopoverView: View {
 
     private var legend: some View {
         HStack {
-            Text(snapshot.estimatedPercent.map { "\(DisplayValue.whole($0))% used" } ?? "usage unknown")
+            // Names the all-models limit: `Snapshot.usedLegend` (tested).
+            Text(snapshot.usedLegend)
             Spacer()
             Text(legendTarget)
         }

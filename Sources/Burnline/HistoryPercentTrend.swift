@@ -161,8 +161,31 @@ struct HistoryPercentTrend: View {
     }
 
     private var pacePoints: [PacePoint] {
-        [PacePoint(id: 0, fraction: 0, percent: 0),
-         PacePoint(id: 1, fraction: 1, percent: HistoryChartMode.fullAllowance)]
+        [PacePoint(id: 0, fraction: HistoryPace.wholeWeek.fromFraction,
+                   percent: HistoryPace.wholeWeek.fromPercent),
+         PacePoint(id: 1, fraction: HistoryPace.wholeWeek.toFraction,
+                   percent: HistoryPace.wholeWeek.toPercent)]
+    }
+
+    /// One re-based pace line per drawn week that was re-granted, from its
+    /// last re-grant's first reading to the reset. `HistoryPace.sinceRegrant`
+    /// decides; this only draws it.
+    private struct RebasedPace: Identifiable {
+        let id: String
+        let segment: HistoryPace.Segment
+        /// Only the newest such week names its line: two identical labels
+        /// would crowd the plot and say nothing the first did not.
+        let isLabelled: Bool
+    }
+
+    private var rebasedPaces: [RebasedPace] {
+        var result: [RebasedPace] = []
+        for curve in curves {
+            guard let segment = HistoryPace.sinceRegrant(curve.series) else { continue }
+            result.append(RebasedPace(id: curve.label, segment: segment,
+                                      isLabelled: result.isEmpty))
+        }
+        return result
     }
 
     var body: some View {
@@ -192,10 +215,11 @@ struct HistoryPercentTrend: View {
     ///
     /// ⚠️ **It describes ONE allowance across the window.** After a re-grant the
     /// later segment measures an allowance that began mid-week, so the diagonal
-    /// is not its pace target and being under it proves nothing. The break, the
-    /// band and the ring are what say so; the diagonal deliberately does not
-    /// fork, because a second diagonal would have to start at a moment nobody
-    /// observed.
+    /// is not its pace target and being under it proves nothing. The diagonal
+    /// itself never moves (the pace target does not re-base); `rebasedPace`
+    /// adds a second line for the new allowance, starting on the ring — the
+    /// first reading after the drop — rather than at a re-grant instant nobody
+    /// observed (History check fix 5, Sean's choice, 2026-11-26).
     @ChartContentBuilder private var pace: some ChartContent {
         ForEach(pacePoints) { point in
             LineMark(x: .value("Elapsed", point.fraction),
@@ -223,10 +247,43 @@ struct HistoryPercentTrend: View {
             .annotation(position: .topLeading, spacing: 2,
                         overflowResolution: AnnotationOverflowResolution(
                             x: .fit(to: .chart), y: .fit(to: .chart))) {
-                Text("pace")
+                Text(HistoryPace.wholeWeekLabel)
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.textMuted)
             }
+    }
+
+    /// Pace for the allowance in force after a re-grant: dashed and muted like
+    /// the diagonal, because it is a reference too, and a longer dash so the
+    /// two references can be told apart where they run close.
+    ///
+    /// Labelled at its midpoint, below the line: the curve it measures starts
+    /// on the line's left end and runs under it while on pace, so the space
+    /// below the midpoint is the part of the plot it has not reached.
+    @ChartContentBuilder private var rebasedPace: some ChartContent {
+        ForEach(rebasedPaces) { pace in
+            LineMark(x: .value("Elapsed", pace.segment.fromFraction),
+                     y: .value("Percent", pace.segment.fromPercent),
+                     series: .value("Series", "pace-since-\(pace.id)"))
+            LineMark(x: .value("Elapsed", pace.segment.toFraction),
+                     y: .value("Percent", pace.segment.toPercent),
+                     series: .value("Series", "pace-since-\(pace.id)"))
+        }
+        .foregroundStyle(Theme.textMuted.opacity(0.6))
+        .lineStyle(StrokeStyle(lineWidth: 1, dash: [6, 3]))
+
+        ForEach(rebasedPaces.filter(\.isLabelled)) { pace in
+            PointMark(x: .value("Elapsed", pace.segment.midFraction),
+                      y: .value("Percent", pace.segment.midPercent))
+                .symbolSize(0)
+                .annotation(position: .bottomTrailing, spacing: 2,
+                            overflowResolution: AnnotationOverflowResolution(
+                                x: .fit(to: .chart), y: .fit(to: .chart))) {
+                    Text(HistoryPace.sinceRegrantLabel)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.textMuted)
+                }
+        }
     }
 
     /// The band and the dashed drop — the two halves of one honest statement.
@@ -352,6 +409,7 @@ struct HistoryPercentTrend: View {
     private var plot: some View {
         Chart {
             pace
+            rebasedPace
             regrantSpans
             lines
             ringMarks

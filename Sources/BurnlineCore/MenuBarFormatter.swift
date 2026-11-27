@@ -137,7 +137,10 @@ public enum MenuBarFormatter {
         if let estimated = snapshot.estimatedPercent {
             let delta = abs(snapshot.delta(target) ?? 0)
             let direction = (snapshot.isUnder(target) ?? true) ? "ahead of pace" : "behind pace"
-            label = "Burnline: \(whole(estimated)) percent used, \(pace) percent \(frame), "
+            // Names the limit (History check fix 3): the four-character bar
+            // has no room for it, the spoken label does.
+            label = "Burnline: \(whole(estimated)) percent used across "
+                + "\(UsageUtilization.allModelsName), \(pace) percent \(frame), "
                 + "\(DisplayValue.points(delta)) \(direction)"
         } else {
             label = "Burnline: \(pace) percent \(frame), no usage figure yet"

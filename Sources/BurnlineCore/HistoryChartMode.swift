@@ -65,7 +65,11 @@ public enum HistoryChartMode: Hashable, CaseIterable, Sendable {
         case .units:
             return "cumulative units by fraction of the week elapsed"
         case .percent:
-            return "Anthropic's percentage of the weekly limit, as captured"
+            // "all models" (History check fix 3, 2026-11-26): the series is
+            // `seven_day`, and Claude's plan panel shows a per-model limit
+            // beside it that this chart does not draw.
+            return "Anthropic's percentage of the weekly limit, "
+                + "\(UsageUtilization.allModelsName), as captured"
         }
     }
 

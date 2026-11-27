@@ -147,7 +147,7 @@ private func series(_ percentages: [Double]) -> HistoryQuery.PercentSeries {
 @Test func eachSubtitleNamesItsOwnQuantityAndItsOwnAxis() {
     #expect(HistoryChartMode.units.subtitle == "cumulative units by fraction of the week elapsed")
     #expect(HistoryChartMode.percent.subtitle
-            == "Anthropic's percentage of the weekly limit, as captured")
+            == "Anthropic's percentage of the weekly limit, all models, as captured")
 
     // Neither line may be true of the other series.
     #expect(!HistoryChartMode.units.subtitle.contains("percent"))
