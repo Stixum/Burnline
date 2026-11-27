@@ -299,6 +299,18 @@ public struct Snapshot: Equatable, Sendable {
 
     public var isUnderBudget: Bool? { isUnder(.realTime) }
 
+    /// The caption under the popover's bar: the weekly figure, named as the
+    /// all-models limit (History check fix 3, 2026-11-26).
+    ///
+    /// The per-model row's tooltip says it is "separate from the all-models
+    /// figure above"; this is the line that makes that true. With no usage
+    /// figure there is nothing to name. Width is pinned against the target
+    /// beside it in `theWidestLegendStillFitsBesideTheTarget`.
+    public var usedLegend: String {
+        guard let estimated = estimatedPercent else { return "usage unknown" }
+        return "\(DisplayValue.whole(estimated))% used · \(UsageUtilization.allModelsName)"
+    }
+
     /// The projection row's label, which has to name its denominator once a
     /// second one is on screen.
     ///
@@ -313,18 +325,6 @@ public struct Snapshot: Equatable, Sendable {
     /// lives where the tests are. Kept to the width class of the string it
     /// replaces: the row's worst-case value is `over limit · 999% by reset`,
     /// and a longer label truncates one of the two.
-    /// The caption under the popover's bar: the weekly figure, named as the
-    /// all-models limit (History check fix 3, 2026-11-26).
-    ///
-    /// The per-model row's tooltip says it is "separate from the all-models
-    /// figure above"; this is the line that makes that true. With no usage
-    /// figure there is nothing to name. Width is pinned against the target
-    /// beside it in `theWidestLegendStillFitsBesideTheTarget`.
-    public var usedLegend: String {
-        guard let estimated = estimatedPercent else { return "usage unknown" }
-        return "\(DisplayValue.whole(estimated))% used · \(UsageUtilization.allModelsName)"
-    }
-
     public var projectionLabel: String {
         regrant == nil ? "At this rate" : "Rate since re-grant"
     }
