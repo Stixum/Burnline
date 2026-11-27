@@ -34,11 +34,23 @@ public enum HistoryPace {
             self.toPercent = toPercent
         }
 
-        /// Where the line's label hangs: its midpoint, the one place on it no
-        /// series endpoint can claim (see `HistoryPercentTrend.pace`).
-        public var midFraction: Double { (fromFraction + toFraction) / 2 }
-        public var midPercent: Double { (fromPercent + toPercent) / 2 }
+        /// The point `t` of the way along the line (0 at its start, 1 at its
+        /// end), on both axes.
+        public func point(along t: Double) -> (fraction: Double, percent: Double) {
+            (fromFraction + (toFraction - fromFraction) * t,
+             fromPercent + (toPercent - fromPercent) * t)
+        }
     }
+
+    /// How far along the re-based line its label hangs.
+    ///
+    /// ⚠️ **Not the midpoint.** The whole-week label already hangs at the
+    /// diagonal's midpoint, and on the first synthetic shot the two labels
+    /// printed over each other ("pacpace since re-grant"). The two lines
+    /// converge at the reset, so the gap between them is widest near the
+    /// re-grant; a third of the way along leaves room above the line and
+    /// below the diagonal, clear of the ring's "re-granted" label.
+    public static let sinceRegrantLabelPosition = 0.3
 
     /// The window's own pace: none of the allowance at the start, all of it at
     /// the reset. Calendar arithmetic, so it is the one line that cannot be

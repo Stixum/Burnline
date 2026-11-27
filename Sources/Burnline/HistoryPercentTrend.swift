@@ -257,9 +257,11 @@ struct HistoryPercentTrend: View {
     /// the diagonal, because it is a reference too, and a longer dash so the
     /// two references can be told apart where they run close.
     ///
-    /// Labelled at its midpoint, below the line: the curve it measures starts
-    /// on the line's left end and runs under it while on pace, so the space
-    /// below the midpoint is the part of the plot it has not reached.
+    /// Labelled a third of the way along (`HistoryPace.sinceRegrantLabelPosition`),
+    /// above the line and on a knock-out plate: the curve it measures runs just
+    /// under it while on pace (labelled below, the first shot had the curve
+    /// through the words), and the plate keeps the words legible if a line
+    /// crosses them anyway.
     @ChartContentBuilder private var rebasedPace: some ChartContent {
         ForEach(rebasedPaces) { pace in
             LineMark(x: .value("Elapsed", pace.segment.fromFraction),
@@ -273,15 +275,18 @@ struct HistoryPercentTrend: View {
         .lineStyle(StrokeStyle(lineWidth: 1, dash: [6, 3]))
 
         ForEach(rebasedPaces.filter(\.isLabelled)) { pace in
-            PointMark(x: .value("Elapsed", pace.segment.midFraction),
-                      y: .value("Percent", pace.segment.midPercent))
+            let anchor = pace.segment.point(along: HistoryPace.sinceRegrantLabelPosition)
+            PointMark(x: .value("Elapsed", anchor.fraction),
+                      y: .value("Percent", anchor.percent))
                 .symbolSize(0)
-                .annotation(position: .bottomTrailing, spacing: 2,
+                .annotation(position: .topTrailing, spacing: 2,
                             overflowResolution: AnnotationOverflowResolution(
                                 x: .fit(to: .chart), y: .fit(to: .chart))) {
                     Text(HistoryPace.sinceRegrantLabel)
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(Theme.textMuted)
+                        .padding(.horizontal, 2)
+                        .background(Theme.background, in: RoundedRectangle(cornerRadius: 2))
                 }
         }
     }

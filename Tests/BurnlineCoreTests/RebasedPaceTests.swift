@@ -114,3 +114,19 @@ private func appSource(_ file: String) throws -> String {
     #expect(popover.contains("Text(snapshot.usedLegend)"))
     #expect(!popover.contains("% used\" } ?? \"usage unknown\""))
 }
+
+@Test func theRebasedLabelHangsClearOfTheWholeWeekLabel() throws {
+    // The whole-week label hangs at the diagonal's midpoint (0.5, 50). On the
+    // first shot the re-based label hung at its own midpoint and the two
+    // printed over each other. A third of the way along keeps it in the gap
+    // between the lines, below the diagonal, for Sean's 24 Nov week and the
+    // synthetic one alike.
+    for (ringDay, ringPercent) in [(4.203, 1.0), (1.7, 1.0), (1.0, 3.0)] {
+        let series = curve([entry(60, day: ringDay - 0.1), entry(ringPercent, day: ringDay),
+                            entry(ringPercent + 5, day: 6.5)])
+        let segment = try #require(HistoryPace.sinceRegrant(series))
+        let anchor = segment.point(along: HistoryPace.sinceRegrantLabelPosition)
+        #expect(anchor.percent < anchor.fraction * HistoryChartMode.fullAllowance)  // under the diagonal
+        #expect(abs(anchor.fraction - 0.5) > 0.05 || abs(anchor.percent - 50) > 10)
+    }
+}
